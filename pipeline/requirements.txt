@@ -1,0 +1,7 @@
+requests
+h5py
+numpy
+pysteps
+pyproj
+scipy
+anthropic

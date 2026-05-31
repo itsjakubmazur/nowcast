@@ -1,0 +1,73 @@
+name: Nowcast pipeline
+
+on:
+  schedule:
+    # Každých ~10 minut (GitHub free tier může mít zpoždění)
+    - cron: '*/10 * * * *'
+  workflow_dispatch:  # ruční spuštění pro testování
+
+jobs:
+  run-pipeline:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: pipeline/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r pipeline/requirements.txt
+
+      - name: Run ingest (Fáze 1)
+        run: python pipeline/ingest.py
+        env:
+          NOWCAST_LAT: '50.08'
+          NOWCAST_LON: '14.42'
+
+      - name: Upload data artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: nowcast-data-${{ github.run_id }}
+          path: data/
+          retention-days: 1
+
+      - name: Copy data into web/
+        run: |
+          mkdir -p web/data
+          cp -r data/* web/data/ 2>/dev/null || true
+
+  deploy-pages:
+    needs: run-pipeline
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download data artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: nowcast-data-${{ github.run_id }}
+          path: web/data/
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: web/
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
