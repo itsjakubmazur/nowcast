@@ -35,6 +35,19 @@ jobs:
           NOWCAST_LAT: '50.08'
           NOWCAST_LON: '14.42'
 
+      - name: Run fuse (Fáze 3a)
+        run: python pipeline/fuse.py
+        env:
+          NOWCAST_LAT: '50.08'
+          NOWCAST_LON: '14.42'
+
+      - name: Run narrate (Fáze 3b)
+        run: python pipeline/narrate.py
+        env:
+          NOWCAST_LAT: '50.08'
+          NOWCAST_LON: '14.42'
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
       - name: Upload data artifacts
         uses: actions/upload-artifact@v4
         with:
