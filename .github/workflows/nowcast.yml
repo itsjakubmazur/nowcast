@@ -29,6 +29,12 @@ jobs:
           NOWCAST_LAT: '50.08'
           NOWCAST_LON: '14.42'
 
+      - name: Run nowcast (Fáze 2)
+        run: python pipeline/nowcast.py
+        env:
+          NOWCAST_LAT: '50.08'
+          NOWCAST_LON: '14.42'
+
       - name: Upload data artifacts
         uses: actions/upload-artifact@v4
         with:

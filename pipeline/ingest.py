@@ -263,7 +263,19 @@ def main():
     print(f"  15min záznamy   : {len(m15.get('time', []))}")
     print(f"  Hodinové záznamy: {len(hourly.get('time', []))}")
     print(f"  Timezone v datech: {om_data.get('timezone', 'N/A')}")
-    print(f"  Model: {om_data.get('model', 'N/A')}")
+
+    # Open-Meteo vrací skutečně použitý model v poli "model" (top-level)
+    # nebo v "minutely_15_model" / "hourly_model" pokud bylo vybráno více modelů.
+    # Logujeme vše, aby bylo vidět, zda API vrátilo ICON-D2 nebo tichý fallback.
+    model_top    = om_data.get("model", None)
+    model_m15    = om_data.get("minutely_15_model", None)
+    model_hourly = om_data.get("hourly_model", None)
+    print(f"  Model (top-level)   : {model_top or 'N/A'}")
+    print(f"  Model minutely_15   : {model_m15 or 'N/A'}")
+    print(f"  Model hourly        : {model_hourly or 'N/A'}")
+    if model_top is None and model_m15 is None:
+        print("  VAROVÁNÍ: žádné pole 'model' v odpovědi — může jít o tichý fallback na jiný model!")
+
     # Ukázka prvního timestampu — ověření UTC
     if m15.get("time"):
         print(f"  První 15min timestamp: {m15['time'][0]}")
