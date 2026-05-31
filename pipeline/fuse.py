@@ -46,20 +46,19 @@ def _parse_dt(s: str, fallback: datetime) -> datetime:
         return fallback
 
 
-def fetch_cap_file_list() -> list[str]:
+def fetch_cap_file_list(n: int = 15) -> list[str]:
     """
-    Vrátí seřazený seznam URL posledních alert_cap_*.xml souborů.
-    Bere jen posledních N souborů — aktivní výstrahy jsou vždy v nejnovějších.
+    Vrátí seřazený seznam URL posledních n alert_cap_*.xml souborů.
+    Starší soubory jsou expirované; n=15 pokryje různé typy výstrah (sucho, bouřky...).
     """
     url = CAP_DIR_URL
     print(f"  CAP listing: GET {url}")
-    resp = requests.get(url, timeout=(5, 10))   # (connect, read)
+    resp = requests.get(url, timeout=(5, 10))
     print(f"  CAP listing: HTTP {resp.status_code}")
     resp.raise_for_status()
     names = re.findall(r'href="(alert_cap[^"]+\.xml)"', resp.text)
-    # Jen posledních 5 souborů — starší výstrahy jsou expirované
-    recent = sorted(set(names))[-5:]
-    return [CAP_DIR_URL + n for n in recent]
+    recent = sorted(set(names))[-n:]
+    return [CAP_DIR_URL + n_file for n_file in recent]
 
 
 def _extract_alerts_from_xml(root: ET.Element) -> list[ET.Element]:
@@ -181,18 +180,21 @@ def fetch_cap_warnings(lat: float, lon: float,
     now_utc = datetime.now(timezone.utc)
     all_warnings: list[dict] = []
 
-    # Zdroje v pořadí priority — bereme první, který vrátí data
+    # Zdroje v pořadí priority.
+    # XOCZ50_OKPR.xml = AGREGOVANÝ soubor všech aktuálně platných výstrah (jeden HTTP request).
+    # directory listing = každý soubor = jeden alert (fetch N souborů zvlášť).
     sources = [
-        ("directory", CAP_DIR_URL),
-        ("atom",      CAP_ATOM_URL),
-        ("bulletin",  "https://www.chmi.cz/files/portal/docs/meteo/om/bulletiny/XOCZ50_OKPR.xml"),
+        ("bulletin_chmi",   "https://www.chmi.cz/files/portal/docs/meteo/om/bulletiny/XOCZ50_OKPR.xml"),
+        ("bulletin_vystr",  "https://vystrahy-cr.chmi.cz/data/XOCZ50_OKPR.xml"),
+        ("directory",       CAP_DIR_URL),
     ]
 
     for source_name, source_url in sources:
         try:
             if source_name == "directory":
-                # Directory listing → stáhni posledních 5 souborů
-                file_urls = fetch_cap_file_list()
+                # Fallback: directory listing — každý soubor je samostatný alert.
+                # Bereme posledních 15 souborů aby pokryly různé typy výstrah.
+                file_urls = fetch_cap_file_list(n=15)
                 print(f"  CAP [{source_name}]: {len(file_urls)} souborů")
                 for furl in file_urls:
                     try:
@@ -200,12 +202,11 @@ def fetch_cap_warnings(lat: float, lon: float,
                         r = requests.get(furl, timeout=(5, 10))
                         print(f"    HTTP {r.status_code}")
                         r.raise_for_status()
-                        # .content (bytes) → XML parser čte encoding z deklarace
                         all_warnings.extend(parse_cap_file(r.content, now_utc))
                     except Exception as fe:
                         print(f"    Varování: {furl.split('/')[-1]}: {fe}")
             else:
-                # Jednoduchý soubor / Atom feed
+                # Primární/sekundární: jeden soubor s VŠEMI aktuálními výstrahami
                 print(f"  CAP [{source_name}]: GET {source_url}")
                 r = requests.get(source_url, timeout=(5, 10))
                 print(f"  CAP [{source_name}]: HTTP {r.status_code}")
