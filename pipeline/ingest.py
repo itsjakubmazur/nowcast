@@ -84,6 +84,22 @@ def read_odim_dbz(path: Path) -> tuple[np.ndarray, dict]:
             if date_s and time_s:
                 dt = datetime.strptime(date_s + time_s[:6], "%Y%m%d%H%M%S")
                 meta["utc_time"] = dt.replace(tzinfo=timezone.utc).isoformat()
+            # startdate/starttime: pro ACRR výpočet délky akumulačního okna
+            sd = what_root.attrs.get("startdate", b"").decode()
+            st = what_root.attrs.get("starttime", b"").decode()
+            if sd and st:
+                meta["start_utc"] = datetime.strptime(
+                    sd + st[:6], "%Y%m%d%H%M%S"
+                ).replace(tzinfo=timezone.utc).isoformat()
+
+        # ── Akumulační interval z /how (ACRR produkty) ────────────────────────
+        how = f.get("how", {})
+        if hasattr(how, "attrs"):
+            for key in ("interval", "accnum", "startepochs", "endepochs"):
+                val = how.attrs.get(key)
+                if val is not None:
+                    meta[f"how_{key}"] = float(val) if isinstance(val, (int, float, np.generic)) \
+                        else val.decode() if isinstance(val, bytes) else val
 
         # ── První dataset s daty ────────────────────────────────────────────────
         raw = None

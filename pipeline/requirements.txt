@@ -5,3 +5,4 @@ pysteps
 pyproj
 scipy
 anthropic
+opencv-python-headless

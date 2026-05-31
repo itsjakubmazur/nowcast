@@ -115,21 +115,58 @@ def pick_merge_start_field(
         age_str = f"{best_age:.0f}" if best_age != float("inf") else "∞"
         return None, f"nejlepší MERGE stáří {age_str} min > limit {MAX_MERGE_AGE_MIN} min"
 
-    # Přečti fyzikální pole — pro MERGE je to mm/h nebo mm (nikoliv dBZ!)
+    # Přečti fyzikální pole — MERGE ACRR je akumulovaný úhrn v mm, nikoliv dBZ
     field, meta = read_odim_dbz(best_path)
     qty  = meta.get("quantity", "?")
-    unit = meta.get("unit",     "?")
+    unit = meta.get("unit", "")
+
     print(f"  MERGE soubor   : {best_path.name}")
     print(f"  MERGE UTC čas  : {best_time.isoformat()}  (stáří {best_age:.0f} min vůči MAX_Z t0)")
-    print(f"  MERGE quantity : {qty}   unit: {unit}")
-    print(f"  → pole použito PŘÍMO jako rain rate (bez Z→R přepočtu)")
+    print(f"  MERGE quantity : {qty}   unit: '{unit}'")
 
-    valid = field[~np.isnan(field)]
+    # ── Zjisti délku akumulačního okna ────────────────────────────────────────
+    # Priorita: /how.interval (sekund) → startdate/starttime vs enddate/endtime → výchozí 60 min
+    interval_min: float | None = None
+
+    how_interval = meta.get("how_interval")        # sekundy
+    if how_interval is not None:
+        interval_min = float(how_interval) / 60.0
+        print(f"  MERGE interval : {interval_min:.0f} min  (z /how.interval={how_interval} s)")
+
+    if interval_min is None:
+        how_accnum   = meta.get("how_accnum")       # počet snímků v akumulaci
+        how_ts_step  = meta.get("how_startepochs")  # záložní
+        # Zkus startdate/starttime z /what
+        start_s = meta.get("start_utc")
+        end_s   = meta.get("utc_time")
+        if start_s and end_s:
+            t_start = datetime.fromisoformat(start_s)
+            t_end   = datetime.fromisoformat(end_s)
+            interval_min = (t_end - t_start).total_seconds() / 60.0
+            print(f"  MERGE interval : {interval_min:.0f} min  "
+                  f"(z starttime={start_s} → endtime={end_s})")
+
+    if interval_min is None or interval_min <= 0:
+        interval_min = 60.0
+        print(f"  MERGE interval : {interval_min:.0f} min  (výchozí — atributy nenalezeny)")
+
+    # ── ACRR [mm / interval] → mm/h ───────────────────────────────────────────
+    # Extrapolace pracuje v mm/h (okamžitá intenzita), proto přepočítáme.
+    if qty == "ACRR":
+        rate_field = field * (60.0 / interval_min)
+        print(f"  ACRR→mm/h      : ×{60.0/interval_min:.2f}  "
+              f"(ACRR za {interval_min:.0f} min → okamžitá intenzita mm/h)")
+    else:
+        # RATE nebo jiný quantity — předpokládáme mm/h
+        rate_field = field
+        print(f"  Pole použito přímo jako mm/h  (quantity={qty})")
+
+    valid = rate_field[~np.isnan(rate_field)]
     if valid.size:
-        print(f"  MERGE hodnoty  : min={valid.min():.3f}, max={valid.max():.1f}, "
-              f"mean={valid.mean():.3f} [{unit}]")
+        print(f"  Rain rate      : min={valid.min():.3f}, max={valid.max():.1f}, "
+              f"mean={valid.mean():.3f} mm/h")
 
-    return field.astype(np.float32), f"merge:{best_path.name} qty={qty}"
+    return rate_field.astype(np.float32), f"merge:{best_path.name} qty={qty} intv={interval_min:.0f}min"
 
 
 # ── 5. Pohybové pole + extrapolace ─────────────────────────────────────────────
