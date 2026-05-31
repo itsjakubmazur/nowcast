@@ -164,7 +164,7 @@ def fetch_open_meteo(lat: float, lon: float) -> dict:
         "longitude": lon,
         "minutely_15": ",".join([
             "precipitation", "rain", "snowfall",
-            "windspeed_10m", "winddirection_10m",
+            "windspeed_10m", "windgusts_10m", "winddirection_10m",
             "cape",
         ]),
         "hourly": ",".join([

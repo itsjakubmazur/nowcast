@@ -75,9 +75,11 @@ def build_prompt(forecast: dict) -> str:
     for t_str, v in rain_nwp[:8]:  # max 8 bodů aby prompt nebyl obří
         nwp_summary.append({"time_local": to_prague_time(t_str), "precip_mm_per_15min": v})
 
-    # Vítr z NWP
-    wind_vals = [(p["wind_ms"], p["wind_dir"]) for p in nwp_points if p.get("wind_ms")]
-    peak_wind = max((w for w, _ in wind_vals), default=None)
+    # Vítr z NWP — průměr i nárazy
+    wind_vals  = [p["wind_ms"]       for p in nwp_points if p.get("wind_ms")]
+    gusts_vals = [p.get("wind_gusts_ms") for p in nwp_points if p.get("wind_gusts_ms")]
+    peak_wind  = max(wind_vals,  default=None)
+    peak_gusts = max(gusts_vals, default=None)
 
     # CAPE (konvekce)
     cape_vals = [p["cape"] for p in nwp_points if p.get("cape")]
@@ -105,9 +107,10 @@ def build_prompt(forecast: dict) -> str:
             "odhad_uhrnu_mm":       total_nc,
         },
         "nwp_2h_plus": {
-            "zdroj":         "Open-Meteo ICON-D2",
+            "zdroj":              "Open-Meteo ICON-D2",
             "hodiny_se_srazkami": nwp_summary,
-            "peak_vitr_ms":       round(peak_wind, 1) if peak_wind else None,
+            "peak_vitr_prumer_ms": round(peak_wind,  1) if peak_wind  else None,
+            "peak_narazy_ms":      round(peak_gusts, 1) if peak_gusts else None,
             "max_cape":           round(max_cape, 0) if max_cape else None,
         },
         "vystrahy_CHMU": warnings_fmt,
