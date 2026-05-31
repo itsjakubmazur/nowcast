@@ -107,8 +107,15 @@ def read_odim_dbz(path: Path) -> tuple[np.ndarray, dict]:
                     offset   = float(what_ds.attrs.get("offset",   -32.0))
                     nodata   = float(what_ds.attrs.get("nodata",   255.0))
                     undetect = float(what_ds.attrs.get("undetect", 0.0))
-                    meta.update({"gain": gain, "offset": offset,
-                                 "nodata": nodata, "undetect": undetect})
+                    # quantity a unit: klíčové pro rozlišení dBZ (MAX_Z) vs mm/h (MERGE)
+                    qty = what_ds.attrs.get("quantity", b"")
+                    unit = what_ds.attrs.get("unit", b"")
+                    meta.update({
+                        "gain": gain, "offset": offset,
+                        "nodata": nodata, "undetect": undetect,
+                        "quantity": qty.decode() if isinstance(qty, bytes) else str(qty),
+                        "unit":     unit.decode() if isinstance(unit, bytes) else str(unit),
+                    })
 
                     mask = (raw == nodata) | (raw == undetect)
                     raw = raw * gain + offset

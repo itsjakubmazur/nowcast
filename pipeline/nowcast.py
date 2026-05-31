@@ -17,7 +17,6 @@ import numpy as np
 from pyproj import Transformer
 
 from pysteps import motion, nowcasts
-from pysteps.utils import transformation
 
 sys.path.insert(0, str(Path(__file__).parent))
 from ingest import DATA_DIR, DEFAULT_LAT, DEFAULT_LON, read_odim_dbz
@@ -70,27 +69,20 @@ def load_sequence(files: list[Path]) -> tuple[np.ndarray, list[datetime]]:
     return np.stack(arrays, axis=0), times
 
 
-# ── 3. dBZ → rain rate (Marshall–Palmer) ──────────────────────────────────────
+# ── 3. dBZ → rain rate (Marshall–Palmer, přímý numpy výpočet) ─────────────────
 
 def dbz_to_rainrate(dbz: np.ndarray) -> np.ndarray:
     """
     Převede (N, r, c) nebo (r, c) dBZ pole na mm/h. NaN → NaN.
-    Marshall–Palmer: Z = 200 * R^1.6
+    Marshall–Palmer: Z = 200 * R^1.6  →  R = (Z / 200)^(1/1.6)
+    kde Z = 10^(dBZ/10).
+    Pod 0.1 mm/h zaokrouhlí na 0 (šum).
     """
-    scalar = dbz.ndim == 2
-    if scalar:
-        dbz = dbz[np.newaxis]
-
-    rr = np.full_like(dbz, np.nan)
-    for i, frame in enumerate(dbz):
-        mask = np.isnan(frame)
-        tmp = frame.copy()
-        tmp[mask] = -32.0   # pod prahem detekce → 0 mm/h
-        rr_frame, _ = transformation.dBZ_to_rainrate(tmp, zr_a=200.0, zr_b=1.6)
-        rr_frame[mask] = np.nan
-        rr[i] = rr_frame
-
-    return rr[0] if scalar else rr
+    with np.errstate(invalid="ignore"):
+        Z  = np.where(np.isnan(dbz), np.nan, 10.0 ** (dbz / 10.0))
+        rr = np.where(np.isnan(Z),   np.nan, (Z / 200.0) ** (1.0 / 1.6))
+    rr = np.where(~np.isnan(rr) & (rr < 0.1), 0.0, rr)
+    return rr.astype(np.float32)
 
 
 # ── 4. Výběr startovního pole (MERGE zarovnaný na MAX_Z čas) ──────────────────
@@ -101,7 +93,9 @@ def pick_merge_start_field(
 ) -> tuple[np.ndarray | None, str]:
     """
     Najde MERGE snímek s největším timestampem ≤ t0_maxz a stáří ≤ MAX_MERGE_AGE_MIN.
-    Vrátí (rain_rate_field nebo None, popis zdroje).
+    MERGE je hodinový QPE — pole je přímo v fyzikálních jednotkách (mm/h nebo mm),
+    gain/offset jsou aplikovány v read_odim_dbz, Z→R se NEPROVÁDÍ.
+    Vrátí (field nebo None, popis zdroje).
     """
     if not merge_paths:
         return None, "žádné MERGE soubory"
@@ -118,13 +112,24 @@ def pick_merge_start_field(
             print(f"  MERGE {p.name}: chyba při čtení — {e}")
 
     if best_path is None or best_age > MAX_MERGE_AGE_MIN:
-        return None, f"nejlepší MERGE stáří {best_age:.0f} min > limit {MAX_MERGE_AGE_MIN} min"
+        age_str = f"{best_age:.0f}" if best_age != float("inf") else "∞"
+        return None, f"nejlepší MERGE stáří {age_str} min > limit {MAX_MERGE_AGE_MIN} min"
 
-    dbz, _ = read_odim_dbz(best_path)
-    rr = dbz_to_rainrate(dbz)
-    print(f"  MERGE startovní pole: {best_path.name}  "
-          f"(UTC {best_time.isoformat()}, stáří {best_age:.0f} min)")
-    return rr, f"merge:{best_path.name}"
+    # Přečti fyzikální pole — pro MERGE je to mm/h nebo mm (nikoliv dBZ!)
+    field, meta = read_odim_dbz(best_path)
+    qty  = meta.get("quantity", "?")
+    unit = meta.get("unit",     "?")
+    print(f"  MERGE soubor   : {best_path.name}")
+    print(f"  MERGE UTC čas  : {best_time.isoformat()}  (stáří {best_age:.0f} min vůči MAX_Z t0)")
+    print(f"  MERGE quantity : {qty}   unit: {unit}")
+    print(f"  → pole použito PŘÍMO jako rain rate (bez Z→R přepočtu)")
+
+    valid = field[~np.isnan(field)]
+    if valid.size:
+        print(f"  MERGE hodnoty  : min={valid.min():.3f}, max={valid.max():.1f}, "
+              f"mean={valid.mean():.3f} [{unit}]")
+
+    return field.astype(np.float32), f"merge:{best_path.name} qty={qty}"
 
 
 # ── 5. Pohybové pole + extrapolace ─────────────────────────────────────────────
