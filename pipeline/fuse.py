@@ -80,13 +80,14 @@ def _extract_alerts_from_xml(root: ET.Element) -> list[ET.Element]:
     return root.findall(f".//{{{NS}}}alert") or root.findall(".//alert")
 
 
-def parse_cap_file(xml_text: str, now_utc: datetime) -> list[dict]:
+def parse_cap_file(xml_bytes: bytes, now_utc: datetime) -> list[dict]:
     """
-    Parsuje CAP XML (jeden soubor nebo Atom feed s více alerty).
+    Parsuje CAP XML (bytes — čte deklaraci kódování, správně zpracuje UTF-8).
+    Deduplikuje přes CAP <identifier>.
     Vrátí seznam výstrah — každá je jeden <info> blok (jedna oblast, jeden jev).
     """
     try:
-        root = ET.fromstring(xml_text)
+        root = ET.fromstring(xml_bytes)
     except ET.ParseError as e:
         print(f"    parse chyba: {e}")
         return []
@@ -94,6 +95,7 @@ def parse_cap_file(xml_text: str, now_utc: datetime) -> list[dict]:
     NS = CAP_NS_URI
     alerts = _extract_alerts_from_xml(root)
 
+    seen_ids: set[str] = set()
     results = []
     for alert in alerts:
         # Přeskoč testovací alerty
@@ -101,8 +103,14 @@ def parse_cap_file(xml_text: str, now_utc: datetime) -> list[dict]:
         if status and status.lower() != "actual":
             continue
 
+        # Deduplikace: <identifier> je unikátní pro každý alert
+        identifier = _cap(alert, "identifier")
+        if identifier and identifier in seen_ids:
+            continue
+        if identifier:
+            seen_ids.add(identifier)
+
         infos = alert.findall(f"{{{NS}}}info") or alert.findall("info")
-        # Preferuj českou jazykovou verzi
         cs_infos = [i for i in infos if "cs" in _cap(i, "language").lower()]
         work_infos = cs_infos if cs_infos else infos
 
@@ -118,15 +126,12 @@ def parse_cap_file(xml_text: str, now_utc: datetime) -> list[dict]:
             headline = _cap(info, "headline")
             desc     = _cap(info, "description")
 
-            # Barva ze standardního parametru awareness_level: "2; orange; Moderate"
-            # nebo fallback ze severity
             color = {"Extreme": "red", "Severe": "orange",
                      "Moderate": "yellow", "Minor": "green"}.get(severity, "unknown")
             for param in info.findall(f"{{{NS}}}parameter") or info.findall("parameter"):
                 pname = _cap(param, "valueName").lower()
                 pval  = _cap(param, "value")
                 if pname == "awareness_level":
-                    # formát: "2; orange; Moderate"
                     parts = [p.strip() for p in pval.split(";")]
                     if len(parts) >= 2:
                         color = parts[1].lower()
@@ -134,7 +139,6 @@ def parse_cap_file(xml_text: str, now_utc: datetime) -> list[dict]:
                 if "color" in pname or "stupen" in pname or "barva" in pname:
                     color = pval.lower() or color
 
-            # Oblast: CISORP kódy + popis
             areas_desc, cisorp_codes = [], set()
             for area in info.findall(f"{{{NS}}}area") or info.findall("area"):
                 aname = _cap(area, "areaDesc")
@@ -146,7 +150,14 @@ def parse_cap_file(xml_text: str, now_utc: datetime) -> list[dict]:
                     if vname.upper() == "CISORP":
                         cisorp_codes.add(vval)
 
+            # Deduplikace info: jev+onset+firstArea jako fallback key
+            dedup_key = f"{event}|{onset.isoformat()}|{areas_desc[0] if areas_desc else ''}"
+            if dedup_key in seen_ids:
+                continue
+            seen_ids.add(dedup_key)
+
             results.append({
+                "identifier":   identifier,
                 "event":        event,
                 "headline":     headline,
                 "severity":     severity,
@@ -189,7 +200,8 @@ def fetch_cap_warnings(lat: float, lon: float,
                         r = requests.get(furl, timeout=(5, 10))
                         print(f"    HTTP {r.status_code}")
                         r.raise_for_status()
-                        all_warnings.extend(parse_cap_file(r.text, now_utc))
+                        # .content (bytes) → XML parser čte encoding z deklarace
+                        all_warnings.extend(parse_cap_file(r.content, now_utc))
                     except Exception as fe:
                         print(f"    Varování: {furl.split('/')[-1]}: {fe}")
             else:
@@ -198,7 +210,7 @@ def fetch_cap_warnings(lat: float, lon: float,
                 r = requests.get(source_url, timeout=(5, 10))
                 print(f"  CAP [{source_name}]: HTTP {r.status_code}")
                 r.raise_for_status()
-                all_warnings.extend(parse_cap_file(r.text, now_utc))
+                all_warnings.extend(parse_cap_file(r.content, now_utc))
 
             if all_warnings:
                 break   # máme výstrahy, nepotřebujeme další zdroj
@@ -262,6 +274,22 @@ def fuse(nowcast_path: Path, om_path: Path, lat: float, lon: float) -> dict:
             "cape":        None,
         })
 
+    # ── CAPE z hourly (primární — dostupné vždy) ──────────────────────────────
+    # minutely_15 cape může být None u ICON-D2; hourly cape je spolehlivější.
+    # Vytvoříme lookup UTC_hour → cape pro interpolaci do 15min bodů.
+    hourly     = om.get("hourly", {})
+    h_times    = hourly.get("time", [])
+    h_cape     = hourly.get("cape", [])
+    h_precip   = hourly.get("precipitation", [])
+    print("\n  CAPE + srážky po hodinách (z hourly NWP):")
+    cape_by_hour: dict[str, float] = {}
+    for ht, hc, hp in zip(h_times, h_cape, h_precip):
+        ht_z = ht if "+" in ht or ht.endswith("Z") else ht + "+00:00"
+        cape_by_hour[ht_z] = float(hc) if hc is not None else 0.0
+        hc_s = f"{hc:5.0f} J/kg" if hc is not None else "  N/A     "
+        hp_s = f"{hp:.2f} mm/h" if hp is not None else "N/A    "
+        print(f"    {ht}  CAPE={hc_s}  precip={hp_s}")
+
     # ── Open-Meteo minutely_15 pro NWP část ───────────────────────────────────
     m15 = om.get("minutely_15", {})
     times_m15  = m15.get("time", [])
@@ -289,15 +317,23 @@ def fuse(nowcast_path: Path, om_path: Path, lat: float, lon: float) -> dict:
         def _ms(kmh):
             return round(float(kmh) / 3.6, 1) if kmh is not None else None
 
+        # CAPE: minutely_15 preferovaný, fallback na hourly pro stejnou hodinu
+        cape_val = cape_m15[i] if (cape_m15 and i < len(cape_m15) and
+                                    cape_m15[i] is not None) else None
+        if cape_val is None:
+            # zaokrouhli čas na celou hodinu UTC → lookup v hourly
+            t_hour = t.replace(minute=0, second=0, microsecond=0).isoformat()
+            cape_val = cape_by_hour.get(t_hour)
+
         timeseries.append({
             "time_utc":        t.isoformat(),
             "source":          "nwp",
             "confidence":      "medium",
             "precip_mm_h":     round(float(precip_m15[i]), 3) if precip_m15[i] is not None else None,
-            "wind_ms":         _ms(wind_m15[i]),    # průměrný vítr
-            "wind_gusts_ms":   _ms(gusts_m15[i]),   # nárazy — klíčové pro bouřky
+            "wind_ms":         _ms(wind_m15[i]),
+            "wind_gusts_ms":   _ms(gusts_m15[i]),
             "wind_dir":        wdir_m15[i] if i < len(wdir_m15) else None,
-            "cape":            cape_m15[i] if i < len(cape_m15) else None,
+            "cape":            float(cape_val) if cape_val is not None else None,
         })
         nwp_added += 1
 
