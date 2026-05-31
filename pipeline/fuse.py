@@ -239,8 +239,22 @@ def fetch_cap_warnings(lat: float, lon: float,
         if bool(set(w["cisorp_codes"]) & prague_cisorp)
         or any("praha" in a.lower() for a in w["areas"])
     ]
-    print(f"  CAP: {len(prague_warnings)} výstrah platných pro Prahu (CISORP {prague_cisorp})")
-    return prague_warnings
+    print(f"  CAP: {len(prague_warnings)} výstrah pro Prahu (CISORP {prague_cisorp})")
+
+    # ── Filtr: jen reálné výstrahy (zahoď green/Minor placeholdery) ────────────
+    # "Žádná výstraha před…" / "Žádný výhled" jsou stupně Minor (barva green).
+    ACTIVE_SEVERITY = {"Moderate", "Severe", "Extreme"}
+    active = [
+        w for w in prague_warnings
+        if w["severity"] in ACTIVE_SEVERITY and w["color"].lower() != "green"
+    ]
+    dropped = len(prague_warnings) - len(active)
+    print(f"  CAP: {len(active)} aktivních výstrah pro Prahu "
+          f"(odfiltrováno {dropped} placeholderů green/Minor)")
+    for w in active:
+        print(f"    → [{w['color'].upper():7s}] {w['event']} "
+              f"(do {w['expires_utc']})")
+    return active
 
 
 # ── Fúze nowcast + Open-Meteo ──────────────────────────────────────────────────
