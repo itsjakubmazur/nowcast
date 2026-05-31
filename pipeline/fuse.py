@@ -47,11 +47,19 @@ def _parse_dt(s: str, fallback: datetime) -> datetime:
 
 
 def fetch_cap_file_list() -> list[str]:
-    """Vrátí seřazený seznam URL všech alert_cap_*.xml souborů z directory listingu."""
-    resp = requests.get(CAP_DIR_URL, timeout=15)
+    """
+    Vrátí seřazený seznam URL posledních alert_cap_*.xml souborů.
+    Bere jen posledních N souborů — aktivní výstrahy jsou vždy v nejnovějších.
+    """
+    url = CAP_DIR_URL
+    print(f"  CAP listing: GET {url}")
+    resp = requests.get(url, timeout=(5, 10))   # (connect, read)
+    print(f"  CAP listing: HTTP {resp.status_code}")
     resp.raise_for_status()
     names = re.findall(r'href="(alert_cap[^"]+\.xml)"', resp.text)
-    return [CAP_DIR_URL + n for n in sorted(set(names))]
+    # Jen posledních 5 souborů — starší výstrahy jsou expirované
+    recent = sorted(set(names))[-5:]
+    return [CAP_DIR_URL + n for n in recent]
 
 
 def _extract_alerts_from_xml(root: ET.Element) -> list[ET.Element]:
@@ -156,40 +164,51 @@ def parse_cap_file(xml_text: str, now_utc: datetime) -> list[dict]:
 def fetch_cap_warnings(lat: float, lon: float,
                        prague_cisorp: set[str] = CISORP_PRAGUE) -> list[dict]:
     """
-    Stáhne všechny platné CAP výstrahy z ČHMÚ opendata.
-    Nejprve loguje VŠE (bez filtru), pak vrátí jen výstrahy platné pro Prahu (CISORP 1100).
+    Stáhne platné CAP výstrahy z ČHMÚ. Nikdy nevyhodí výjimku ani nezamrzne —
+    při jakémkoliv selhání vrátí prázdný seznam a zaloguje varování.
     """
     now_utc = datetime.now(timezone.utc)
-
     all_warnings: list[dict] = []
 
-    # ── Primární: directory listing alert_cap_*.xml ────────────────────────────
-    used_atom = False
-    try:
-        cap_files = fetch_cap_file_list()
-        print(f"  CAP: nalezeno {len(cap_files)} souborů v adresáři {CAP_DIR_URL}")
-        for url in cap_files:
-            try:
-                r = requests.get(url, timeout=15)
-                r.raise_for_status()
-                parsed = parse_cap_file(r.text, now_utc)
-                all_warnings.extend(parsed)
-            except Exception as e:
-                print(f"    {url.split('/')[-1]}: {e}")
-    except Exception as e:
-        print(f"  CAP: directory listing selhal ({e}) → zkouším Atom feed fallback")
-        used_atom = True
+    # Zdroje v pořadí priority — bereme první, který vrátí data
+    sources = [
+        ("directory", CAP_DIR_URL),
+        ("atom",      CAP_ATOM_URL),
+        ("bulletin",  "https://www.chmi.cz/files/portal/docs/meteo/om/bulletiny/XOCZ50_OKPR.xml"),
+    ]
 
-    # ── Fallback: Atom feed vystrahy-cr.chmi.cz ───────────────────────────────
-    if used_atom or not all_warnings:
+    for source_name, source_url in sources:
         try:
-            r = requests.get(CAP_ATOM_URL, timeout=15)
-            r.raise_for_status()
-            print(f"  CAP: Atom feed stažen ({len(r.text)} B) z {CAP_ATOM_URL}")
-            parsed = parse_cap_file(r.text, now_utc)
-            all_warnings.extend(parsed)
+            if source_name == "directory":
+                # Directory listing → stáhni posledních 5 souborů
+                file_urls = fetch_cap_file_list()
+                print(f"  CAP [{source_name}]: {len(file_urls)} souborů")
+                for furl in file_urls:
+                    try:
+                        print(f"    GET {furl}")
+                        r = requests.get(furl, timeout=(5, 10))
+                        print(f"    HTTP {r.status_code}")
+                        r.raise_for_status()
+                        all_warnings.extend(parse_cap_file(r.text, now_utc))
+                    except Exception as fe:
+                        print(f"    Varování: {furl.split('/')[-1]}: {fe}")
+            else:
+                # Jednoduchý soubor / Atom feed
+                print(f"  CAP [{source_name}]: GET {source_url}")
+                r = requests.get(source_url, timeout=(5, 10))
+                print(f"  CAP [{source_name}]: HTTP {r.status_code}")
+                r.raise_for_status()
+                all_warnings.extend(parse_cap_file(r.text, now_utc))
+
+            if all_warnings:
+                break   # máme výstrahy, nepotřebujeme další zdroj
+
         except Exception as e:
-            print(f"  CAP: Atom feed selhal ({e}) — výstrahy nejsou dostupné")
+            print(f"  CAP [{source_name}]: Varování — nedostupné: {e}")
+            continue
+
+    if not all_warnings:
+        print("  CAP: Výstrahy nedostupné ze všech zdrojů — pokračuji s prázdným seznamem")
 
     # ── Log VŠECH aktivních výstrah (bez filtru) ───────────────────────────────
     print(f"  CAP: celkem {len(all_warnings)} aktivních výstrah (všechny kraje):")
@@ -321,7 +340,11 @@ def main():
     forecast = fuse(nowcast_path, om_path, lat, lon)
 
     print("\n=== CAP výstrahy (ČHMÚ SIVS) ===")
-    forecast["warnings"] = fetch_cap_warnings(lat, lon)
+    try:
+        forecast["warnings"] = fetch_cap_warnings(lat, lon)
+    except Exception as e:
+        print(f"  Varování: fetch_cap_warnings neočekávaně selhalo: {e}")
+        forecast["warnings"] = []
     for w in forecast["warnings"]:
         print(f"  [{w['color'].upper():7s}] {w['event']} — platí do {w['expires_utc']}")
 
