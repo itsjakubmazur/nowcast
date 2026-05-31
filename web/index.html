@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Meteo Nowcast CZ</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: system-ui, sans-serif;
+      background: #0d1117;
+      color: #e6edf3;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      text-align: center;
+    }
+    h1 { font-size: 2rem; margin-bottom: 0.5rem; }
+    .subtitle { color: #8b949e; margin-bottom: 2rem; }
+    .badge {
+      background: #21262d;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 1rem 2rem;
+      font-size: 0.9rem;
+      color: #8b949e;
+    }
+    footer {
+      position: fixed;
+      bottom: 1rem;
+      font-size: 0.75rem;
+      color: #484f58;
+    }
+  </style>
+</head>
+<body>
+  <h1>🌧️ Meteo Nowcast CZ</h1>
+  <p class="subtitle">Krátkodobá předpověď počasí pro ČR</p>
+  <div class="badge">
+    Fáze 0 — Skeleton nasazen.<br />
+    Pipeline se teprve staví — brzy přibydou data.
+  </div>
+  <footer>Data: ČHMÚ (CC BY) · Open-Meteo (CC BY)</footer>
+</body>
+</html>

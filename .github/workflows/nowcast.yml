@@ -1,0 +1,42 @@
+name: Nowcast pipeline
+
+on:
+  schedule:
+    # Každých ~10 minut (GitHub free tier může mít zpoždění)
+    - cron: '*/10 * * * *'
+  workflow_dispatch:  # ruční spuštění pro testování
+
+jobs:
+  run-pipeline:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Hello (placeholder)
+        run: echo "Nowcast pipeline — Fáze 0 skeleton OK"
+
+  deploy-pages:
+    needs: run-pipeline
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: web/
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
