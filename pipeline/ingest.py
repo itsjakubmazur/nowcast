@@ -1,6 +1,7 @@
 """
 Fáze 1 — Ingest
-- Stáhne posledních N radarových kompozitů MAX_Z (pohyb) + CAPPI/MERGE (srážky) z ČHMÚ opendata
+- Stáhne posledních N radarových kompozitů MAX_Z (pohyb) z ČHMÚ opendata
+- Stáhne MERGE (hodinový QPE radar+srážkoměry) pro odhad úhrnů
 - Stáhne aktuální předpověď z Open-Meteo pro zadanou lokaci (vše v UTC)
 - Uloží data do data/ a vypíše shape gridu
 """
@@ -19,14 +20,14 @@ import requests
 # ── Konfigurace ────────────────────────────────────────────────────────────────
 # MAX_Z: maximum odrazivosti ve sloupci — pro odhad pohybu (advekci)
 RADAR_MAXZ_BASE  = "https://opendata.chmi.cz/meteorology/weather/radar/composite/maxz/hdf5/"
-# CAPPI 2 km: řez ve výšce ~2 km — blíže srážkám u země, pro Z→R přepočet
-RADAR_CAPPI_BASE = "https://opendata.chmi.cz/meteorology/weather/radar/composite/cappi/hdf5/"
-# MERGE: hodinový QPE (radar + srážkoměry) — nejpřesnější úhrn, ale nižší časové rozlišení
+# MERGE: hodinový QPE (radar + srážkoměry) — nejpřesnější úhrn u země
+# Publikuje se se zpožděním ~20–30 min, proto UTC timestampy se musí zarovnávat.
 RADAR_MERGE_BASE = "https://opendata.chmi.cz/meteorology/weather/radar/composite/merge1h/hdf5/"
 
 OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
 DATA_DIR = Path(__file__).parent.parent / "data"
-N_FRAMES = 6  # počet snímků pro odhad pohybu
+N_FRAMES = 6   # počet MAX_Z snímků pro odhad pohybu
+N_MERGE  = 3   # MERGE je hodinový → stačí poslední 3 (= 3 h)
 
 # Defaultní lokace: Praha
 DEFAULT_LAT = 50.08
@@ -38,7 +39,6 @@ def fetch_radar_file_list(base_url: str) -> list[str]:
     """Parsuje directory listing a vrátí seřazené názvy .hdf souborů."""
     resp = requests.get(base_url, timeout=30)
     resp.raise_for_status()
-    # ČHMÚ vrací Apache/nginx directory listing s href="..." odkazy
     files = re.findall(r'href="(T_[^"]+\.hdf)"', resp.text)
     if not files:
         files = re.findall(r'"([^"]+\.hdf)"', resp.text)
@@ -82,7 +82,6 @@ def read_odim_dbz(path: Path) -> tuple[np.ndarray, dict]:
             date_s = what_root.attrs.get("date", b"").decode()
             time_s = what_root.attrs.get("time", b"").decode()
             if date_s and time_s:
-                # ODIM datum/čas je vždy UTC
                 dt = datetime.strptime(date_s + time_s[:6], "%Y%m%d%H%M%S")
                 meta["utc_time"] = dt.replace(tzinfo=timezone.utc).isoformat()
 
@@ -102,7 +101,6 @@ def read_odim_dbz(path: Path) -> tuple[np.ndarray, dict]:
                 meta["shape"] = tuple(raw.shape)
                 meta["dtype_raw"] = str(data_node.dtype)
 
-                # gain/offset/nodata/undetect z ODIM /dataset1/data1/what
                 what_ds = ds[d_name].get("what")
                 if what_ds is not None and hasattr(what_ds, "attrs"):
                     gain     = float(what_ds.attrs.get("gain",     0.5))
@@ -112,10 +110,8 @@ def read_odim_dbz(path: Path) -> tuple[np.ndarray, dict]:
                     meta.update({"gain": gain, "offset": offset,
                                  "nodata": nodata, "undetect": undetect})
 
-                    # Maska: nodata = chybí data (mimo dosah / chyba),
-                    #        undetect = pod prahem detekce — obojí → NaN
                     mask = (raw == nodata) | (raw == undetect)
-                    raw = raw * gain + offset   # raw uint → dBZ
+                    raw = raw * gain + offset
                     raw[mask] = np.nan
 
                 break
@@ -158,38 +154,37 @@ def fetch_open_meteo(lat: float, lon: float) -> dict:
             "precipitation_sum", "precipitation_hours",
             "windspeed_10m_max", "windgusts_10m_max",
         ]),
-        "timezone": "UTC",          # vše interně v UTC
+        "timezone": "UTC",
         "forecast_days": 1,
-        "models": "icon_d2",        # DWD ICON-D2: nejlepší rozlišení pro ČR
+        "models": "icon_d2",
     }
     resp = requests.get(OPEN_METEO_URL, params=params, timeout=30)
     resp.raise_for_status()
     return resp.json()
 
 
-def try_fetch_cappi_or_merge(radar_dir: Path, n: int) -> dict[str, list[Path]]:
+def fetch_merge(radar_dir: Path, n: int) -> list[Path]:
     """
-    Pokusí se stáhnout CAPPI nebo MERGE snímky pro přesnější Z→R.
-    Vrátí dict s klíči 'cappi' nebo 'merge' (whichever succeeded), nebo prázdný dict.
+    Stáhne posledních n MERGE (hodinový QPE) souborů.
+    MERGE se publikuje se zpožděním ~20–30 min oproti MAX_Z.
+    Vrátí seznam stažených Path nebo prázdný seznam při chybě.
     """
-    result: dict[str, list[Path]] = {}
-    for product, base_url in [("cappi", RADAR_CAPPI_BASE), ("merge", RADAR_MERGE_BASE)]:
-        try:
-            files = fetch_radar_file_list(base_url)
-            if not files:
-                continue
-            latest = files[-n:]
-            downloaded = []
-            dest_dir = radar_dir / product
-            for fname in latest:
-                dest = download_file(base_url + fname, dest_dir / fname)
-                downloaded.append(dest)
-            result[product] = downloaded
-            print(f"  [{product.upper()}] staženo {len(downloaded)} snímků")
-            break  # preferujeme CAPPI; pokud se povede, MERGE nepotřebujeme
-        except Exception as e:
-            print(f"  [{product.upper()}] nedostupné: {e}")
-    return result
+    try:
+        files = fetch_radar_file_list(RADAR_MERGE_BASE)
+        if not files:
+            print("  [MERGE] Directory listing prázdný.")
+            return []
+        latest = files[-n:]
+        dest_dir = radar_dir / "merge"
+        downloaded = [
+            download_file(RADAR_MERGE_BASE + f, dest_dir / f)
+            for f in latest
+        ]
+        print(f"  [MERGE] staženo {len(downloaded)} snímků")
+        return downloaded
+    except Exception as e:
+        print(f"  [MERGE] nedostupné: {e}")
+        return []
 
 
 # ── Hlavní tok ─────────────────────────────────────────────────────────────────
@@ -216,43 +211,46 @@ def main():
         for f in latest_maxz
     ]
 
-    # Inspect + načtení s maskováním
     print("\n--- Metadata MAX_Z (nejnovější snímek) ---")
     meta_new = inspect_hdf5(downloaded_maxz[-1])
     for k, v in meta_new.items():
         print(f"  {k}: {v}")
 
-    # Ověření maskování na nejnovějším snímku
     dbz, _ = read_odim_dbz(downloaded_maxz[-1])
     nan_pct = 100.0 * np.isnan(dbz).sum() / dbz.size
-    print(f"\n  dBZ pole: shape={dbz.shape}, NaN={nan_pct:.1f}% (nodata+undetect zamaskováno)")
+    print(f"\n  dBZ pole: shape={dbz.shape}, NaN={nan_pct:.1f}%")
     valid = dbz[~np.isnan(dbz)]
     if valid.size:
         print(f"  dBZ rozsah (platné px): min={valid.min():.1f}, max={valid.max():.1f}, "
               f"mean={valid.mean():.1f}")
 
-    # ── 1b. CAPPI/MERGE (srážky u země) ───────────────────────────────────────
-    print(f"\n=== Radar CAPPI/MERGE ingest (pro Z→R přepočet) ===")
-    precip_files = try_fetch_cappi_or_merge(radar_dir, N_FRAMES)
-    precip_product = list(precip_files.keys())[0] if precip_files else None
-    if not precip_product:
-        print("  Varování: CAPPI ani MERGE nedostupné — Z→R bude z MAX_Z (nadhodnocení srážek)")
+    # ── 1b. MERGE (srážky u země, QPE) ────────────────────────────────────────
+    print(f"\n=== Radar MERGE ingest (QPE pro odhad úhrnů) ===")
+    downloaded_merge = fetch_merge(radar_dir, N_MERGE)
+    if downloaded_merge:
+        # Zaloguj UTC časy MERGE snímků — pro kontrolu zpoždění vůči MAX_Z
+        for p in downloaded_merge:
+            m = inspect_hdf5(p)
+            print(f"  MERGE utc_time: {m.get('utc_time', 'N/A')}  ({p.name})")
+        print(f"  Nejnovější MAX_Z : {meta_new.get('utc_time', 'N/A')}")
+    else:
+        print("  Varování: MERGE nedostupný — úhrny budou z MAX_Z (nadhodnocení možné)")
 
     # ── Ulož metadata ──────────────────────────────────────────────────────────
     meta_path = DATA_DIR / "radar_meta.json"
     with open(meta_path, "w") as f:
         json.dump({
-            "maxz_files":    [p.name for p in downloaded_maxz],
-            "precip_product": precip_product,
-            "precip_files":  [p.name for p in precip_files.get(precip_product, [])],
-            "maxz_base_url": RADAR_MAXZ_BASE,
-            "meta_latest":   {k: str(v) for k, v in meta_new.items()},
+            "maxz_files":      [p.name for p in downloaded_maxz],
+            "merge_files":     [p.name for p in downloaded_merge],
+            "maxz_base_url":   RADAR_MAXZ_BASE,
+            "merge_base_url":  RADAR_MERGE_BASE,
+            "meta_latest":     {k: str(v) for k, v in meta_new.items()},
             "ingested_at_utc": datetime.now(timezone.utc).isoformat(),
         }, f, indent=2)
     print(f"\nMetadata uložena → {meta_path}")
 
     # ── 2. Open-Meteo (UTC) ────────────────────────────────────────────────────
-    print(f"\n=== Open-Meteo ingest (lat={lat}, lon={lon}, timezone=UTC) ===")
+    print(f"\n=== Open-Meteo ingest (lat={lat}, lon={lon}, timezone=UTC, models=icon_d2) ===")
     om_data = fetch_open_meteo(lat, lon)
     om_path = DATA_DIR / "openmeteo.json"
     with open(om_path, "w") as f:
@@ -264,19 +262,13 @@ def main():
     print(f"  Hodinové záznamy: {len(hourly.get('time', []))}")
     print(f"  Timezone v datech: {om_data.get('timezone', 'N/A')}")
 
-    # Open-Meteo vrací skutečně použitý model v poli "model" (top-level)
-    # nebo v "minutely_15_model" / "hourly_model" pokud bylo vybráno více modelů.
-    # Logujeme vše, aby bylo vidět, zda API vrátilo ICON-D2 nebo tichý fallback.
-    model_top    = om_data.get("model", None)
-    model_m15    = om_data.get("minutely_15_model", None)
-    model_hourly = om_data.get("hourly_model", None)
-    print(f"  Model (top-level)   : {model_top or 'N/A'}")
-    print(f"  Model minutely_15   : {model_m15 or 'N/A'}")
-    print(f"  Model hourly        : {model_hourly or 'N/A'}")
-    if model_top is None and model_m15 is None:
-        print("  VAROVÁNÍ: žádné pole 'model' v odpovědi — může jít o tichý fallback na jiný model!")
+    # Logujeme všechny top-level klíče, aby bylo vidět, kde model sedí
+    top_keys = [k for k in om_data if not isinstance(om_data[k], dict)]
+    print(f"  Top-level skalární klíče v odpovědi: {top_keys}")
+    for k in top_keys:
+        if "model" in k.lower() or k in ("timezone", "latitude", "longitude", "elevation"):
+            print(f"    {k} = {om_data[k]}")
 
-    # Ukázka prvního timestampu — ověření UTC
     if m15.get("time"):
         print(f"  První 15min timestamp: {m15['time'][0]}")
     print(f"  Open-Meteo data uložena → {om_path}")
