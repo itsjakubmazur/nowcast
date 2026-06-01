@@ -161,6 +161,9 @@
     <span id="opacity-val" style="font-size:0.78rem;color:var(--muted);min-width:32px">70 %</span>
     <span id="radar-updated" style="margin-left:auto;font-size:0.75rem;color:var(--muted)"></span>
   </div>
+  <div class="radar-row">
+    <span id="radar-source" style="font-size:0.72rem;color:var(--muted);font-style:italic"></span>
+  </div>
 </div>
 
 <!-- Location search -->
@@ -491,6 +494,13 @@ window.addEventListener("DOMContentLoaded", async () => {
   const gen = new Date(MANIFEST.generated_at_utc);
   document.getElementById("radar-updated").textContent =
     "Radar: " + gen.toLocaleString("cs-CZ", { timeZone: "Europe/Prague" });
+
+  // Popisek zdroje — férově: vizuál je z odrazivosti, ne přesné QPE
+  const srcEl = document.getElementById("radar-source");
+  if (srcEl) {
+    srcEl.textContent = (MANIFEST.source_label || "Radarová odrazivost (orientační intenzita)")
+      + " · číselný odhad úhrnů je přesnější";
+  }
 
   // forecast_grid updated timestamp
   if (GRID.generated_at_utc) {
