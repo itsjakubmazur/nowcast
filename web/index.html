@@ -431,7 +431,6 @@ function drawRainSpark(ptId) {
   const canvas = document.getElementById("rain-spark");
   if (!MANIFEST || !GRID) { wrap.style.display = "none"; return; }
 
-  // Sestavíme pole mm/h pro každý snímek z nowcast dat
   const a = GRID.act[String(ptId)];
   const n = MANIFEST.frames.length;
   const t0idx = MANIFEST.t0_index;
