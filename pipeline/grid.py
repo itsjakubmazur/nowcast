@@ -266,6 +266,7 @@ def main():
 
     # Zmenši výstrahy pro JSON (polygon necháme, ale jen pro match — do výstupu dáme bez polygonů)
     wmatch = {}
+    per_warning_pts: dict[int, list] = {wi: [] for wi in range(len(warnings))}
     for idx, (row, col, lat, lon) in enumerate(grid):
         hit = []
         for wi, w in enumerate(warnings):
@@ -274,10 +275,24 @@ def main():
                 continue
             if any(point_in_polygon(lat, lon, poly) for poly in polys):
                 hit.append(wi)
+                per_warning_pts[wi].append((lat, lon))
         if hit:
             wmatch[str(idx)] = hit
     matched_pts = len(wmatch)
     print(f"  Bodů s navázanou výstrahou (polygon): {matched_pts}")
+
+    # Per-výstraha: kolik bodů + příklad souřadnic (pro kontrolu, až přijde reálná výstraha)
+    for wi, w in enumerate(warnings):
+        n_pts = len(per_warning_pts[wi])
+        has_poly = bool(w.get("polygons"))
+        if has_poly:
+            example = per_warning_pts[wi][0] if n_pts else None
+            ex_str = f"{example[0]:.3f},{example[1]:.3f}" if example else "—"
+            print(f"    [{w['color'].upper():7s}] {w['event'][:40]:40s} "
+                  f"→ {n_pts:4d} bodů mřížky  (příklad: {ex_str})")
+        else:
+            print(f"    [{w['color'].upper():7s}] {w['event'][:40]:40s} "
+                  f"→ bez polygonu = celostátní (global=True, zobrazí se všude)")
 
     # Výstrahy bez polygonu = celostátní → flag global=True (JS je zobrazí všude)
     warnings_out = []
