@@ -195,6 +195,25 @@
       writing-mode: vertical-rl; font-size: 0.6rem; color: var(--border);
       white-space: nowrap;
     }
+
+    /* ── Refresh bar ─────────────────────────────────────────────────────── */
+    .refresh-bar {
+      display: flex; align-items: center; gap: 0.75rem;
+      padding: 0.45rem 1rem; background: var(--panel);
+      border-bottom: 1px solid var(--border); font-size: 0.8rem;
+    }
+    #btn-refresh {
+      padding: 0.3rem 0.75rem; border-radius: 6px; cursor: pointer;
+      border: 1px solid var(--border); background: var(--bg);
+      color: var(--fg); font-size: 0.8rem; white-space: nowrap;
+    }
+    #btn-refresh:hover { background: #e8eaf0; }
+    #btn-refresh.spinning { opacity: .6; pointer-events: none; }
+    #refresh-time { color: var(--muted); }
+    #data-age-warn {
+      margin-left: auto; font-size: 0.75rem; color: #b45309;
+      display: none;
+    }
   </style>
 </head>
 <body>
@@ -203,6 +222,13 @@
   <h1>🌧️ Meteo Nowcast CZ</h1>
   <span class="subtitle">Krátkodobá předpověď · Radarová smyčka</span>
 </header>
+
+<!-- Refresh bar -->
+<div class="refresh-bar">
+  <button id="btn-refresh">↺ Aktualizovat</button>
+  <span id="refresh-time"></span>
+  <span id="data-age-warn">⚠ Data starší než obvykle</span>
+</div>
 
 <!-- Location search -->
 <div class="loc-panel">
@@ -250,6 +276,7 @@
     <label>Průhlednost radaru:</label>
     <input type="range" id="opacity-slider" min="0" max="100" value="70" />
     <span id="opacity-val" style="font-size:0.78rem;color:var(--muted);min-width:32px">70 %</span>
+    <span id="radar-t0" style="font-size:0.8rem;font-weight:600;color:var(--fg)"></span>
     <span id="radar-updated" style="margin-left:auto;font-size:0.75rem;color:var(--muted)"></span>
   </div>
   <div class="radar-row">
@@ -267,10 +294,14 @@ let currentFrame = 0, playing = false, playTimer = null;
 let radarOpacity = 0.70;
 
 let map, radarOverlay, locationMarker;
-let preloadedImgs = [];   // Image objekty pro cache prohlížeče
+let preloadedImgs = [];
 
-const PLAY_INTERVAL_MS  = 500;   // 2 snímky/s
-const END_PAUSE_MS      = 1800;  // pauza na konci před zacyklením
+// Aktuálně vybrané místo — pro refresh
+let _currentLat = null, _currentLon = null, _currentLabel = null;
+
+const PLAY_INTERVAL_MS  = 500;
+const END_PAUSE_MS      = 1800;
+const AUTO_REFRESH_MS   = 5 * 60 * 1000;   // 5 minut
 
 // ── Fetch dat ──────────────────────────────────────────────────────────────────
 async function loadData() {
@@ -285,9 +316,10 @@ async function loadData() {
 
 // ── Preload PNG do cache prohlížeče ───────────────────────────────────────────
 function preloadFrames() {
+  const v = `?v=${Date.now()}`;
   preloadedImgs = MANIFEST.frames.map(f => {
     const img = new Image();
-    img.src = `data/radar_frames/${f.file}`;
+    img.src = `data/radar_frames/${f.file}${v}`;
     return img;
   });
 }
@@ -647,7 +679,82 @@ async function showFc24(lat, lon, label) {
   }
 }
 
+// ── Manifest UI: radar timestamps + stáří dat ────────────────────────────────
+function applyManifestUI() {
+  const nf  = MANIFEST.frames.length;
+  const t0  = new Date(MANIFEST.t0_utc);
+  const gen = new Date(MANIFEST.generated_at_utc);
+  const ageMin = (Date.now() - t0.getTime()) / 60000;
+
+  // Čas posledního radaru (t0) — prominentně
+  document.getElementById("radar-t0").textContent =
+    "Radar " + t0.toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Prague" });
+
+  // Čas generování pipeline
+  document.getElementById("radar-updated").textContent =
+    "generováno " + gen.toLocaleString("cs-CZ", { timeZone: "Europe/Prague" });
+
+  // Varování stáří — starší než 35 min je podezřelé
+  const warnEl = document.getElementById("data-age-warn");
+  warnEl.style.display = ageMin > 35 ? "inline" : "none";
+
+  // Zdroj
+  const srcEl = document.getElementById("radar-source");
+  if (srcEl) {
+    srcEl.textContent = (MANIFEST.source_label || "Radarová odrazivost (dBZ) — orientační intenzita srážek")
+      + " · číselný odhad úhrnů je přesnější";
+  }
+
+  // Grid timestamp ve forecast card
+  if (GRID.generated_at_utc) {
+    document.getElementById("updated").textContent =
+      "Prognóza: " + new Date(GRID.generated_at_utc).toLocaleString("cs-CZ", { timeZone: "Europe/Prague" });
+  }
+
+  // Refresh time
+  document.getElementById("refresh-time").textContent =
+    "aktualizováno " + new Date().toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Prague" });
+
+  // Timeline
+  document.getElementById("timeline").max = nf - 1;
+  const t0pct = (MANIFEST.t0_index / (nf - 1)) * 100;
+  document.getElementById("t0-tick").style.left   = t0pct + "%";
+  document.getElementById("t0-marker").style.left = t0pct + "%";
+  showFrame(MANIFEST.t0_index);
+}
+
+// ── Refresh — obnoví manifest + grid + PNG + 24h předpověď ───────────────────
+async function refreshAll() {
+  const btn = document.getElementById("btn-refresh");
+  btn.classList.add("spinning");
+  btn.textContent = "↺ Načítám…";
+  try {
+    await loadData();
+    preloadFrames();
+    applyManifestUI();
+    // Pokud je vybrané místo, obnov verdikt + 24h
+    if (_currentLat !== null) {
+      // Verdikt z grid (synchronní)
+      const { id } = nearestPt(_currentLat, _currentLon);
+      const { text, chips } = templateVerdict(id);
+      document.getElementById("verdict").innerHTML =
+        (chips ? `<div style="margin-bottom:.4rem">${chips}</div>` : "") +
+        `<div class="verdict-text">${text}</div>`;
+      // 24h live fetch
+      showFc24(_currentLat, _currentLon, _currentLabel);
+    }
+  } catch (e) {
+    document.getElementById("refresh-time").textContent = "Chyba: " + e.message;
+  } finally {
+    btn.classList.remove("spinning");
+    btn.textContent = "↺ Aktualizovat";
+  }
+}
+
 function showForecast(lat, lon, label) {
+  // Ulož pro refresh
+  _currentLat = lat; _currentLon = lon; _currentLabel = label;
+
   const { id, dist } = nearestPt(lat, lon);
   const { text, chips } = templateVerdict(id);
   const pt = GRID.pts[id];
@@ -717,37 +824,8 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   preloadFrames();
   initMap();
-
-  // Radar controls
-  const nf = MANIFEST.frames.length;
-  document.getElementById("timeline").max = nf - 1;
   document.getElementById("radar-bar").style.display = "";
-
-  // Nastav t0 marker
-  const t0pct = (MANIFEST.t0_index / (nf - 1)) * 100;
-  document.getElementById("t0-tick").style.left   = t0pct + "%";
-  document.getElementById("t0-marker").style.left = t0pct + "%";
-
-  // Začni na t0
-  showFrame(MANIFEST.t0_index);
-
-  // Radar updated timestamp
-  const gen = new Date(MANIFEST.generated_at_utc);
-  document.getElementById("radar-updated").textContent =
-    "Radar: " + gen.toLocaleString("cs-CZ", { timeZone: "Europe/Prague" });
-
-  // Popisek zdroje — férově: vizuál je z odrazivosti, ne přesné QPE
-  const srcEl = document.getElementById("radar-source");
-  if (srcEl) {
-    srcEl.textContent = (MANIFEST.source_label || "Radarová odrazivost (dBZ) — orientační intenzita srážek")
-      + " · číselný odhad úhrnů je přesnější";
-  }
-
-  // forecast_grid updated timestamp
-  if (GRID.generated_at_utc) {
-    document.getElementById("updated").textContent =
-      "Prognóza: " + new Date(GRID.generated_at_utc).toLocaleString("cs-CZ", { timeZone: "Europe/Prague" });
-  }
+  applyManifestUI();
 
   // Slider events
   document.getElementById("timeline").addEventListener("input", e => {
@@ -787,6 +865,12 @@ window.addEventListener("DOMContentLoaded", async () => {
       () => alert("Polohu se nepodařilo zjistit.")
     );
   });
+
+  // Refresh button
+  document.getElementById("btn-refresh").addEventListener("click", refreshAll);
+
+  // Auto-refresh každých 5 minut (tiše na pozadí)
+  setInterval(refreshAll, AUTO_REFRESH_MS);
 
   // Obnov stav z URL
   const u = new URL(window.location);
