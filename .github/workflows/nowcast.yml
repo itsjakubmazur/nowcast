@@ -2,9 +2,14 @@ name: Nowcast pipeline
 
 on:
   schedule:
-    # Každých ~10 minut (GitHub free tier může mít zpoždění)
+    # GitHub free tier cron je nespolehlivý — primárně triggerujeme přes cron-job.org → workflow_dispatch
     - cron: '*/10 * * * *'
-  workflow_dispatch:  # ruční spuštění pro testování
+  workflow_dispatch:  # trigger z externího cronu (cron-job.org) nebo ruční spuštění
+
+# Zabrání hromadění běhů — nový run zruší čekající, ne běžící
+concurrency:
+  group: nowcast-pipeline
+  cancel-in-progress: false
 
 jobs:
   run-pipeline:
@@ -42,7 +47,7 @@ jobs:
           NOWCAST_LON: '14.42'
 
       - name: Run narrate (Fáze 3b)
-        run: python pipeline/narrate.py
+        run: python pipeline/narrate.py || echo "narrate.py selhalo (Gemini API?), pokračuji bez narace"
         env:
           NOWCAST_LAT: '50.08'
           NOWCAST_LON: '14.42'
