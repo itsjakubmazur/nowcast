@@ -371,22 +371,26 @@
 
 <!-- Radar controls -->
 <div class="radar-bar" id="radar-bar" style="display:none">
+  <!-- Řádek 1: tlačítka ovládání -->
   <div class="radar-row">
     <button class="ctrl" id="btn-prev" title="Předchozí snímek (←)">◀</button>
     <button class="ctrl" id="btn-play" title="Přehrát/Pozastavit (mezerník)">▶ Play</button>
     <button class="ctrl" id="btn-next" title="Další snímek (→)">▶</button>
-    <button class="ctrl lightning-btn" id="btn-lightning" title="Zobrazit blesky (RainViewer)">⚡ Blesky</button>
     <div class="speed-group" title="Rychlost animace">
       <button class="ctrl" id="speed-slow"  data-ms="900">🐢</button>
       <button class="ctrl active" id="speed-norm"  data-ms="500">–</button>
       <button class="ctrl" id="speed-fast"  data-ms="200">⚡</button>
     </div>
-    <div class="timeline-wrap">
+    <button class="ctrl lightning-btn" id="btn-lightning" title="Zobrazit blesky (RainViewer)">⚡ Blesky</button>
+    <div id="frame-time" style="margin-left:auto">—</div>
+  </div>
+  <!-- Řádek 2: slider na celou šířku -->
+  <div class="radar-row">
+    <div class="timeline-wrap" style="flex:1">
       <input type="range" id="timeline" min="0" value="0" />
       <div id="t0-tick"></div>
       <div id="t0-marker">teď</div>
     </div>
-    <div id="frame-time">—</div>
   </div>
   <div class="radar-row">
     <label>Průhlednost radaru:</label>
