@@ -142,6 +142,22 @@ def fetch_forecast24(places: list) -> list:
     return results
 
 
+def _nn(lst: list, i: int, default=None):
+    """Bezpečné čtení ze seznamu — vrátí default místo IndexError nebo None."""
+    v = lst[i] if i < len(lst) else None
+    return default if v is None else v
+
+
+def _nn_list(lst: list, indices) -> list:
+    """Filtrovaný podseznam — vynechá None a out-of-bounds."""
+    result = []
+    for j in indices:
+        v = lst[j] if j < len(lst) else None
+        if v is not None:
+            result.append(v)
+    return result
+
+
 def _parse_item(item: dict, now_utc: datetime) -> dict:
     """Zparsuje jednu Open-Meteo odpověď → hourly (6 h) + blocks (3h do 24 h)."""
     h = item.get("hourly", {})
@@ -152,9 +168,6 @@ def _parse_item(item: dict, now_utc: datetime) -> dict:
     prob  = h.get("precipitation_probability") or []
     wind  = h.get("wind_speed_10m") or []
     gust  = h.get("wind_gusts_10m") or []
-
-    def _get(lst, i, default=None):
-        return lst[i] if i < len(lst) else default
 
     # Najdi index první hodiny ≥ now_utc
     start_i = next((i for i, t in enumerate(times) if t >= now_utc), None)
@@ -168,28 +181,32 @@ def _parse_item(item: dict, now_utc: datetime) -> dict:
         if i >= len(times):
             break
         t = times[i]
+        temp_v = _nn(temp, i)
+        prec_v = _nn(prec, i, 0.0)
+        prob_v = _nn(prob, i, 0)
+        wind_v = _nn(wind, i, 0)
         hourly_out.append({
             "t":      t.strftime("%H:%M"),
-            "wc":     _get(wc,   i),
-            "temp":   _round(temp, i),
-            "precip": _round_precip(prec, i),
-            "prob":   _round(prob, i, 0),
-            "wind":   _round(wind, i, 0),
+            "wc":     _nn(wc, i),
+            "temp":   round(temp_v) if temp_v is not None else None,
+            "precip": round(prec_v, 1),
+            "prob":   round(prob_v),
+            "wind":   round(wind_v),
         })
 
     # ── 3h bloky pro zbytek 24h ───────────────────────────────────────────────
     block_start_i = start_i + N_HOURLY
-    end_i = start_i + 24   # 24 hodin celkem od teď
+    end_i = start_i + 24
     blocks_out = []
     i = block_start_i
     while i < end_i and i < len(times):
         block_end_i = min(i + BLOCK_H, end_i, len(times))
-        sl = slice(i, block_end_i)
-        wc_sl   = [_get(wc,   j) for j in range(i, block_end_i)]
-        temp_sl = [_get(temp, j) for j in range(i, block_end_i) if _get(temp, j) is not None]
-        prec_sl = [_get(prec, j, 0.0) or 0.0 for j in range(i, block_end_i)]
-        prob_sl = [_get(prob, j, 0) or 0 for j in range(i, block_end_i)]
-        gust_sl = [_get(gust, j, 0.0) or 0.0 for j in range(i, block_end_i)]
+        js = range(i, block_end_i)
+        wc_sl   = [wc[j] if j < len(wc) else None for j in js]
+        temp_sl = _nn_list(temp, js)
+        prec_sl = _nn_list(prec, js)
+        prob_sl = _nn_list(prob, js)
+        gust_sl = _nn_list(gust, js)
 
         t_from = times[i].strftime("%H")
         t_to   = times[min(block_end_i, len(times) - 1)].strftime("%H")
@@ -198,27 +215,13 @@ def _parse_item(item: dict, now_utc: datetime) -> dict:
             "wc":     _most_severe(wc_sl),
             "tmin":   round(min(temp_sl)) if temp_sl else None,
             "tmax":   round(max(temp_sl)) if temp_sl else None,
-            "precip": round(sum(prec_sl), 1),
-            "prob":   max(prob_sl),
-            "gust":   round(max(gust_sl)),
+            "precip": round(sum(prec_sl), 1) if prec_sl else 0.0,
+            "prob":   max(prob_sl) if prob_sl else 0,
+            "gust":   round(max(gust_sl)) if gust_sl else 0,
         })
         i += BLOCK_H
 
     return {"hourly": hourly_out, "blocks": blocks_out}
-
-
-def _round(lst, i, decimals=0):
-    v = lst[i] if i < len(lst) else None
-    if v is None:
-        return None
-    return round(v, decimals) if decimals else round(v)
-
-
-def _round_precip(lst, i):
-    v = lst[i] if i < len(lst) else None
-    if v is None:
-        return 0.0
-    return round(v, 1)
 
 
 def main():
@@ -233,10 +236,12 @@ def main():
             print(f"  {p['id']}: CHYBA — {p['error']}")
             continue
         h0 = p["hourly"][0] if p["hourly"] else {}
-        print(f"  {p['id']:22s}: +0h wc={h0.get('wc'):3}  "
-              f"temp={h0.get('temp'):4}°C  "
-              f"prec={h0.get('precip'):4} mm  "
-              f"prob={h0.get('prob'):3}%  "
+        def _fmt(v, suffix="", width=3):
+            return f"{v:{width}}{suffix}" if v is not None else f"{'—':>{width+len(suffix)}}"
+        print(f"  {p['id']:22s}: +0h wc={_fmt(h0.get('wc'))}  "
+              f"temp={_fmt(h0.get('temp'), '°C', 3)}  "
+              f"prec={_fmt(h0.get('precip'), 'mm', 4)}  "
+              f"prob={_fmt(h0.get('prob'), '%')}  "
               f"| {len(p['hourly'])} hod + {len(p['blocks'])} bloky")
 
     out = {
