@@ -4,5 +4,5 @@ numpy
 pysteps
 pyproj
 scipy
-anthropic
+google-genai
 opencv-python-headless
