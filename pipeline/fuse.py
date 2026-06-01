@@ -197,10 +197,10 @@ def fetch_all_active_warnings() -> list[dict]:
     all_warnings: list[dict] = []
 
     # Zdroje v pořadí priority.
-    # XOCZ50_OKPR.xml = AGREGOVANÝ soubor všech aktuálně platných výstrah (jeden HTTP request).
-    # directory listing = každý soubor = jeden alert (fetch N souborů zvlášť).
+    # vystrahy-cr = AGREGOVANÝ soubor všech aktuálně platných výstrah (jeden HTTP request) — funkční primární zdroj.
+    # directory listing = tichý fallback (každý soubor = jeden alert), použije se jen když primární selže.
+    # (Dřívější www.chmi.cz/.../XOCZ50_OKPR.xml vracelo 404 — vyřazeno, jen špinilo log.)
     sources = [
-        ("bulletin_chmi",   "https://www.chmi.cz/files/portal/docs/meteo/om/bulletiny/XOCZ50_OKPR.xml"),
         ("bulletin_vystr",  "https://vystrahy-cr.chmi.cz/data/XOCZ50_OKPR.xml"),
         ("directory",       CAP_DIR_URL),
     ]
