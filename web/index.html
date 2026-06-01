@@ -4,6 +4,9 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Meteo Nowcast CZ</title>
+  <meta name="theme-color" content="#2563eb" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="apple-touch-icon" href="icon.svg" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
     :root {
@@ -1090,6 +1093,13 @@ window.addEventListener("DOMContentLoaded", async () => {
   const q   = u.searchParams.get("q");
   if (!isNaN(lat) && !isNaN(lon)) showForecast(lat, lon, q || "Vybrané místo");
 });
+
+// ── Service Worker registrace ─────────────────────────────────────────────────
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("sw.js").catch(() => {});
+  });
+}
 </script>
 </body>
 </html>
