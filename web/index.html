@@ -262,7 +262,7 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 // ── Globální stav ──────────────────────────────────────────────────────────────
-let MANIFEST = null, GRID = null, FORECAST24 = null;
+let MANIFEST = null, GRID = null;
 let currentFrame = 0, playing = false, playTimer = null;
 let radarOpacity = 0.70;
 
@@ -275,14 +275,12 @@ const END_PAUSE_MS      = 1800;  // pauza na konci před zacyklením
 // ── Fetch dat ──────────────────────────────────────────────────────────────────
 async function loadData() {
   const v = `?v=${Date.now()}`;
-  const [m, g, f24] = await Promise.all([
+  const [m, g] = await Promise.all([
     fetch(`data/radar_manifest.json${v}`).then(r => r.json()),
     fetch(`data/forecast_grid.json${v}`).then(r => r.json()),
-    fetch(`data/forecast24.json${v}`).then(r => r.json()).catch(() => null),
   ]);
-  MANIFEST   = m;
-  GRID       = g;
-  FORECAST24 = f24;
+  MANIFEST = m;
+  GRID     = g;
 }
 
 // ── Preload PNG do cache prohlížeče ───────────────────────────────────────────
@@ -513,72 +511,140 @@ function wcIcon(wc) {
 }
 
 // ── 24h forecast timeline ─────────────────────────────────────────────────────
-function nearestPlace(lat, lon) {
-  if (!FORECAST24) return null;
-  let best = null, bd = Infinity;
-  for (const p of FORECAST24.places) {
-    const d = Math.hypot(p.lat - lat, p.lon - lon);
-    if (d < bd) { bd = d; best = p; }
-  }
-  return best;
+// ── 24h předpověď — live fetch přesně na souřadnice místa ────────────────────
+// Parsuje hodinová Open-Meteo data: 6 sloupců po 1h + 3h bloky do 24h od teď.
+// Všechno se děje v prohlížeči při každém výběru místa; žádný backend, žádný JSON.
+
+const N_HOURLY = 6;
+const BLOCK_H  = 3;
+
+// Závažnost WMO kódů — pro výběr nejhoršího jevu v 3h bloku
+const WC_SEV = {95:9,96:9,99:9,71:8,73:8,75:8,77:8,85:7,86:7,55:6,57:6,65:6,67:6,
+                51:5,53:5,61:5,63:5,80:5,81:5,82:5,45:4,48:4,3:3,1:2,2:2,0:1};
+function wcSev(c) { return WC_SEV[c] ?? 0; }
+function mostSevere(arr) {
+  const v = arr.filter(c => c != null);
+  return v.length ? v.reduce((a, b) => wcSev(b) > wcSev(a) ? b : a) : null;
 }
 
-function showFc24(lat, lon, label) {
-  const el = document.getElementById("fc24");
-  const scroll = document.getElementById("fc24-scroll");
-  if (!FORECAST24) { el.style.display = "none"; return; }
+function _nn(v, def = 0) { return v != null ? v : def; }
 
-  const place = nearestPlace(lat, lon);
-  if (!place || (!place.hourly?.length && !place.blocks?.length)) {
-    el.style.display = "none";
-    return;
+function parseFc24(data) {
+  const now = new Date();
+  // Zaokrouhli na aktuální celou hodinu (Europe/Prague timezone, ale JS Date je lokální)
+  now.setMinutes(0, 0, 0);
+
+  const h     = data.hourly || {};
+  const times = (h.time || []).map(t => new Date(t));   // OM vrací ISO bez tz → interpretuje jako local kvůli timezone=Europe/Prague
+  const wc    = h.weather_code || [];
+  const temp  = h.temperature_2m || [];
+  const prec  = h.precipitation || [];
+  const prob  = h.precipitation_probability || [];
+  const wind  = h.wind_speed_10m || [];
+  const gust  = h.wind_gusts_10m || [];
+
+  // Najdi první index >= now
+  let si = times.findIndex(t => t >= now);
+  if (si < 0) si = 0;
+
+  const hourly = [];
+  for (let k = 0; k < N_HOURLY; k++) {
+    const i = si + k;
+    if (i >= times.length) break;
+    hourly.push({
+      t:      times[i].toLocaleTimeString("cs-CZ", {hour:"2-digit", minute:"2-digit", timeZone:"Europe/Prague"}),
+      wc:     wc[i] ?? null,
+      temp:   temp[i] != null ? Math.round(temp[i]) : null,
+      precip: Math.round(_nn(prec[i]) * 10) / 10,
+      prob:   Math.round(_nn(prob[i])),
+      wind:   Math.round(_nn(wind[i])),
+    });
   }
 
-  document.getElementById("fc24-place").textContent = label || place.id;
+  const blocks = [];
+  let i = si + N_HOURLY;
+  const end = si + 24;
+  while (i < end && i < times.length) {
+    const ie = Math.min(i + BLOCK_H, end, times.length);
+    const sl = (arr) => arr.slice(i, ie).filter(v => v != null);
+    const tsl = sl(temp), psl = sl(prec), prbsl = sl(prob), gsl = sl(gust);
+    const tFrom = times[i].toLocaleTimeString("cs-CZ", {hour:"2-digit", minute:"2-digit", timeZone:"Europe/Prague"}).slice(0,5);
+    const tTo   = times[Math.min(ie, times.length-1)].toLocaleTimeString("cs-CZ", {hour:"2-digit", minute:"2-digit", timeZone:"Europe/Prague"}).slice(0,5);
+    blocks.push({
+      t:      `${tFrom}–${tTo}`,
+      wc:     mostSevere(wc.slice(i, ie)),
+      tmin:   tsl.length ? Math.round(Math.min(...tsl)) : null,
+      tmax:   tsl.length ? Math.round(Math.max(...tsl)) : null,
+      precip: psl.length ? Math.round(psl.reduce((a,b)=>a+b,0)*10)/10 : 0,
+      prob:   prbsl.length ? Math.max(...prbsl) : 0,
+      gust:   gsl.length ? Math.round(Math.max(...gsl)) : 0,
+    });
+    i += BLOCK_H;
+  }
+  return { hourly, blocks };
+}
+
+function renderFc24(fc, label) {
+  const el = document.getElementById("fc24");
+  const scroll = document.getElementById("fc24-scroll");
+  document.getElementById("fc24-place").textContent = label || "—";
   scroll.innerHTML = "";
 
-  // Hodinové sloupce
-  for (const h of place.hourly) {
+  for (const h of fc.hourly) {
     const col = document.createElement("div");
     col.className = "fc24-col";
-    const probStr = h.prob > 0 ? `<span class="fc24-prec">${h.prob}%</span>` : "";
-    const mmStr   = h.precip > 0 ? ` <span class="fc24-prec">${h.precip}mm</span>` : "";
-    const windStr = h.wind > 0 ? `<span class="fc24-wind">${h.wind}km/h</span>` : "";
     col.innerHTML = `
       <div class="fc24-time">${h.t}</div>
       <div class="fc24-icon">${wcIcon(h.wc)}</div>
       <div class="fc24-temp">${h.temp != null ? h.temp + "°" : "—"}</div>
-      <div class="fc24-sub fc24-prec">${probStr}${mmStr}</div>
-      <div class="fc24-sub fc24-wind">${windStr}</div>`;
+      <div class="fc24-sub fc24-prec">${h.prob > 0 ? `<span>${h.prob}%</span>` : ""}${h.precip > 0 ? ` <span>${h.precip}mm</span>` : ""}</div>
+      <div class="fc24-sub fc24-wind">${h.wind > 0 ? `<span>${h.wind}km/h</span>` : ""}</div>`;
     scroll.appendChild(col);
   }
 
-  // Oddělovač
-  if (place.hourly?.length && place.blocks?.length) {
+  if (fc.hourly.length && fc.blocks.length) {
     const sep = document.createElement("div");
     sep.className = "fc24-sep";
     scroll.appendChild(sep);
   }
 
-  // 3h bloky
-  for (const b of place.blocks) {
+  for (const b of fc.blocks) {
     const col = document.createElement("div");
     col.className = "fc24-col fc24-block";
-    const tRange = b.tmin != null && b.tmax != null
-      ? `${b.tmin}–${b.tmax}°` : "—";
-    const probStr = b.prob > 0 ? `<span class="fc24-prec">${b.prob}%</span>` : "";
-    const mmStr   = b.precip > 0 ? ` <span class="fc24-prec">${b.precip}mm</span>` : "";
-    const gustStr = b.gust > 0 ? `<span class="fc24-wind">${b.gust}km/h</span>` : "";
+    const tRange = b.tmin != null ? `${b.tmin}–${b.tmax}°` : "—";
     col.innerHTML = `
       <div class="fc24-time">${b.t}</div>
       <div class="fc24-icon">${wcIcon(b.wc)}</div>
       <div class="fc24-range">${tRange}</div>
-      <div class="fc24-sub">${probStr}${mmStr}</div>
-      <div class="fc24-sub fc24-wind">${gustStr}</div>`;
+      <div class="fc24-sub">${b.prob > 0 ? `<span class="fc24-prec">${b.prob}%</span>` : ""}${b.precip > 0 ? ` <span class="fc24-prec">${b.precip}mm</span>` : ""}</div>
+      <div class="fc24-sub fc24-wind">${b.gust > 0 ? `<span>${b.gust}km/h</span>` : ""}</div>`;
     scroll.appendChild(col);
   }
 
   el.style.display = "block";
+}
+
+async function showFc24(lat, lon, label) {
+  const el = document.getElementById("fc24");
+  const scroll = document.getElementById("fc24-scroll");
+
+  // Zobraz spinner hned
+  document.getElementById("fc24-place").textContent = label || "—";
+  scroll.innerHTML = `<div style="padding:.6rem 1rem;color:var(--muted);font-size:.85rem">Načítám předpověď…</div>`;
+  el.style.display = "block";
+
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}`
+    + `&hourly=weather_code,temperature_2m,precipitation,precipitation_probability,wind_speed_10m,wind_gusts_10m`
+    + `&forecast_days=2&timezone=Europe%2FPrague`;
+
+  try {
+    const r = await fetch(url, { signal: AbortSignal.timeout(15000) });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const data = await r.json();
+    renderFc24(parseFc24(data), label);
+  } catch (e) {
+    scroll.innerHTML = `<div style="padding:.6rem 1rem;color:var(--muted);font-size:.85rem">Předpověď se nepodařilo načíst (${e.message}).</div>`;
+  }
 }
 
 function showForecast(lat, lon, label) {
