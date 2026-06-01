@@ -93,6 +93,32 @@ def _to_utc(s: str) -> datetime:
     return datetime.fromisoformat(s)
 
 
+def _om_get(params: dict) -> dict:
+    """
+    GET na Open-Meteo s retry a backoff.
+    Opakuje při timeoutu nebo 5xx, max 3 pokusy, prodleva 3/6/12 s.
+    Vyhodí výjimku pokud všechny pokusy selžou.
+    """
+    import time
+    delays = [3, 6, 12]
+    last_exc = None
+    for attempt, delay in enumerate(delays, 1):
+        try:
+            r = requests.get(OPEN_METEO_URL, params=params, timeout=(10, 60))
+            if r.status_code in (429, 500, 502, 503, 504):
+                raise requests.HTTPError(f"HTTP {r.status_code}", response=r)
+            r.raise_for_status()
+            return r.json()
+        except (requests.Timeout, requests.ConnectionError, requests.HTTPError) as e:
+            last_exc = e
+            if attempt < len(delays):
+                print(f"  OM pokus {attempt} selhal ({e.__class__.__name__}), čekám {delay}s…")
+                time.sleep(delay)
+            else:
+                print(f"  OM pokus {attempt} selhal ({e.__class__.__name__}), vzdávám se.")
+    raise last_exc
+
+
 def fetch_forecast24(places: list) -> list:
     """
     Stáhne hodinovou předpověď pro seznam (name, lat, lon) míst.
@@ -117,15 +143,14 @@ def fetch_forecast24(places: list) -> list:
                 "wind_gusts_10m",
             ]),
             "timezone":      "UTC",
-            "forecast_days": 2,   # 48 h abychom měli dost po zaokrouhlení hodin
+            "forecast_days": 2,
             "models":        "icon_d2",
         }
         try:
-            r = requests.get(OPEN_METEO_URL, params=params, timeout=(5, 30))
-            r.raise_for_status()
-            data = r.json()
+            data = _om_get(params)
         except Exception as e:
-            print(f"  forecast24 batch error: {e}", file=sys.stderr)
+            print(f"  ⚠ forecast24 batch {start//OM_BATCH} CHYBA (všechny pokusy): {e}",
+                  file=sys.stderr)
             for p in chunk:
                 results.append({"id": p[0], "lat": p[1], "lon": p[2], "error": str(e)})
             continue
@@ -244,18 +269,31 @@ def main():
               f"prob={_fmt(h0.get('prob'), '%')}  "
               f"| {len(p['hourly'])} hod + {len(p['blocks'])} bloky")
 
+    ok_places  = [p for p in places_data if "error" not in p]
+    err_places = [p for p in places_data if "error" in p]
+
+    if not ok_places:
+        print(f"  ✗ CHYBA: všechna místa ({len(err_places)}) selhala — forecast24.json NEPŘEPSÁN.",
+              file=sys.stderr)
+        sys.exit(1)
+
+    if err_places:
+        print(f"  ⚠ WARN: {len(err_places)} míst selhalo, uložím {len(ok_places)} úspěšných.")
+
     out = {
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
         "n_hourly": N_HOURLY,
         "block_h":  BLOCK_H,
-        "places":   places_data,
+        "places":   ok_places,   # ukládáme jen úspěšná místa
     }
     out_path = DATA_DIR / "forecast24.json"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
     with open(out_path, "w") as f:
         json.dump(out, f, ensure_ascii=False, separators=(",", ":"))
 
     sz = out_path.stat().st_size
-    print(f"✓ Fáze 4d OK — {sz // 1024} kB → {out_path}")
+    print(f"✓ Fáze 4d OK — {len(ok_places)}/{len(PLACES)} míst, "
+          f"{sz // 1024} kB → {out_path}")
 
 
 if __name__ == "__main__":
