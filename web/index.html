@@ -71,6 +71,8 @@
     }
     button.ctrl:hover { background: #f0f2f5; }
     button.ctrl.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .speed-group { display: flex; gap: 2px; }
+    .speed-group button.ctrl { padding: 0.3rem 0.45rem; font-size: 0.78rem; }
 
     #opacity-slider {
       width: 80px; -webkit-appearance: none; appearance: none;
@@ -246,9 +248,14 @@
 <!-- Radar controls -->
 <div class="radar-bar" id="radar-bar" style="display:none">
   <div class="radar-row">
-    <button class="ctrl" id="btn-prev" title="Předchozí snímek">◀</button>
-    <button class="ctrl" id="btn-play" title="Přehrát smyčku">▶ Play</button>
-    <button class="ctrl" id="btn-next" title="Další snímek">▶</button>
+    <button class="ctrl" id="btn-prev" title="Předchozí snímek (←)">◀</button>
+    <button class="ctrl" id="btn-play" title="Přehrát/Pozastavit (mezerník)">▶ Play</button>
+    <button class="ctrl" id="btn-next" title="Další snímek (→)">▶</button>
+    <div class="speed-group" title="Rychlost animace">
+      <button class="ctrl" id="speed-slow"  data-ms="900">🐢</button>
+      <button class="ctrl active" id="speed-norm"  data-ms="500">–</button>
+      <button class="ctrl" id="speed-fast"  data-ms="200">⚡</button>
+    </div>
     <div class="timeline-wrap">
       <input type="range" id="timeline" min="0" value="0" />
       <div id="t0-tick"></div>
@@ -283,9 +290,10 @@ let preloadedImgs = [];
 // Aktuálně vybrané místo — pro refresh
 let _currentLat = null, _currentLon = null, _currentLabel = null;
 
-const PLAY_INTERVAL_MS  = 500;
-const END_PAUSE_MS      = 1800;
-const AUTO_REFRESH_MS   = 5 * 60 * 1000;   // 5 minut
+let   PLAY_INTERVAL_MS  = 500;
+const T0_PAUSE_MS       = 1200;   // pauza na snímku "teď"
+const END_PAUSE_MS      = 1800;   // pauza na konci smyčky
+const AUTO_REFRESH_MS   = 5 * 60 * 1000;
 
 // ── Fetch dat ──────────────────────────────────────────────────────────────────
 async function loadData() {
@@ -370,42 +378,32 @@ function stepFrame(delta) {
   showFrame(currentFrame + delta);
 }
 
-function togglePlay() {
-  playing = !playing;
-  const btn = document.getElementById("btn-play");
-  if (playing) {
-    btn.textContent = "⏸ Pause";
-    btn.classList.add("active");
-    playTimer = setInterval(() => {
-      if (currentFrame >= MANIFEST.frames.length - 1) {
-        // Konec smyčky — krátká pauza, pak znovu od začátku
-        clearInterval(playTimer);
-        setTimeout(() => {
-          showFrame(0);
-          if (playing) {
-            playTimer = setInterval(advanceAndLoop, PLAY_INTERVAL_MS);
-          }
-        }, END_PAUSE_MS);
-      } else {
-        showFrame(currentFrame + 1);
-      }
-    }, PLAY_INTERVAL_MS);
-  } else {
-    clearInterval(playTimer);
-    btn.textContent = "▶ Play";
-    btn.classList.remove("active");
-  }
+function scheduleNext(delayMs) {
+  playTimer = setTimeout(() => {
+    if (!playing) return;
+    const n = MANIFEST.frames.length;
+    if (currentFrame >= n - 1) {
+      showFrame(0);
+      scheduleNext(END_PAUSE_MS);
+    } else {
+      showFrame(currentFrame + 1);
+      const isT0 = currentFrame === MANIFEST.t0_index;
+      scheduleNext(isT0 ? T0_PAUSE_MS : PLAY_INTERVAL_MS);
+    }
+  }, delayMs);
 }
 
-function advanceAndLoop() {
-  if (currentFrame >= MANIFEST.frames.length - 1) {
-    clearInterval(playTimer);
-    setTimeout(() => {
-      showFrame(0);
-      if (playing) playTimer = setInterval(advanceAndLoop, PLAY_INTERVAL_MS);
-    }, END_PAUSE_MS);
+function togglePlay(forcePlay) {
+  playing = forcePlay !== undefined ? forcePlay : !playing;
+  const btn = document.getElementById("btn-play");
+  if (playing) {
+    btn.textContent = "⏸ Pauza";
+    btn.classList.add("active");
+    scheduleNext(PLAY_INTERVAL_MS);
   } else {
-    showFrame(currentFrame + 1);
+    clearTimeout(playTimer);
+    btn.textContent = "▶ Play";
+    btn.classList.remove("active");
   }
 }
 
@@ -821,12 +819,29 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   // Slider events
   document.getElementById("timeline").addEventListener("input", e => {
-    if (playing) togglePlay();  // zastaví přehrávání při ručním scrollu
+    if (playing) togglePlay(false);
     showFrame(+e.target.value);
   });
-  document.getElementById("btn-prev").addEventListener("click", () => stepFrame(-1));
-  document.getElementById("btn-next").addEventListener("click", () => stepFrame(+1));
-  document.getElementById("btn-play").addEventListener("click", togglePlay);
+  document.getElementById("btn-prev").addEventListener("click", () => { if (playing) togglePlay(false); stepFrame(-1); });
+  document.getElementById("btn-next").addEventListener("click", () => { if (playing) togglePlay(false); stepFrame(+1); });
+  document.getElementById("btn-play").addEventListener("click", () => togglePlay());
+
+  // Rychlost animace
+  document.querySelectorAll(".speed-group .ctrl").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".speed-group .ctrl").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      PLAY_INTERVAL_MS = +btn.dataset.ms;
+    });
+  });
+
+  // Klávesové zkratky
+  document.addEventListener("keydown", e => {
+    if (e.target.tagName === "INPUT") return;
+    if (e.key === " ") { e.preventDefault(); togglePlay(); }
+    if (e.key === "ArrowLeft")  { if (playing) togglePlay(false); stepFrame(-1); }
+    if (e.key === "ArrowRight") { if (playing) togglePlay(false); stepFrame(+1); }
+  });
 
   // Opacity
   document.getElementById("opacity-slider").addEventListener("input", e => {
@@ -850,16 +865,29 @@ window.addEventListener("DOMContentLoaded", async () => {
   });
 
   // Geolocation
-  document.getElementById("geo").addEventListener("click", () => {
+  document.getElementById("geo").addEventListener("click", locateMe);
+  function locateMe() {
     if (!navigator.geolocation) { alert("Geolokace není podporována."); return; }
+    const btn = document.getElementById("geo");
+    btn.textContent = "📍 Zjišťuji…"; btn.disabled = true;
     navigator.geolocation.getCurrentPosition(
-      p => showForecast(p.coords.latitude, p.coords.longitude, "Moje poloha"),
-      () => alert("Polohu se nepodařilo zjistit.")
+      p => {
+        btn.textContent = "📍 Moje poloha"; btn.disabled = false;
+        showForecast(p.coords.latitude, p.coords.longitude, "Moje poloha");
+      },
+      () => {
+        btn.textContent = "📍 Moje poloha"; btn.disabled = false;
+        alert("Polohu se nepodařilo zjistit.");
+      },
+      { timeout: 10000 }
     );
-  });
+  }
 
   // Refresh button
   document.getElementById("btn-refresh").addEventListener("click", refreshAll);
+
+  // Auto-play po 800ms (dá čas preloadu první vlně PNG)
+  setTimeout(() => togglePlay(true), 800);
 
   // Auto-refresh každých 5 minut (tiše na pozadí)
   setInterval(refreshAll, AUTO_REFRESH_MS);
