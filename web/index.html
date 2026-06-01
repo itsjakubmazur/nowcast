@@ -381,6 +381,7 @@
       <button class="ctrl active" id="speed-norm"  data-ms="500">–</button>
       <button class="ctrl" id="speed-fast"  data-ms="200">⚡</button>
     </div>
+    <button class="ctrl" id="btn-global" title="Globální radar (RainViewer)">🌍 Svět</button>
     <button class="ctrl lightning-btn" id="btn-lightning" title="Zobrazit blesky (RainViewer)">⚡ Blesky</button>
     <div id="frame-time" style="margin-left:auto">—</div>
   </div>
@@ -426,8 +427,13 @@ let radarOpacity = 0.70;
 
 let map, radarOverlay, locationMarker;
 let lightningLayer = null, lightningOn = false;
-let lightningStrikes = [];   // [{lat, lon, time}] — posledních ~10 min
+let lightningStrikes = [];
 let preloadedImgs = [];
+
+// Globální radar (RainViewer)
+let globalMode = false;
+let rvFrames   = [];   // [{time, path, layer}]
+let rvT0idx    = 0;
 
 // Aktuálně vybrané místo — pro refresh
 let _currentLat = null, _currentLon = null, _currentLabel = null;
@@ -569,6 +575,87 @@ function updateStormDist(frameTime) {
   el.className = nearestDist < 15 ? "near" : nearestDist < 40 ? "medium" : "far";
 }
 
+// ── Globální radar (RainViewer tiles) ─────────────────────────────────────────
+async function toggleGlobalMode() {
+  globalMode = !globalMode;
+  const btn = document.getElementById("btn-global");
+
+  if (globalMode) {
+    btn.classList.add("active");
+    btn.textContent = "🌍 ČR";
+    if (playing) togglePlay(false);
+    await loadRainViewerFrames();
+  } else {
+    btn.classList.add("active");
+    btn.textContent = "🌍 Svět";
+    btn.classList.remove("active");
+    destroyRainViewerFrames();
+    // Obnov ČHMÚ overlay + timeline
+    if (MANIFEST) {
+      radarOverlay.setOpacity(radarOpacity);
+      applyManifestUI();
+    }
+  }
+}
+
+async function loadRainViewerFrames() {
+  const btn = document.getElementById("btn-global");
+  btn.textContent = "🌍 Načítám…";
+
+  try {
+    const res  = await fetch(RAINVIEWER_API, { cache: "no-store" });
+    const data = await res.json();
+    const host = data.host;
+    const past    = data.radar?.past    || [];
+    const nowcast = data.radar?.nowcast || [];
+    const all = [...past, ...nowcast];
+    if (!all.length) throw new Error("Žádná data");
+
+    // Skryj ČHMÚ overlay
+    radarOverlay.setOpacity(0);
+
+    // Vytvoř tile layers pro každý snímek
+    destroyRainViewerFrames();
+    rvT0idx = past.length - 1;
+
+    rvFrames = all.map(f => ({
+      time: f.time,
+      isNowcast: !past.includes(f),
+      layer: L.tileLayer(
+        `${host}${f.path}/256/{z}/{x}/{y}/2/1_1.png`,
+        { opacity: 0, zIndex: 201, attribution: "RainViewer" }
+      ).addTo(map),
+    }));
+
+    // Nastav timeline
+    const slider = document.getElementById("timeline");
+    slider.max   = rvFrames.length - 1;
+    slider.value = rvT0idx;
+
+    const t0pct = (rvT0idx / (rvFrames.length - 1)) * 100;
+    document.getElementById("t0-tick").style.left   = t0pct + "%";
+    document.getElementById("t0-marker").style.left = t0pct + "%";
+
+    showFrame(rvT0idx);
+    btn.textContent = "🌍 ČR";
+
+    // Auto-play
+    setTimeout(() => togglePlay(true), 300);
+
+  } catch (e) {
+    globalMode = false;
+    btn.textContent = "🌍 Svět";
+    btn.classList.remove("active");
+    radarOverlay.setOpacity(radarOpacity);
+    console.error("RainViewer:", e);
+  }
+}
+
+function destroyRainViewerFrames() {
+  rvFrames.forEach(f => { if (f.layer) map.removeLayer(f.layer); });
+  rvFrames = [];
+}
+
 function initMap() {
   map = L.map("map", { zoomControl: true }).setView([49.8, 15.5], 7);
 
@@ -597,32 +684,52 @@ function initMap() {
 
 // ── Radar ovládání ─────────────────────────────────────────────────────────────
 function showFrame(idx) {
+  if (globalMode && rvFrames.length) {
+    _showFrameRV(idx);
+  } else {
+    _showFrameCZ(idx);
+  }
+}
+
+function _showFrameCZ(idx) {
   const frames = MANIFEST.frames;
   currentFrame = Math.max(0, Math.min(idx, frames.length - 1));
   const f = frames[currentFrame];
 
-  // Swap URL — browser táhne z cache díky preloadu
   radarOverlay.setUrl(preloadedImgs[currentFrame].src);
-
-  // Slider
   document.getElementById("timeline").value = currentFrame;
 
-  // Časový popis
   let label = "";
-  if (f.type === "t0")      label = `<span class='t0-label'>● teď</span>`;
-  else if (f.type === "nowcast") {
-    const t0idx  = MANIFEST.t0_index;
-    const step   = currentFrame - t0idx;
-    const minAhead = step * (MANIFEST.frames.length > 12 ? 10 : 10);
-    label = `<span class='nowcast-label'>+${(currentFrame - t0idx) * 10} min</span>`;
-  }
-  document.getElementById("frame-time").innerHTML =
-    `<strong>${f.time_local}</strong> ${label}`;
+  if (f.type === "t0") label = `<span class='t0-label'>● teď</span>`;
+  else if (f.type === "nowcast")
+    label = `<span class='nowcast-label'>+${(currentFrame - MANIFEST.t0_index) * 10} min</span>`;
+  document.getElementById("frame-time").innerHTML = `<strong>${f.time_local}</strong> ${label}`;
 
-  // Zvýraznění t0 na slideru
   const pct = (MANIFEST.t0_index / (frames.length - 1)) * 100;
   document.getElementById("t0-tick").style.left   = pct + "%";
   document.getElementById("t0-marker").style.left = pct + "%";
+}
+
+function _showFrameRV(idx) {
+  currentFrame = Math.max(0, Math.min(idx, rvFrames.length - 1));
+
+  // Zobraz jen aktivní snímek
+  rvFrames.forEach((f, i) => f.layer.setOpacity(i === currentFrame ? radarOpacity : 0));
+
+  document.getElementById("timeline").value = currentFrame;
+
+  const f    = rvFrames[currentFrame];
+  const dt   = new Date(f.time * 1000);
+  const tStr = dt.toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Prague" });
+  const isNow   = currentFrame === rvT0idx;
+  const isFuture = currentFrame > rvT0idx;
+  const minDiff  = Math.round((currentFrame - rvT0idx) * 10);
+  let label = isNow
+    ? `<span class='t0-label'>● teď</span>`
+    : isFuture
+      ? `<span class='nowcast-label'>+${minDiff} min</span>`
+      : `<span style='color:var(--muted)'>-${Math.abs(minDiff)} min</span>`;
+  document.getElementById("frame-time").innerHTML = `<strong>${tStr}</strong> ${label}`;
 }
 
 function stepFrame(delta) {
@@ -1399,7 +1506,11 @@ window.addEventListener("DOMContentLoaded", async () => {
   document.getElementById("opacity-slider").addEventListener("input", e => {
     radarOpacity = +e.target.value / 100;
     document.getElementById("opacity-val").textContent = e.target.value + " %";
-    radarOverlay.setOpacity(radarOpacity);
+    if (globalMode) {
+      rvFrames.forEach((f, i) => f.layer.setOpacity(i === currentFrame ? radarOpacity : 0));
+    } else {
+      radarOverlay.setOpacity(radarOpacity);
+    }
   });
 
   // Search
@@ -1438,6 +1549,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   // Refresh button
   document.getElementById("btn-refresh").addEventListener("click", refreshAll);
   document.getElementById("btn-lightning").addEventListener("click", toggleLightning);
+  document.getElementById("btn-global").addEventListener("click", toggleGlobalMode);
 
   // Auto-play po 800ms (dá čas preloadu první vlně PNG)
   setTimeout(() => togglePlay(true), 800);
