@@ -229,6 +229,25 @@
     .fc7-day-sun  { font-size: 0.65rem; color: #f59e0b; }
     .fc7-today    { border: 1px solid var(--accent); background: #eff6ff; }
 
+    /* ── Notifikační pruh ───────────────────────────────────────────────── */
+    #notif-bar {
+      display: none; align-items: center; gap: 0.6rem;
+      padding: 0.5rem 1rem; background: #fefce8;
+      border-bottom: 1px solid #fde68a; font-size: 0.82rem;
+    }
+    #notif-bar.show { display: flex; }
+    #notif-bar .notif-close {
+      margin-left: auto; cursor: pointer; color: var(--muted); font-size: 1rem;
+    }
+    /* Bouřkový potenciál badge */
+    .cape-badge {
+      display: inline-block; padding: 0.1rem 0.45rem; border-radius: 999px;
+      font-size: 0.68rem; font-weight: 700; margin-left: 0.25rem;
+    }
+    .cape-low    { background: #fef9c3; color: #854d0e; }
+    .cape-mod    { background: #fed7aa; color: #9a3412; }
+    .cape-high   { background: #fecaca; color: #7f1d1d; }
+
     /* ── Refresh bar ─────────────────────────────────────────────────────── */
     .refresh-bar {
       display: flex; align-items: center; gap: 0.75rem;
@@ -303,6 +322,12 @@
 
 <!-- Oblíbená místa -->
 <div class="fav-row" id="fav-row"></div>
+
+<!-- Notifikační pruh (srážkové upozornění) -->
+<div id="notif-bar">
+  <span id="notif-text"></span>
+  <span class="notif-close" id="notif-close" title="Zavřít">✕</span>
+</div>
 
 <!-- Forecast -->
 <div class="forecast-card">
@@ -713,6 +738,7 @@ function parseFc24(data) {
   const wind   = h.wind_speed_10m || [];
   const gust   = h.wind_gusts_10m || [];
   const uv     = h.uv_index || [];
+  const cape   = h.cape || [];
 
   // Najdi první index >= aktuální hodina (string comparison funguje pro ISO formát)
   let si = times.findIndex(t => t >= nowPrague);
@@ -732,7 +758,8 @@ function parseFc24(data) {
       precip:     Math.round(_nn(prec[i]) * 10) / 10,
       prob:       Math.round(_nn(prob[i])),
       wind:       Math.round(_nn(wind[i])),
-      uv:         uv[i] != null ? Math.round(uv[i] * 10) / 10 : null,
+      uv:         uv[i]   != null ? Math.round(uv[i]   * 10) / 10 : null,
+      cape:       cape[i] != null ? Math.round(cape[i])           : null,
     });
   }
 
@@ -772,12 +799,14 @@ function renderFc24(fc, label) {
       ? `<span class="fc24-feels">(${h.feelsDiff > 0 ? "+" : ""}${h.feelsDiff}°)</span>` : "";
     const uvStr = h.uv != null && h.uv >= 1
       ? `<span class="fc24-uv ${uvClass(h.uv)}">UV${Math.round(h.uv)}</span>` : "";
+    const capeStr = h.cape != null && h.cape >= 200
+      ? `<span class="cape-badge ${h.cape >= 1000 ? 'cape-high' : h.cape >= 500 ? 'cape-mod' : 'cape-low'}">⚡${h.cape >= 1000 ? 'silné' : h.cape >= 500 ? 'střední' : 'nízké'}</span>` : "";
     col.innerHTML = `
       <div class="fc24-time">${h.t}</div>
       <div class="fc24-icon">${wcIcon(h.wc)}</div>
       <div class="fc24-temp">${h.temp != null ? h.temp + "°" : "—"}${feelsStr}</div>
       <div class="fc24-sub fc24-prec">${h.prob > 0 ? `<span>${h.prob}%</span>` : ""}${h.precip > 0 ? ` <span>${h.precip}mm</span>` : ""}</div>
-      <div class="fc24-sub fc24-wind">${h.wind > 0 ? `<span>${h.wind}km/h</span>` : ""}${uvStr}</div>`;
+      <div class="fc24-sub fc24-wind">${h.wind > 0 ? `<span>${h.wind}km/h</span>` : ""}${uvStr}${capeStr}</div>`;
     scroll.appendChild(col);
   }
 
@@ -873,7 +902,7 @@ async function showFc24(lat, lon, label) {
   el.style.display = "block";
 
   const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}`
-    + `&hourly=weather_code,temperature_2m,apparent_temperature,precipitation,precipitation_probability,wind_speed_10m,wind_gusts_10m,uv_index`
+    + `&hourly=weather_code,temperature_2m,apparent_temperature,precipitation,precipitation_probability,wind_speed_10m,wind_gusts_10m,uv_index,cape`
     + `&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,wind_gusts_10m_max,uv_index_max,sunrise,sunset`
     + `&forecast_days=7&timezone=Europe%2FPrague`;
 
@@ -971,6 +1000,69 @@ function renderFavRow() {
   });
 }
 
+// ── Notifikace ────────────────────────────────────────────────────────────────
+const NOTIF_SNOOZE_KEY = "nowcast_notif_snooze";
+
+function notifAllowed() {
+  return "Notification" in window && Notification.permission === "granted";
+}
+
+async function requestNotifPermission() {
+  if (!("Notification" in window)) return;
+  if (Notification.permission === "default") {
+    await Notification.requestPermission();
+  }
+}
+
+// Zkontroluj srážky pro oblíbená místa a pošli notifikaci/pruh
+async function checkRainNotifications() {
+  const favs = loadFavs();
+  if (!favs.length) return;
+
+  // Snooze: nenotifikuj víckrát za 20 minut pro stejné místo
+  const snooze = JSON.parse(localStorage.getItem(NOTIF_SNOOZE_KEY) || "{}");
+  const now = Date.now();
+
+  for (const f of favs) {
+    if (snooze[f.label] && now - snooze[f.label] < 20 * 60 * 1000) continue;
+
+    // Zkontroluj GRID data pro nejbližší bod
+    if (!GRID) continue;
+    const { id } = nearestPt(f.lat, f.lon);
+    const a = GRID.act[String(id)];
+    if (!a) continue;
+
+    // a = [startStep, endStep, peakMmH, totalMm]
+    const t0ms    = new Date(GRID.t0_utc).getTime();
+    const startMs = t0ms + (a[0] + 1) * (GRID.step_min || 10) * 60000;
+    const minsAway = (startMs - now) / 60000;
+    if (minsAway < 0 || minsAway > 60) continue;
+
+    const mins  = Math.round(minsAway);
+    const intenz = a[2] >= 7.5 ? "vydatný déšť" : a[2] >= 2.5 ? "mírný déšť" : "slabé srážky";
+    const msg   = `Za ${mins} min — ${intenz} (${a[2]} mm/h) u ${f.label}`;
+
+    // Browser notifikace (pokud je povolena)
+    if (notifAllowed()) {
+      new Notification("🌧️ Meteo Nowcast", { body: msg, icon: "icon.svg", tag: f.label });
+    }
+
+    // In-app pruh vždy (jako fallback)
+    showNotifBar(`🌧️ ${msg}`);
+
+    // Snooze
+    snooze[f.label] = now;
+    localStorage.setItem(NOTIF_SNOOZE_KEY, JSON.stringify(snooze));
+    break; // max jedna notifikace na refresh
+  }
+}
+
+function showNotifBar(text) {
+  const bar = document.getElementById("notif-bar");
+  document.getElementById("notif-text").textContent = text;
+  bar.classList.add("show");
+}
+
 function updateFavBtn(lat, lon, label) {
   const btn  = document.getElementById("btn-fav");
   btn.style.display = "";
@@ -995,6 +1087,7 @@ function updateFavBtn(lat, lon, label) {
         return;
       }
       saveFavs([...loadFavs(), { lat, lon, label }]);
+      requestNotifPermission();
       renderFavRow();
       updateFavBtn(lat, lon, label);
     };
@@ -1183,7 +1276,12 @@ window.addEventListener("DOMContentLoaded", async () => {
   setTimeout(() => togglePlay(true), 800);
 
   // Auto-refresh každých 5 minut (tiše na pozadí)
-  setInterval(refreshAll, AUTO_REFRESH_MS);
+  setInterval(() => { refreshAll(); checkRainNotifications(); }, AUTO_REFRESH_MS);
+
+  // Zavření notif pruhu
+  document.getElementById("notif-close").addEventListener("click", () => {
+    document.getElementById("notif-bar").classList.remove("show");
+  });
 
   // Obnov stav z URL
   const u = new URL(window.location);
