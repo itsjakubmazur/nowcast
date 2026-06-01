@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Meteo Nowcast CZ</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/weather-icons@2.0.12/css/weather-icons.min.css" />
   <style>
     :root {
       --bg: #f4f6f8; --panel: #fff; --border: #dde1e7;
@@ -160,23 +159,8 @@
     .fc24-col.fc24-block { min-width: 80px; max-width: 96px; }
 
     .fc24-time  { font-size: 0.7rem; color: var(--muted); margin-bottom: 0.18rem; }
-    .fc24-icon  { font-size: 1.7rem; line-height: 1.25; color: #374151; }
-    /* weather-icon barvy dle kategorie */
-    .fc24-icon .wi-day-sunny          { color: #f59e0b; }
-    .fc24-icon .wi-day-cloudy,
-    .fc24-icon .wi-day-cloudy-high    { color: #f59e0b; }
-    .fc24-icon .wi-cloudy,
-    .fc24-icon .wi-overcast           { color: #9ca3af; }
-    .fc24-icon .wi-fog                { color: #9ca3af; }
-    .fc24-icon .wi-sprinkle,
-    .fc24-icon .wi-showers,
-    .fc24-icon .wi-rain,
-    .fc24-icon .wi-rain-mix,
-    .fc24-icon .wi-storm-showers      { color: #3b82f6; }
-    .fc24-icon .wi-snow,
-    .fc24-icon .wi-snow-wind          { color: #60a5fa; }
-    .fc24-icon .wi-thunderstorm,
-    .fc24-icon .wi-hail               { color: #7c3aed; }
+    .fc24-icon  { font-size: 1.7rem; line-height: 1.25; }
+    .wc-emoji   { font-style: normal; line-height: 1; }
     .fc24-temp  { font-size: 0.82rem; font-weight: 600; margin-top: 0.15rem; }
     .fc24-range { font-size: 0.76rem; color: var(--muted); }
     .fc24-sub   {
@@ -513,34 +497,34 @@ function templateVerdict(ptId) {
   return { text: sentences.join(" "), chips: chips.join("") };
 }
 
-// ── WMO weather_code → weather-icons třída (Erik Flowers, https://erikflowers.github.io/weather-icons/) ──
-const WC_CLASS = (() => {
+// ── WMO weather_code → emoji ──────────────────────────────────────────────────
+const WC_EMOJI = (() => {
   const m = {};
-  const set = (codes, cls) => codes.forEach(c => m[c] = cls);
-  set([0],              "wi-day-sunny");
-  set([1],              "wi-day-cloudy");
-  set([2],              "wi-day-cloudy-high");
-  set([3],              "wi-cloudy");
-  set([45, 48],         "wi-fog");
-  set([51, 53],         "wi-sprinkle");
-  set([55],             "wi-showers");
-  set([56, 57],         "wi-rain-mix");
-  set([61, 63],         "wi-rain");
-  set([65],             "wi-rain");
-  set([66, 67],         "wi-rain-mix");
-  set([71, 73],         "wi-snow");
-  set([75, 77],         "wi-snow-wind");
-  set([80, 81],         "wi-showers");
-  set([82],             "wi-storm-showers");
-  set([85, 86],         "wi-snow");
-  set([95],             "wi-thunderstorm");
-  set([96, 99],         "wi-hail");
+  const set = (codes, e) => codes.forEach(c => m[c] = e);
+  set([0],          "☀️");
+  set([1],          "🌤️");
+  set([2],          "⛅");
+  set([3],          "☁️");
+  set([45, 48],     "🌫️");
+  set([51, 53],     "🌦️");
+  set([55],         "🌧️");
+  set([56, 57],     "🌨️");
+  set([61, 63],     "🌧️");
+  set([65],         "🌧️");
+  set([66, 67],     "🌨️");
+  set([71, 73],     "❄️");
+  set([75, 77],     "❄️");
+  set([80, 81],     "🌦️");
+  set([82],         "⛈️");
+  set([85, 86],     "🌨️");
+  set([95],         "⛈️");
+  set([96, 99],     "⛈️");
   return m;
 })();
 
 function wcIcon(wc) {
-  const cls = wc != null ? (WC_CLASS[wc] ?? "wi-na") : "wi-na";
-  return `<i class="wi ${cls}"></i>`;
+  const e = wc != null ? (WC_EMOJI[wc] ?? "🌡️") : "🌡️";
+  return `<span class="wc-emoji">${e}</span>`;
 }
 
 // ── 24h forecast timeline ─────────────────────────────────────────────────────
