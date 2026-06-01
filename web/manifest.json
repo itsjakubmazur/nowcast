@@ -1,0 +1,20 @@
+{
+  "name": "Meteo Nowcast CZ",
+  "short_name": "Nowcast CZ",
+  "description": "Krátkodobá předpověď počasí a radarová smyčka pro ČR",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f4f6f8",
+  "theme_color": "#2563eb",
+  "lang": "cs",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "screenshots": [],
+  "categories": ["weather", "utilities"]
+}
