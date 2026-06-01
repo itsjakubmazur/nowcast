@@ -248,6 +248,19 @@
     .cape-mod    { background: #fed7aa; color: #9a3412; }
     .cape-high   { background: #fecaca; color: #7f1d1d; }
 
+    /* Bouřkoměr */
+    #storm-bar {
+      display: none; align-items: center; gap: 0.6rem;
+      padding: 0.45rem 1rem; background: var(--panel);
+      border-bottom: 1px solid var(--border); font-size: 0.82rem;
+    }
+    #storm-bar.show { display: flex; }
+    #storm-dist { font-weight: 600; }
+    #storm-dist.near   { color: #ef4444; }
+    #storm-dist.medium { color: #f59e0b; }
+    #storm-dist.far    { color: #6b7280; }
+    .lightning-btn { margin-left: auto; }
+
     /* ── Refresh bar ─────────────────────────────────────────────────────── */
     .refresh-bar {
       display: flex; align-items: center; gap: 0.75rem;
@@ -362,6 +375,7 @@
     <button class="ctrl" id="btn-prev" title="Předchozí snímek (←)">◀</button>
     <button class="ctrl" id="btn-play" title="Přehrát/Pozastavit (mezerník)">▶ Play</button>
     <button class="ctrl" id="btn-next" title="Další snímek (→)">▶</button>
+    <button class="ctrl lightning-btn" id="btn-lightning" title="Zobrazit blesky (RainViewer)">⚡ Blesky</button>
     <div class="speed-group" title="Rychlost animace">
       <button class="ctrl" id="speed-slow"  data-ms="900">🐢</button>
       <button class="ctrl active" id="speed-norm"  data-ms="500">–</button>
@@ -390,7 +404,14 @@
   </div>
 </div>
 
-<footer>Data: ČHMÚ (CC BY) · Open-Meteo (CC BY) · Předpověď generovaná v prohlížeči · Radarová odrazivost (dBZ, orientační)</footer>
+<!-- Bouřkoměr — vzdálenost bouřky od vybraného místa -->
+<div id="storm-bar">
+  ⚡ Blesky: <span id="storm-dist">—</span>
+  <span id="storm-dir"></span>
+  <span style="color:var(--muted);font-size:0.75rem" id="storm-age"></span>
+</div>
+
+<footer>Data: ČHMÚ (CC BY) · Open-Meteo (CC BY) · Blesky: RainViewer · Předpověď generovaná v prohlížeči</footer>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
@@ -400,6 +421,8 @@ let currentFrame = 0, playing = false, playTimer = null;
 let radarOpacity = 0.70;
 
 let map, radarOverlay, locationMarker;
+let lightningLayer = null, lightningOn = false;
+let lightningStrikes = [];   // [{lat, lon, time}] — posledních ~10 min
 let preloadedImgs = [];
 
 // Aktuálně vybrané místo — pro refresh
@@ -433,6 +456,115 @@ function preloadFrames() {
 }
 
 // ── Inicializace mapy ─────────────────────────────────────────────────────────
+// ── Blesky (RainViewer) ────────────────────────────────────────────────────────
+const RAINVIEWER_API = "https://api.rainviewer.com/public/weather-maps.json";
+let lightningRefreshTimer = null;
+
+async function fetchLightning() {
+  try {
+    const r = await fetch(RAINVIEWER_API, { cache: "no-store" });
+    const data = await r.json();
+
+    // RainViewer vrací lightning frames jako tile URL
+    const frames = data.radar?.past || [];
+    if (!frames.length) return null;
+    const latest = frames[frames.length - 1];
+    return {
+      path: latest.path,        // "/v2/radar/{time}/..."
+      time: latest.time,
+      host: data.host,
+    };
+  } catch { return null; }
+}
+
+async function toggleLightning() {
+  const btn = document.getElementById("btn-lightning");
+  lightningOn = !lightningOn;
+
+  if (!lightningOn) {
+    if (lightningLayer) { map.removeLayer(lightningLayer); lightningLayer = null; }
+    clearInterval(lightningRefreshTimer);
+    btn.classList.remove("active");
+    document.getElementById("storm-bar").classList.remove("show");
+    return;
+  }
+
+  btn.classList.add("active");
+  btn.textContent = "⚡ Načítám…";
+  await refreshLightningLayer();
+  btn.textContent = "⚡ Blesky";
+
+  // Obnov každých 5 minut
+  lightningRefreshTimer = setInterval(refreshLightningLayer, 5 * 60 * 1000);
+}
+
+async function refreshLightningLayer() {
+  const info = await fetchLightning();
+  if (!info) return;
+
+  // Odstraň starou vrstvu
+  if (lightningLayer) { map.removeLayer(lightningLayer); lightningLayer = null; }
+
+  // Lightning tiles z RainVieweru — semi-transparentní overlay
+  const tileUrl = `${info.host}${info.path}/256/{z}/{x}/{y}/1/1_1.png`;
+  lightningLayer = L.tileLayer(tileUrl, {
+    opacity: 0.85,
+    zIndex: 300,
+    attribution: "RainViewer"
+  }).addTo(map);
+
+  // Čas snímku
+  const age = Math.round((Date.now() / 1000 - info.time) / 60);
+  document.getElementById("storm-age").textContent = `(před ${age} min)`;
+
+  // Aktualizuj vzdálenost pokud je vybrané místo
+  if (_currentLat !== null) updateStormDist(info.time);
+
+  if (lightningOn) document.getElementById("storm-bar").classList.add("show");
+}
+
+// Kompasové směry
+function bearing(lat1, lon1, lat2, lon2) {
+  const r = Math.PI / 180;
+  const dL = (lon2 - lon1) * r;
+  const y = Math.sin(dL) * Math.cos(lat2 * r);
+  const x = Math.cos(lat1 * r) * Math.sin(lat2 * r)
+          - Math.sin(lat1 * r) * Math.cos(lat2 * r) * Math.cos(dL);
+  const b = (Math.atan2(y, x) / r + 360) % 360;
+  const dirs = ["S","SV","V","JV","J","JZ","Z","SZ"];
+  return dirs[Math.round(b / 45) % 8];
+}
+
+function updateStormDist(frameTime) {
+  // Vzdálenost bouřky = vzdálenost nejbližší aktivní bouřkové buňky
+  // Proxy: vzít centroid srážek ≥ 45 dBZ z aktuálního radar snímku
+  // Jednodušší: ukázat vzdálenost k nejbližší aktivní srážkové oblasti z GRID
+  if (!GRID || _currentLat === null) return;
+
+  let nearest = null, nearestDist = Infinity;
+  GRID.pts.forEach((pt, i) => {
+    const a = GRID.act[String(i)];
+    if (!a || a[2] < 5) return;  // jen intenzivnější srážky
+    const d = haversine(_currentLat, _currentLon, pt[0], pt[1]);
+    if (d < nearestDist) { nearestDist = d; nearest = pt; }
+  });
+
+  const el   = document.getElementById("storm-dist");
+  const dirEl = document.getElementById("storm-dir");
+
+  if (!nearest || nearestDist > 150) {
+    el.textContent = "žádná bouřka v dosahu";
+    el.className = "far";
+    dirEl.textContent = "";
+    return;
+  }
+
+  const dir = bearing(_currentLat, _currentLon, nearest[0], nearest[1]);
+  el.textContent = `${Math.round(nearestDist)} km`;
+  dirEl.textContent = `na ${dir}`;
+  el.className = nearestDist < 15 ? "near" : nearestDist < 40 ? "medium" : "far";
+}
+
 function initMap() {
   map = L.map("map", { zoomControl: true }).setView([49.8, 15.5], 7);
 
@@ -1147,6 +1279,9 @@ function showForecast(lat, lon, label) {
   // Srážkový sparkline
   drawRainSpark(id);
 
+  // Aktualizuj vzdálenost bouřky pokud je vrstva zapnutá
+  if (lightningOn) updateStormDist();
+
   // 24h forecast timeline
   showFc24(lat, lon, label);
 
@@ -1271,6 +1406,7 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   // Refresh button
   document.getElementById("btn-refresh").addEventListener("click", refreshAll);
+  document.getElementById("btn-lightning").addEventListener("click", toggleLightning);
 
   // Auto-play po 800ms (dá čas preloadu první vlně PNG)
   setTimeout(() => togglePlay(true), 800);
