@@ -195,14 +195,17 @@ def call_gemini(prompt_str: str, api_key: str) -> str:
     client = genai.Client(api_key=api_key)
 
     def _call(model: str) -> str:
+        config = types.GenerateContentConfig(
+            system_instruction=SYSTEM_PROMPT,
+            max_output_tokens=800,
+            temperature=0.2,
+            thinking_config=types.ThinkingConfig(thinking_budget=0),
+        )
+        print(f"  config: model={model}, max_output_tokens=800, thinking_budget=0")
         response = client.models.generate_content(
             model=model,
             contents=prompt_str,
-            config=types.GenerateContentConfig(
-                system_instruction=SYSTEM_PROMPT,
-                max_output_tokens=400,
-                temperature=0.2,
-            ),
+            config=config,
         )
         # Zaloguj důvod ukončení (MAX_TOKENS, STOP, ...)
         finish_reason = None
