@@ -1031,8 +1031,17 @@ const WC_EMOJI = (() => {
   return m;
 })();
 
-function wcIcon(wc) {
-  const e = wc != null ? (WC_EMOJI[wc] ?? "🌡️") : "🌡️";
+function wcIcon(wc, hour) {
+  let e = wc != null ? (WC_EMOJI[wc] ?? "🌡️") : "🌡️";
+  // Noční varianty pro jasné/polojasné stavy (hora mimo 6–21)
+  if (hour != null) {
+    const night = hour < 6 || hour >= 21;
+    if (night) {
+      if (wc === 0) e = "🌙";
+      else if (wc === 1) e = "🌛";
+      else if (wc === 2) e = "🌥️";  // oblačno v noci zachováme ⛅→🌥
+    }
+  }
   return `<span class="wc-emoji">${e}</span>`;
 }
 
@@ -1138,7 +1147,7 @@ function renderFc24(fc, label) {
       ? `<span class="cape-badge ${h.cape >= 1000 ? 'cape-high' : h.cape >= 500 ? 'cape-mod' : 'cape-low'}">⚡${h.cape >= 1000 ? 'silné' : h.cape >= 500 ? 'střední' : 'nízké'}</span>` : "";
     col.innerHTML = `
       <div class="fc24-time">${h.t}</div>
-      <div class="fc24-icon">${wcIcon(h.wc)}</div>
+      <div class="fc24-icon">${wcIcon(h.wc, parseInt(h.t))}</div>
       <div class="fc24-temp">${h.temp != null ? h.temp + "°" : "—"}${feelsStr}</div>
       <div class="fc24-sub fc24-prec">${h.prob > 0 ? `<span>${h.prob}%</span>` : ""}${h.precip > 0 ? ` <span>${h.precip}mm</span>` : ""}</div>
       <div class="fc24-sub fc24-wind">${h.wind > 0 ? `<span>${h.wind}km/h</span>` : ""}${uvStr}${capeStr}</div>`;
@@ -1157,7 +1166,7 @@ function renderFc24(fc, label) {
     const tRange = b.tmin != null ? `${b.tmin}–${b.tmax}°` : "—";
     col.innerHTML = `
       <div class="fc24-time">${b.t}</div>
-      <div class="fc24-icon">${wcIcon(b.wc)}</div>
+      <div class="fc24-icon">${wcIcon(b.wc, parseInt(b.t))}</div>
       <div class="fc24-range">${tRange}</div>
       <div class="fc24-sub">${b.prob > 0 ? `<span class="fc24-prec">${b.prob}%</span>` : ""}${b.precip > 0 ? ` <span class="fc24-prec">${b.precip}mm</span>` : ""}</div>
       <div class="fc24-sub fc24-wind">${b.gust > 0 ? `<span>${b.gust}km/h</span>` : ""}</div>`;
