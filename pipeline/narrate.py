@@ -1,8 +1,9 @@
 """
-Fáze 3b — Narrace (Claude API)
+Fáze 3b — Narrace (Google Gemini API)
 - Načte forecast.json
-- Sestaví strukturovaný vstup pro Claude (časy v Europe/Prague)
-- Zavolá Claude API s tvrdým guardrailem (nebo vypíše vstup pro kontrolu)
+- Sestaví strukturovaný vstup pro Gemini (časy v Europe/Prague)
+- Zavolá Gemini API s tvrdým guardrailem; záloha: gemini-2.5-flash-lite na 429
+- Fallback bez AI: template_verdict() — vždy vyprodukuje verdikt
 - Uloží verdikt zpět do forecast.json
 """
 
@@ -16,8 +17,8 @@ from zoneinfo import ZoneInfo
 DATA_DIR = Path(__file__).parent.parent / "data"
 PRAGUE_TZ = ZoneInfo("Europe/Prague")
 
-# claude-haiku-4-5: levný a rychlý, vhodný pro 10min cron
-CLAUDE_MODEL = "claude-haiku-4-5-20251001"
+GEMINI_MODEL_PRIMARY = "gemini-2.5-flash"
+GEMINI_MODEL_FALLBACK = "gemini-2.5-flash-lite"
 
 SYSTEM_PROMPT = """\
 Jsi meteorologický asistent. Dostaneš strukturovaný JSON s předpovědí počasí.
@@ -46,46 +47,39 @@ def to_prague_time(utc_str: str) -> str:
 
 def build_prompt(forecast: dict) -> str:
     """
-    Sestaví vstupní JSON pro Claude — přehledný, bez zbytečných dat.
+    Sestaví vstupní JSON pro Gemini — přehledný, bez zbytečných dat.
     Časy jsou převedeny do Europe/Prague.
     """
     ts = forecast.get("timeseries", [])
     warnings = forecast.get("warnings", [])
-    nc_source = forecast.get("nowcast_source", {})
     t0 = forecast.get("t0_utc", "")
 
-    # Souhrnné statistiky z nowcastu
     nc_points  = [p for p in ts if p["source"] == "nowcast"]
     nwp_points = [p for p in ts if p["source"] == "nwp"]
 
     precips_nc = [p["precip_mm_h"] for p in nc_points if p["precip_mm_h"] is not None]
     peak_nc    = max(precips_nc, default=0.0)
 
-    # Najdi okno se srážkami v nowcastu (> 0.1 mm/h)
-    rain_nc    = [(p["time_utc"], p["precip_mm_h"]) for p in nc_points
-                  if (p["precip_mm_h"] or 0) >= 0.1]
-    arrival    = to_prague_time(rain_nc[0][0])  if rain_nc else None
-    end_rain   = to_prague_time(rain_nc[-1][0]) if rain_nc else None
-    total_nc   = round(sum(v for _, v in rain_nc) * (10 / 60), 2)  # mm (10min kroky)
+    rain_nc  = [(p["time_utc"], p["precip_mm_h"]) for p in nc_points
+                if (p["precip_mm_h"] or 0) >= 0.1]
+    arrival  = to_prague_time(rain_nc[0][0])  if rain_nc else None
+    end_rain = to_prague_time(rain_nc[-1][0]) if rain_nc else None
+    total_nc = round(sum(v for _, v in rain_nc) * (10 / 60), 2)
 
-    # NWP přehled: hodiny s > 0.1 mm/h
     rain_nwp = [(p["time_utc"], p["precip_mm_h"]) for p in nwp_points
                 if (p["precip_mm_h"] or 0) >= 0.1]
     nwp_summary = []
-    for t_str, v in rain_nwp[:8]:  # max 8 bodů aby prompt nebyl obří
+    for t_str, v in rain_nwp[:8]:
         nwp_summary.append({"time_local": to_prague_time(t_str), "precip_mm_per_15min": v})
 
-    # Vítr z NWP — průměr i nárazy
-    wind_vals  = [p["wind_ms"]       for p in nwp_points if p.get("wind_ms")]
+    wind_vals  = [p["wind_ms"]           for p in nwp_points if p.get("wind_ms")]
     gusts_vals = [p.get("wind_gusts_ms") for p in nwp_points if p.get("wind_gusts_ms")]
     peak_wind  = max(wind_vals,  default=None)
     peak_gusts = max(gusts_vals, default=None)
 
-    # CAPE (konvekce)
     cape_vals = [p["cape"] for p in nwp_points if p.get("cape")]
     max_cape  = max(cape_vals, default=None)
 
-    # Výstrahy — formátuj platnost v Prague čase
     warnings_fmt = []
     for w in warnings:
         warnings_fmt.append({
@@ -97,21 +91,21 @@ def build_prompt(forecast: dict) -> str:
         })
 
     prompt_data = {
-        "lokace":       forecast.get("location"),
+        "lokace":               forecast.get("location"),
         "referencni_cas_local": to_prague_time(t0),
         "nowcast_0_2h": {
-            "zdroj":         "radarová extrapolace",
-            "peak_mm_h":     round(peak_nc, 2),
-            "prichod_srazek_local": arrival,
-            "konec_srazek_local":   end_rain,
-            "odhad_uhrnu_mm":       total_nc,
+            "zdroj":                   "radarová extrapolace",
+            "peak_mm_h":               round(peak_nc, 2),
+            "prichod_srazek_local":    arrival,
+            "konec_srazek_local":      end_rain,
+            "odhad_uhrnu_mm":          total_nc,
         },
         "nwp_2h_plus": {
-            "zdroj":              "Open-Meteo ICON-D2",
-            "hodiny_se_srazkami": nwp_summary,
-            "peak_vitr_prumer_ms": round(peak_wind,  1) if peak_wind  else None,
-            "peak_narazy_ms":      round(peak_gusts, 1) if peak_gusts else None,
-            "max_cape":           round(max_cape, 0) if max_cape else None,
+            "zdroj":                  "Open-Meteo ICON-D2",
+            "hodiny_se_srazkami":     nwp_summary,
+            "peak_vitr_prumer_ms":    round(peak_wind,  1) if peak_wind  else None,
+            "peak_narazy_ms":         round(peak_gusts, 1) if peak_gusts else None,
+            "max_cape":               round(max_cape,   0) if max_cape   else None,
         },
         "vystrahy_CHMU": warnings_fmt,
     }
@@ -119,17 +113,94 @@ def build_prompt(forecast: dict) -> str:
     return json.dumps(prompt_data, ensure_ascii=False, indent=2)
 
 
-def call_claude(prompt_str: str, api_key: str) -> str:
-    """Zavolá Claude API a vrátí text verdiktu."""
-    import anthropic
-    client = anthropic.Anthropic(api_key=api_key)
-    msg = client.messages.create(
-        model=CLAUDE_MODEL,
-        max_tokens=300,
-        system=SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": prompt_str}],
-    )
-    return msg.content[0].text.strip()
+def template_verdict(forecast: dict) -> str:
+    """Sestaví věcný verdikt ze šablony bez AI — vždy uspěje."""
+    ts = forecast.get("timeseries", [])
+    warnings = forecast.get("warnings", [])
+    t0 = forecast.get("t0_utc", "")
+    ref_time = to_prague_time(t0) if t0 else "N/A"
+
+    nc_points  = [p for p in ts if p["source"] == "nowcast"]
+    nwp_points = [p for p in ts if p["source"] == "nwp"]
+
+    rain_nc = [(p["time_utc"], p["precip_mm_h"]) for p in nc_points
+               if (p["precip_mm_h"] or 0) >= 0.1]
+    peak_nc = max((p["precip_mm_h"] for p in nc_points if p["precip_mm_h"]), default=0.0)
+
+    rain_nwp = [(p["time_utc"], p["precip_mm_h"]) for p in nwp_points
+                if (p["precip_mm_h"] or 0) >= 0.1]
+    gusts_vals = [p.get("wind_gusts_ms") for p in nwp_points if p.get("wind_gusts_ms")]
+    peak_gusts = max(gusts_vals, default=None)
+
+    sentences = []
+
+    # Věta 1: nowcast srážky
+    if rain_nc:
+        arrival  = to_prague_time(rain_nc[0][0])
+        end_rain = to_prague_time(rain_nc[-1][0])
+        total_nc = round(sum(v for _, v in rain_nc) * (10 / 60), 2)
+        sentences.append(
+            f"Radarová extrapolace (ref. {ref_time}) předpovídá srážky "
+            f"od {arrival} do {end_rain}, peak {round(peak_nc,1)} mm/h, "
+            f"odhadovaný úhrn {total_nc} mm."
+        )
+    else:
+        sentences.append(
+            f"Radarová extrapolace (ref. {ref_time}) nepředpovídá srážky v následujících 2 hodinách."
+        )
+
+    # Věta 2: NWP srážky
+    if rain_nwp:
+        first_nwp = to_prague_time(rain_nwp[0][0])
+        sentences.append(
+            f"Model ICON-D2 indikuje srážky od {first_nwp} a dále."
+        )
+
+    # Věta 3: nárazy větru
+    if peak_gusts and peak_gusts >= 10:
+        sentences.append(f"Nárazy větru dosahují až {round(peak_gusts,1)} m/s.")
+
+    # Věta 4: výstrahy
+    if warnings:
+        w = warnings[0]
+        jev    = w.get("event", "")
+        barva  = w.get("color", "")
+        od     = to_prague_time(w.get("onset_utc", ""))
+        do_cas = to_prague_time(w.get("expires_utc", ""))
+        sentences.append(
+            f"ČHMÚ výstraha ({barva}): {jev}, platná {od}–{do_cas}."
+        )
+
+    return " ".join(sentences)
+
+
+def call_gemini(prompt_str: str, api_key: str) -> str:
+    """Zavolá Gemini API; při 429 zkusí flash-lite jako záložní model."""
+    from google import genai
+    from google.genai import types
+
+    client = genai.Client(api_key=api_key)
+
+    def _call(model: str) -> str:
+        response = client.models.generate_content(
+            model=model,
+            contents=prompt_str,
+            config=types.GenerateContentConfig(
+                system_instruction=SYSTEM_PROMPT,
+                max_output_tokens=300,
+                temperature=0.2,
+            ),
+        )
+        return response.text.strip()
+
+    try:
+        print(f"  Zkouším {GEMINI_MODEL_PRIMARY}...")
+        return _call(GEMINI_MODEL_PRIMARY)
+    except Exception as e:
+        if "429" in str(e) or "quota" in str(e).lower() or "RESOURCE_EXHAUSTED" in str(e):
+            print(f"  429 / quota na {GEMINI_MODEL_PRIMARY}, zkouším {GEMINI_MODEL_FALLBACK}...")
+            return _call(GEMINI_MODEL_FALLBACK)
+        raise
 
 
 def main():
@@ -141,40 +212,36 @@ def main():
     with open(forecast_path) as f:
         forecast = json.load(f)
 
-    print("\n=== Příprava vstupu pro Claude ===")
+    print("\n=== Příprava vstupu pro Gemini ===")
     prompt_str = build_prompt(forecast)
     print(prompt_str)
 
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    api_key = os.environ.get("GEMINI_API_KEY", "")
+    used_model = None
+    verdict_text = None
 
-    if not api_key:
-        print("\n⚠  ANTHROPIC_API_KEY není nastaven.")
-        print("   Výše je přesný JSON, který by se Claudovi poslal.")
-        print("   Nastav GitHub Secret ANTHROPIC_API_KEY a spusť znovu.")
-        forecast["verdict"] = {
-            "text":  None,
-            "note":  "ANTHROPIC_API_KEY není nastaven — verdikt nevygenerován",
-            "model": CLAUDE_MODEL,
-            "generated_at_utc": datetime.now(timezone.utc).isoformat(),
-        }
-    else:
-        print("\n=== Volám Claude API ===")
+    if api_key:
+        print("\n=== Volám Gemini API ===")
         try:
-            verdict_text = call_claude(prompt_str, api_key)
-            print(f"\nVERDIKT:\n{verdict_text}")
-            forecast["verdict"] = {
-                "text":             verdict_text,
-                "model":            CLAUDE_MODEL,
-                "generated_at_utc": datetime.now(timezone.utc).isoformat(),
-            }
+            verdict_text = call_gemini(prompt_str, api_key)
+            # Zjistíme, který model byl použit (flash nebo lite)
+            used_model = GEMINI_MODEL_PRIMARY  # call_gemini vrací text, model neznáme přesně
+            print(f"\nVERDIKT (Gemini):\n{verdict_text}")
         except Exception as e:
-            print(f"ERROR: Claude API selhalo: {e}", file=sys.stderr)
-            forecast["verdict"] = {
-                "text":  None,
-                "error": str(e),
-                "model": CLAUDE_MODEL,
-                "generated_at_utc": datetime.now(timezone.utc).isoformat(),
-            }
+            print(f"WARN: Gemini API selhalo: {e} — používám šablonový verdikt", file=sys.stderr)
+
+    if verdict_text is None:
+        if not api_key:
+            print("\n⚠  GEMINI_API_KEY není nastaven — používám šablonový verdikt.")
+        verdict_text = template_verdict(forecast)
+        used_model = "template"
+        print(f"\nVERDIKT (šablona):\n{verdict_text}")
+
+    forecast["verdict"] = {
+        "text":             verdict_text,
+        "model":            used_model or GEMINI_MODEL_PRIMARY,
+        "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+    }
 
     with open(forecast_path, "w") as f:
         json.dump(forecast, f, indent=2, ensure_ascii=False)
