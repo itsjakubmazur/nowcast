@@ -1,10 +1,10 @@
 """
 Fáze 4c — Render radarových PNG snímků pro webovou smyčku
-- 6 historických MAX_Z + 12 nowcast snímků = 18 RGBA PNG (pevné názvy, přepisují se)
-- VŠECHNY snímky ve STEJNÉ veličině (mm/h, Marshall–Palmer) a se SPOLEČNOU pevnou škálou,
-  aby minulost a nowcast na sebe kolem t0 plynule navazovaly.
-- Nowcast se advektuje ze STEJNÉHO MAX_Z rain-rate pole jako minulost (vizuální kontinuita).
-  (Kvantitativní nowcast z MERGE zůstává v nowcast.py/grid.py — tohle je jen vizualizace.)
+- 6 historických snímků (MAX_Z rain rate, 10-min kroky) + 12 nowcast snímků = 18 RGBA PNG
+- Historické snímky: skutečné MAX_Z soubory → Z→R (vizuální minulost s pohybem)
+- t0 a nowcast: MERGE QPE (mm/h u země) advektovaný dopředu (přesný základ, pohyb z MAX_Z)
+- Pohybové pole: lucaskanade z MAX_Z sekvence (společné pro hist i nowcast)
+- VŠECHNY snímky ve STEJNÉ veličině (mm/h) a se SPOLEČNOU pevnou škálou
 - PNG kvantizované (paleta 256, FASTOCTREE s alfou) → ~10–40 kB/snímek
 - Výstup: data/radar_frames/frame_00..17.png + data/radar_manifest.json
 """
@@ -27,29 +27,27 @@ from nowcast import (
 from pysteps import motion, nowcasts
 
 PRAGUE_TZ = ZoneInfo("Europe/Prague")
-SCALE     = 1          # nativní rozlišení (~598×378); mřížka je 1 km, 2× nemá smysl
-N_PAST    = 6          # počet historických snímků (5 zpětně advektovaných + t0)
+SCALE     = 1          # nativní rozlišení (~598×378)
+N_PAST    = 6          # počet historických snímků (5 z MAX_Z + t0 z MERGE)
 OUT_DIR   = DATA_DIR / "radar_frames"
 
-# ── Pevná SPOLEČNÁ barevná škála mm/h → RGBA (platí pro VŠECH 18 snímků) ───────
-# Realistická dešťová stupnice pro ČR; alfa 0 = plně průhledné (sucho).
-# 0.1–1 slabý · 1–4 mírný · 4–10 silnější · 10–30 intenzivní/bouřkový · ≥30 saturace
-RR_MIN  = 0.10   # pod tímto prahem = plně průhledné
-RR_MAX  = 30.0   # saturace stupnice (mm/h) — v ČR už bouřkový extrém
-SANITY_MAX = 50.0  # nad touto hodnotou = podezření na chybu (kroupy/MAX_Z artefakt)
+# ── Pevná SPOLEČNÁ barevná škála mm/h → RGBA ─────────────────────────────────
+RR_MIN  = 0.10
+RR_MAX  = 30.0
+SANITY_MAX = 50.0
 CMAP: list[tuple[float, tuple[int, int, int, int]]] = [
     (0.00, (  0,   0,   0,   0)),
-    (0.08, (  0,   0,   0,   0)),   # pod šumovým prahem = stále průhledné
-    (0.10, (160, 210, 255, 150)),   # slabý déšť — bledě modrá
-    (0.50, ( 60, 140, 255, 190)),   # modrá
-    (1.00, (  0, 200, 120, 210)),   # mírný — modrozelená
-    (2.00, (  0, 200,   0, 220)),   # zelená
-    (4.00, (180, 220,   0, 228)),   # silnější — žlutozelená
-    (7.00, (255, 210,   0, 236)),   # žlutá
-    (10.0, (255, 140,   0, 244)),   # intenzivní — oranžová
-    (15.0, (255,  60,   0, 250)),   # červenooranžová
-    (20.0, (220,   0,   0, 255)),   # červená
-    (30.0, (150,   0,  80, 255)),   # saturace — tmavě červená/fialová
+    (0.08, (  0,   0,   0,   0)),
+    (0.10, (160, 210, 255, 150)),
+    (0.50, ( 60, 140, 255, 190)),
+    (1.00, (  0, 200, 120, 210)),
+    (2.00, (  0, 200,   0, 220)),
+    (4.00, (180, 220,   0, 228)),
+    (7.00, (255, 210,   0, 236)),
+    (10.0, (255, 140,   0, 244)),
+    (15.0, (255,  60,   0, 250)),
+    (20.0, (220,   0,   0, 255)),
+    (30.0, (150,   0,  80, 255)),
 ]
 
 _LUT_SIZE = 2048
@@ -74,7 +72,6 @@ def rr_to_img(rr: np.ndarray) -> Image.Image:
     if SCALE != 1:
         h, w = rr.shape
         img = img.resize((w * SCALE, h * SCALE), Image.Resampling.BILINEAR)
-    # Kvantizace na paletu 256 barev s alfou (FASTOCTREE umí alfa kanál) — zmenší 5–10×
     return img.quantize(colors=256, method=Image.Quantize.FASTOCTREE)
 
 
@@ -97,7 +94,7 @@ def main():
     radar_dir = DATA_DIR / "radar"
     OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-    # ── 1. Pohybové pole z MAX_Z (JEN advekční vektory, ne hodnoty) ─────────────
+    # ── 1. MAX_Z sekvence: pohybové pole + historické rain-rate snímky ───────────
     maxz_paths = [radar_dir / "maxz" / n for n in radar_meta.get("maxz_files", [])]
     maxz_paths = [p for p in maxz_paths if p.exists()]
     if len(maxz_paths) < 2:
@@ -108,39 +105,51 @@ def main():
     t0 = maxz_times[-1]
 
     print(f"\n=== Render radarových PNG (scale {SCALE}×, {N_PAST} hist + {N_LEADTIMES} nowcast) ===")
-    print(f"  Veličina: MERGE QPE (mm/h u země) — NE MAX_Z (sloupcová odrazivost přepaluje)")
-    print(f"  MAX_Z slouží JEN k odhadu pohybového pole (advekční vektory).")
+    print(f"  Historické snímky: MAX_Z → Z→R (10-min kroky, skutečné soubory)")
+    print(f"  t0 + nowcast: MERGE QPE (mm/h u země) advektovaný z MAX_Z pohybového pole")
     print(f"  Pevná škála: {RR_MIN}–{RR_MAX} mm/h (průhledné < {RR_MIN}, saturace ≥ {RR_MAX})")
     print(f"  t0 = {t0.isoformat()}")
 
     motion_field = motion.get_method("lucaskanade")(np.nan_to_num(maxz_stack, nan=0.0))
 
-    # ── 2. Startovní pole = MERGE QPE (mm/h u země); fallback MAX_Z rain rate ────
+    # ── 2. Historické snímky z MAX_Z (skutečné soubory, různé časy) ─────────────
+    # maxz_stack: [N, r, c], maxz_times: list délky N, nejstarší→nejnovější
+    # Chceme posledních N_PAST snímků (nebo méně, pokud soubory chybí):
+    #   frame_00 = nejstarší (t0 - (N_PAST-1)*TIMESTEP_MIN)
+    #   frame_04 = t0 - 1*TIMESTEP_MIN
+    #   frame_05 = t0 (z MERGE)
+    n_maxz = len(maxz_paths)
+    n_hist = min(N_PAST - 1, n_maxz - 1)   # kolik historických MAX_Z snímků renderujeme
+    # Použijeme posledních (n_hist+1) snímků ze stacku (nejvíc nových)
+    hist_indices = list(range(n_maxz - 1 - n_hist, n_maxz - 1))  # bez posledního (= t0)
+    # Převod dBZ → mm/h pro historické snímky
+    maxz_rr = dbz_to_rainrate(maxz_stack)   # shape (N, r, c)
+
+    print(f"\n  Historické MAX_Z snímky dostupné: {n_maxz} souborů, renderujeme {len(hist_indices)} + t0 z MERGE")
+
+    # ── 3. t0 a nowcast ze MERGE (nebo fallback MAX_Z) ───────────────────────────
     merge_paths = [radar_dir / "merge" / n for n in radar_meta.get("merge_files", [])]
     merge_paths = [p for p in merge_paths if p.exists()]
     start_rr, rr_source = pick_merge_start_field(merge_paths, t0)
     if start_rr is None:
-        print(f"  ⚠  MERGE nedostupný ({rr_source}) — fallback na MAX_Z rain rate (může přepalovat)")
-        start_rr = dbz_to_rainrate(maxz_stack[-1])
+        print(f"  ⚠  MERGE nedostupný ({rr_source}) — fallback na MAX_Z rain rate pro t0")
+        start_rr = maxz_rr[-1].copy()
         rr_source = "maxz_fallback"
     else:
-        print(f"  Startovní pole: {rr_source}")
+        print(f"  Startovní pole (t0): {rr_source}")
 
-    # ── 3. Advekce MERGE pole: dozadu (minulost) i dopředu (nowcast) ────────────
+    # Nowcast: dopředu z MERGE (nebo MAX_Z fallback)
     extrap = nowcasts.get_method("extrapolation")
     rr_clean = np.nan_to_num(start_rr, nan=0.0)
-    n_back = N_PAST - 1   # 5 zpětných + samotné t0 = 6 historických
     fwd = extrap(rr_clean, motion_field, N_LEADTIMES,
                  extrap_kwargs={"allow_nonfinite_values": True})
-    bwd = extrap(rr_clean, -motion_field, n_back,
-                 extrap_kwargs={"allow_nonfinite_values": True})  # bwd[k] = t0-(k+1)*step
 
-    # ── 4. Render všech snímků (společná škála) ─────────────────────────────────
+    # ── 4. Render všech snímků ───────────────────────────────────────────────────
     frames_meta: list[dict] = []
     total_bytes = 0
     sanity_hits = []
 
-    def _render(rr: np.ndarray, fname: str, t: datetime, ftype: str, tag: str) -> None:
+    def _render(rr: np.ndarray, fname: str, t: datetime, ftype: str, tag: str, src: str) -> None:
         nonlocal total_bytes
         img   = rr_to_img(rr)
         fpath = OUT_DIR / fname
@@ -153,28 +162,43 @@ def main():
         if mx > SANITY_MAX:
             sanity_hits.append((fname, mx))
         print(f"  {fname}  {t.strftime('%H:%M')} UTC  {tag:>9s}  "
-              f"max={mx:6.1f} mm/h  {sz//1024:3d} kB{flag}")
+              f"max={mx:6.1f} mm/h  {sz//1024:3d} kB  [{src}]{flag}")
         frames_meta.append({
             "file":       fname,
             "time_utc":   t.isoformat(),
             "time_local": t.astimezone(PRAGUE_TZ).strftime("%H:%M"),
             "type":       ftype,
+            "source":     src,
             "max_mm_h":   round(mx, 1),
         })
 
-    print("\n  Snímek         čas    typ         maximum         velikost")
-    # Historické: 5 zpětných (nejstarší první) → t0
-    for k in range(n_back, 0, -1):     # k = 5,4,3,2,1  → bwd index k-1
-        t = t0 - timedelta(minutes=k * TIMESTEP_MIN)
-        idx = n_back - k               # 0..4 (souborové pořadí)
-        _render(bwd[k - 1].copy(), f"frame_{idx:02d}.png", t, "past", f"-{k*TIMESTEP_MIN} min")
-    # t0 (samotné MERGE pole)
-    _render(start_rr, f"frame_{n_back:02d}.png", t0, "t0", "● TEĎ")
-    # Nowcast: dopředu
+    print("\n  Snímek         čas    typ         maximum         velikost  zdroj")
+
+    # Pokud máme méně MAX_Z snímků než N_PAST-1, doplníme padding (prázdné snímky) na začátek
+    n_pad = (N_PAST - 1) - len(hist_indices)
+    for k in range(n_pad):
+        frame_idx = k
+        t = t0 - timedelta(minutes=(N_PAST - 1 - k) * TIMESTEP_MIN)
+        empty = np.zeros_like(maxz_rr[-1])
+        _render(empty, f"frame_{frame_idx:02d}.png", t, "past", f"-{(N_PAST-1-k)*TIMESTEP_MIN} min", "empty")
+
+    # Historické MAX_Z snímky (skutečné soubory)
+    for rank, si in enumerate(hist_indices):
+        frame_idx = n_pad + rank
+        t = maxz_times[si]
+        lag_min = int((t0 - t).total_seconds() / 60)
+        _render(maxz_rr[si].copy(), f"frame_{frame_idx:02d}.png", t, "past",
+                f"-{lag_min} min", f"maxz:{maxz_paths[si].name}")
+
+    # t0 — MERGE (nebo fallback MAX_Z)
+    _render(start_rr, f"frame_{N_PAST - 1:02d}.png", t0, "t0", "● TEĎ",
+            rr_source if rr_source != "maxz_fallback" else f"maxz:{maxz_paths[-1].name}")
+
+    # Nowcast
     for i in range(N_LEADTIMES):
         t = t0 + timedelta(minutes=(i + 1) * TIMESTEP_MIN)
         _render(fwd[i].copy(), f"frame_{N_PAST + i:02d}.png", t,
-                "nowcast", f"+{(i+1)*TIMESTEP_MIN} min")
+                "nowcast", f"+{(i+1)*TIMESTEP_MIN} min", "merge_extrap")
 
     # ── 5. Manifest ─────────────────────────────────────────────────────────────
     manifest = {
@@ -185,8 +209,8 @@ def main():
         "source":           rr_source,
         "scale_mm_h":       {"min": RR_MIN, "max": RR_MAX},
         "bounds": [
-            [meta["LL_lat"], meta["LL_lon"]],   # SW roh pro Leaflet
-            [meta["UR_lat"], meta["UR_lon"]],   # NE roh
+            [meta["LL_lat"], meta["LL_lon"]],
+            [meta["UR_lat"], meta["UR_lon"]],
         ],
         "frames": frames_meta,
     }
