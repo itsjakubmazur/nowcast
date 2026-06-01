@@ -21,15 +21,24 @@ GEMINI_MODEL_PRIMARY = "gemini-2.5-flash"
 GEMINI_MODEL_FALLBACK = "gemini-2.5-flash-lite"
 
 SYSTEM_PROMPT = """\
-Jsi meteorologický asistent. Dostaneš strukturovaný JSON s předpovědí počasí.
+Jsi meteorologický asistent, který píše stručnou předpověď pro běžného člověka.
+Dostaneš JSON s daty o počasí. Napiš 2–4 věty česky, přirozeně a srozumitelně.
 
-PRAVIDLA (závazná, bez výjimek):
-- Popisuj POUZE čísla, jevy a výstrahy, které dostaneš ve vstupním JSON.
-- Nic nedopočítávej, neodhaduj, nevymýšlej. Nepoužívej žádné znalosti z tréninku.
-- Pokud data chybí nebo jsou nulová, řekni to.
-- Odpověz česky, 2–4 věty, uveď konkrétní časy a hodnoty ze vstupu.
-- Časy jsou v místním čase (Europe/Prague) — použij je přímo.
-- Nepiš žádné uvozovací věty ani závěry mimo věcný popis dat.\
+POVINNÁ PRAVIDLA — nikdy neporušuj:
+- Uváděj POUZE jevy a hodnoty, které jsou ve vstupním JSON. Nic nevymýšlej, neodhaduj ani nedoplňuj.
+- Časy jsou v místním čase (Europe/Prague) — použij je přímo, nepřepočítávej.
+- Pokud ve vstupu nejsou srážky ani výstrahy, napiš to krátce a pozitivně (1–2 věty stačí).
+
+STYL — dodržuj vždy:
+- Piš pro běžného člověka, ne technika. NIKDY nezmiňuj: ICON-D2, Open-Meteo, CAPE, radarová extrapolace,
+  průměrná rychlost větru, mm/h jako technická jednotka.
+- Vítr popisuj přes NÁRAZY (ne průměr): převeď m/s na km/h (×3,6), zaokrouhli na desítky.
+  Příklad: "vítr v nárazech kolem 50 km/h". Průměrnou rychlost větru nezmiňuj vůbec.
+- Srážky: intenzitu popiš slovně (slabý déšť / mírný déšť / vydatný déšť / přeháňky),
+  úhrn zaokrouhli na celé mm ("kolem 3 mm", "do 1 mm"). Neuváděj mm/h jako číslo.
+- Vysoké riziko bouřek (výstraha + silné nárazy) zmiň jako "riziko bouřek" nebo "bouřkové riziko" — nikdy ne "CAPE".
+- Když platí výstraha ČHMÚ, zmiň ji NA PRVNÍM MÍSTĚ: barvu + jev + časy platnosti.
+  Příklad: "ČHMÚ vydalo oranžovou výstrahu před bouřkami, platnou od 14:00 do 20:00."\
 """
 
 
@@ -113,12 +122,28 @@ def build_prompt(forecast: dict) -> str:
     return json.dumps(prompt_data, ensure_ascii=False, indent=2)
 
 
+def _rain_intensity(peak_mm_h: float) -> str:
+    """Slovní popis intenzity srážek podle mm/h."""
+    if peak_mm_h < 0.5:
+        return "slabé přeháňky"
+    if peak_mm_h < 2.5:
+        return "slabý déšť"
+    if peak_mm_h < 7.5:
+        return "mírný déšť"
+    if peak_mm_h < 15:
+        return "vydatný déšť"
+    return "silný déšť"
+
+
+def _gusts_kmh(ms: float) -> int:
+    """Převede m/s na km/h, zaokrouhlí na celých 10."""
+    return round(ms * 3.6 / 10) * 10
+
+
 def template_verdict(forecast: dict) -> str:
-    """Sestaví věcný verdikt ze šablony bez AI — vždy uspěje."""
-    ts = forecast.get("timeseries", [])
+    """Sestaví lidsky srozumitelný verdikt ze šablony bez AI — vždy uspěje."""
+    ts       = forecast.get("timeseries", [])
     warnings = forecast.get("warnings", [])
-    t0 = forecast.get("t0_utc", "")
-    ref_time = to_prague_time(t0) if t0 else "N/A"
 
     nc_points  = [p for p in ts if p["source"] == "nowcast"]
     nwp_points = [p for p in ts if p["source"] == "nwp"]
@@ -134,42 +159,40 @@ def template_verdict(forecast: dict) -> str:
 
     sentences = []
 
-    # Věta 1: nowcast srážky
-    if rain_nc:
-        arrival  = to_prague_time(rain_nc[0][0])
-        end_rain = to_prague_time(rain_nc[-1][0])
-        total_nc = round(sum(v for _, v in rain_nc) * (10 / 60), 2)
-        sentences.append(
-            f"Radarová extrapolace (ref. {ref_time}) předpovídá srážky "
-            f"od {arrival} do {end_rain}, peak {round(peak_nc,1)} mm/h, "
-            f"odhadovaný úhrn {total_nc} mm."
-        )
-    else:
-        sentences.append(
-            f"Radarová extrapolace (ref. {ref_time}) nepředpovídá srážky v následujících 2 hodinách."
-        )
-
-    # Věta 2: NWP srážky
-    if rain_nwp:
-        first_nwp = to_prague_time(rain_nwp[0][0])
-        sentences.append(
-            f"Model ICON-D2 indikuje srážky od {first_nwp} a dále."
-        )
-
-    # Věta 3: nárazy větru
-    if peak_gusts and peak_gusts >= 10:
-        sentences.append(f"Nárazy větru dosahují až {round(peak_gusts,1)} m/s.")
-
-    # Věta 4: výstrahy
+    # Věta 0: výstraha ČHMÚ — vždy první, pokud existuje
     if warnings:
-        w = warnings[0]
+        w      = warnings[0]
         jev    = w.get("event", "")
         barva  = w.get("color", "")
         od     = to_prague_time(w.get("onset_utc", ""))
         do_cas = to_prague_time(w.get("expires_utc", ""))
+        color_cz = {"yellow": "žlutou", "orange": "oranžovou", "red": "červenou"}.get(barva, barva)
+        # jev je např. "Bouřky" → instrumentál by musel být ručně, takže použijeme "výstraha: <jev>"
+        sentences.append(f"ČHMÚ vydalo {color_cz} výstrahu ({jev}), platnou od {od} do {do_cas}.")
+
+    # Věta 1: srážky v nejbližších 2 hodinách
+    if rain_nc:
+        arrival  = to_prague_time(rain_nc[0][0])
+        end_rain = to_prague_time(rain_nc[-1][0])
+        total_nc = round(sum(v for _, v in rain_nc) * (10 / 60))
+        intenzita = _rain_intensity(peak_nc)
+        total_str = f"do 1 mm" if total_nc < 1 else f"kolem {total_nc} mm"
         sentences.append(
-            f"ČHMÚ výstraha ({barva}): {jev}, platná {od}–{do_cas}."
+            f"V nejbližších hodinách se očekává {intenzita} od {arrival} do {end_rain}, "
+            f"úhrn {total_str}."
         )
+    elif not warnings:
+        sentences.append("Srážky se v nejbližších hodinách neočekávají.")
+
+    # Věta 2: srážky v dalším výhledu (NWP)
+    if rain_nwp:
+        first_nwp = to_prague_time(rain_nwp[0][0])
+        sentences.append(f"Srážky jsou možné i v dalším výhledu, přibližně od {first_nwp}.")
+
+    # Věta 3: nárazy větru (≥ 30 km/h = ~8 m/s)
+    if peak_gusts and peak_gusts >= 8:
+        kmh = _gusts_kmh(peak_gusts)
+        sentences.append(f"Vítr může v nárazech dosahovat kolem {kmh} km/h.")
 
     return " ".join(sentences)
 
