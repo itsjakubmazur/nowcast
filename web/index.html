@@ -305,10 +305,11 @@ const AUTO_REFRESH_MS   = 5 * 60 * 1000;   // 5 minut
 
 // ── Fetch dat ──────────────────────────────────────────────────────────────────
 async function loadData() {
-  const v = `?v=${Date.now()}`;
+  const v    = `?v=${Date.now()}`;
+  const opts = { cache: "no-store" };
   const [m, g] = await Promise.all([
-    fetch(`data/radar_manifest.json${v}`).then(r => r.json()),
-    fetch(`data/forecast_grid.json${v}`).then(r => r.json()),
+    fetch(`data/radar_manifest.json${v}`, opts).then(r => r.json()),
+    fetch(`data/forecast_grid.json${v}`,  opts).then(r => r.json()),
   ]);
   MANIFEST = m;
   GRID     = g;

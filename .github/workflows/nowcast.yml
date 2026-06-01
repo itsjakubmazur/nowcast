@@ -6,6 +6,11 @@ on:
     - cron: '*/10 * * * *'
   workflow_dispatch:  # ruční spuštění pro testování
 
+# Zabrání hromadění běhů — nový run zruší čekající, ne běžící
+concurrency:
+  group: nowcast-pipeline
+  cancel-in-progress: false
+
 jobs:
   run-pipeline:
     runs-on: ubuntu-latest
@@ -42,7 +47,7 @@ jobs:
           NOWCAST_LON: '14.42'
 
       - name: Run narrate (Fáze 3b)
-        run: python pipeline/narrate.py
+        run: python pipeline/narrate.py || echo "narrate.py selhalo (Gemini API?), pokračuji bez narace"
         env:
           NOWCAST_LAT: '50.08'
           NOWCAST_LON: '14.42'
