@@ -196,6 +196,36 @@
       white-space: nowrap;
     }
 
+    /* ── 7denní výhled ──────────────────────────────────────────────────── */
+    .fc7 {
+      margin: 0 1rem 0.75rem; padding: 0.85rem 1rem 0.75rem;
+      background: var(--panel); border: 1px solid var(--border);
+      border-radius: 10px;
+    }
+    .fc7-title {
+      font-size: 0.72rem; font-weight: 600; color: var(--muted);
+      text-transform: uppercase; letter-spacing: .04em;
+      margin-bottom: 0.6rem;
+    }
+    .fc7-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+      gap: 0.5rem;
+    }
+    .fc7-day {
+      background: var(--bg); border-radius: 8px;
+      padding: 0.55rem 0.6rem; display: flex; flex-direction: column; gap: 0.15rem;
+    }
+    .fc7-day-name { font-size: 0.75rem; font-weight: 700; }
+    .fc7-day-date { font-size: 0.68rem; color: var(--muted); }
+    .fc7-day-icon { font-size: 1.6rem; line-height: 1.3; margin: 0.15rem 0; }
+    .fc7-day-temp { font-size: 0.82rem; font-weight: 600; }
+    .fc7-day-temp .tmin { color: var(--muted); }
+    .fc7-day-sub  { font-size: 0.68rem; color: var(--muted); display: flex; flex-wrap: wrap; gap: 0.3rem; }
+    .fc7-day-sub .prec { color: #2563eb; }
+    .fc7-day-sun  { font-size: 0.65rem; color: #f59e0b; }
+    .fc7-today    { border: 1px solid var(--accent); background: #eff6ff; }
+
     /* ── Refresh bar ─────────────────────────────────────────────────────── */
     .refresh-bar {
       display: flex; align-items: center; gap: 0.75rem;
@@ -255,6 +285,12 @@
 <div class="fc24" id="fc24">
   <div class="fc24-title">Předpověď na 24 hodin — <span id="fc24-place">—</span></div>
   <div class="fc24-scroll" id="fc24-scroll"></div>
+</div>
+
+<!-- 7denní výhled -->
+<div class="fc7" id="fc7" style="display:none">
+  <div class="fc7-title">7denní výhled — <span id="fc7-place">—</span></div>
+  <div class="fc7-grid" id="fc7-grid"></div>
 </div>
 
 <div id="map"></div>
@@ -731,6 +767,66 @@ function renderFc24(fc, label) {
   el.style.display = "block";
 }
 
+const CZ_DAYS = ["Ne","Po","Út","St","Čt","Pá","So"];
+const CZ_MONTHS = ["led","úno","bře","dub","kvě","čvn","čvc","srp","zář","říj","lis","pro"];
+
+function renderFc7(data, label) {
+  const el   = document.getElementById("fc7");
+  const grid = document.getElementById("fc7-grid");
+  const d    = data.daily || {};
+  const dates = d.time || [];
+  if (!dates.length) { el.style.display = "none"; return; }
+
+  document.getElementById("fc7-place").textContent = label || "—";
+  grid.innerHTML = "";
+
+  const todayStr = new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Prague" });
+
+  dates.forEach((dateStr, i) => {
+    const dt    = new Date(dateStr + "T12:00:00");
+    const isToday = dateStr === todayStr;
+    const dayName = isToday ? "Dnes" : CZ_DAYS[dt.getDay()];
+    const dayDate = `${dt.getDate()}. ${CZ_MONTHS[dt.getMonth()]}`;
+
+    const tmax = d.temperature_2m_max?.[i];
+    const tmin = d.temperature_2m_min?.[i];
+    const prec = d.precipitation_sum?.[i];
+    const prob = d.precipitation_probability_max?.[i];
+    const gust = d.wind_gusts_10m_max?.[i];
+    const uv   = d.uv_index_max?.[i];
+    const wc   = d.weather_code?.[i];
+
+    // Časy východu/západu slunce (slice 11:16 z "2024-06-01T05:23")
+    const rise  = d.sunrise?.[i]?.slice(11, 16);
+    const set_  = d.sunset?.[i]?.slice(11, 16);
+
+    const tempStr = (tmax != null && tmin != null)
+      ? `<span>${Math.round(tmax)}°</span> <span class="tmin">${Math.round(tmin)}°</span>`
+      : "—";
+    const precStr = (prob > 0 || prec > 0)
+      ? `<span class="prec">${prob != null ? prob + "%" : ""}${prec > 0 ? " " + Math.round(prec * 10) / 10 + "mm" : ""}</span>` : "";
+    const gustStr = gust != null && gust >= 30
+      ? `<span>💨 ${Math.round(gust)} km/h</span>` : "";
+    const uvStr = uv != null && uv >= 1
+      ? `<span class="${uvClass(uv)}">UV${Math.round(uv)}</span>` : "";
+    const sunStr = (rise && set_)
+      ? `<span>🌅${rise} 🌇${set_}</span>` : "";
+
+    const day = document.createElement("div");
+    day.className = "fc7-day" + (isToday ? " fc7-today" : "");
+    day.innerHTML = `
+      <div class="fc7-day-name">${dayName}</div>
+      <div class="fc7-day-date">${dayDate}</div>
+      <div class="fc7-day-icon">${wcIcon(wc)}</div>
+      <div class="fc7-day-temp">${tempStr}</div>
+      <div class="fc7-day-sub">${precStr}${gustStr}${uvStr}</div>
+      <div class="fc7-day-sun">${sunStr}</div>`;
+    grid.appendChild(day);
+  });
+
+  el.style.display = "block";
+}
+
 async function showFc24(lat, lon, label) {
   const el = document.getElementById("fc24");
   const scroll = document.getElementById("fc24-scroll");
@@ -742,7 +838,8 @@ async function showFc24(lat, lon, label) {
 
   const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}`
     + `&hourly=weather_code,temperature_2m,apparent_temperature,precipitation,precipitation_probability,wind_speed_10m,wind_gusts_10m,uv_index`
-    + `&forecast_days=2&timezone=Europe%2FPrague`;
+    + `&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,wind_gusts_10m_max,uv_index_max,sunrise,sunset`
+    + `&forecast_days=7&timezone=Europe%2FPrague`;
 
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 15000);
@@ -752,9 +849,11 @@ async function showFc24(lat, lon, label) {
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const data = await r.json();
     renderFc24(parseFc24(data), label);
+    renderFc7(data, label);
   } catch (e) {
     clearTimeout(timer);
     scroll.innerHTML = `<div style="padding:.6rem 1rem;color:var(--muted);font-size:.85rem">Předpověď se nepodařilo načíst (${e.message}).</div>`;
+    document.getElementById("fc7").style.display = "none";
   }
 }
 
