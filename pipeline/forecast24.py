@@ -55,9 +55,10 @@ PLACES = [
     ("Ústí nad Labem", 50.6607, 14.0323),
 ]
 
-OM_BATCH = 100   # Open-Meteo max lokací na request (prakticky nikdy nepřekročíme)
+OM_BATCH = 3     # lokace na jeden request — menší payload, spolehlivější timeout
 N_HOURLY = 6     # počet hodinových kroků (nejbližší hodiny)
 BLOCK_H  = 3     # velikost agregačního okna pro zbytek 24 h
+BATCH_PAUSE_S = 1  # krátká pauza mezi dávkami (netlačit server)
 
 # WMO weather_code: vyšší = závažnější (pro výběr repr. kódu z okna)
 # Pořadí závažnosti: bouřka > sněžení > déšť > přeháňky > mlha > zataženo > polojasno > jasno
@@ -93,7 +94,7 @@ def _to_utc(s: str) -> datetime:
     return datetime.fromisoformat(s)
 
 
-def _om_get(params: dict) -> dict:
+def _om_get(params: dict, diag: bool = False) -> dict:
     """
     GET na Open-Meteo s retry a backoff.
     Opakuje při timeoutu nebo 5xx, max 3 pokusy, prodleva 3/6/12 s.
@@ -102,6 +103,14 @@ def _om_get(params: dict) -> dict:
     import time
     delays = [3, 6, 12]
     last_exc = None
+
+    if diag:
+        # Zkrácená diagnostická URL (bez hodnot souřadnic)
+        preview = requests.Request("GET", OPEN_METEO_URL, params=params).prepare()
+        url_short = preview.url[:120] + ("…" if len(preview.url) > 120 else "")
+        print(f"  OM URL (zkráceno): {url_short}")
+        print(f"  OM URL délka: {len(preview.url)} znaků")
+
     for attempt, delay in enumerate(delays, 1):
         try:
             r = requests.get(OPEN_METEO_URL, params=params, timeout=(10, 60))
@@ -122,40 +131,41 @@ def _om_get(params: dict) -> dict:
 def fetch_forecast24(places: list) -> list:
     """
     Stáhne hodinovou předpověď pro seznam (name, lat, lon) míst.
-    Vrátí list slovníků připravených pro JSON výstup.
+    Dávky po OM_BATCH s pauzou mezi nimi. Vrátí list slovníků pro JSON výstup.
     """
+    import time
     results = []
     now_utc = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+    n_batches = (len(places) + OM_BATCH - 1) // OM_BATCH
 
-    for start in range(0, len(places), OM_BATCH):
+    for batch_i, start in enumerate(range(0, len(places), OM_BATCH)):
         chunk = places[start:start + OM_BATCH]
         lats = ",".join(f"{p[1]:.4f}" for p in chunk)
         lons = ",".join(f"{p[2]:.4f}" for p in chunk)
+        names = [p[0] for p in chunk]
         params = {
-            "latitude":  lats,
-            "longitude": lons,
-            "hourly": ",".join([
-                "weather_code",
-                "temperature_2m",
-                "precipitation",
-                "precipitation_probability",
-                "wind_speed_10m",
-                "wind_gusts_10m",
-            ]),
+            "latitude":      lats,
+            "longitude":     lons,
+            "hourly":        "weather_code,temperature_2m,precipitation,"
+                             "precipitation_probability,wind_speed_10m,wind_gusts_10m",
             "timezone":      "UTC",
-            "forecast_days": 2,
+            "forecast_days": 1,   # jen 24 h — kratší payload
             "models":        "icon_d2",
         }
+        print(f"  Dávka {batch_i+1}/{n_batches}: {', '.join(names)}", end="  ")
         try:
-            data = _om_get(params)
+            # Diagnostická URL jen pro první dávku
+            data = _om_get(params, diag=(batch_i == 0))
         except Exception as e:
-            print(f"  ⚠ forecast24 batch {start//OM_BATCH} CHYBA (všechny pokusy): {e}",
-                  file=sys.stderr)
+            print(f"CHYBA: {e}")
             for p in chunk:
                 results.append({"id": p[0], "lat": p[1], "lon": p[2], "error": str(e)})
+            if batch_i < n_batches - 1:
+                time.sleep(BATCH_PAUSE_S)
             continue
 
         items = data if isinstance(data, list) else [data]
+        ok_count = 0
         for place, item in zip(chunk, items):
             name, lat, lon = place
             rec = _parse_item(item, now_utc)
@@ -163,6 +173,11 @@ def fetch_forecast24(places: list) -> list:
             rec["lat"] = round(lat, 4)
             rec["lon"] = round(lon, 4)
             results.append(rec)
+            ok_count += 1
+        print(f"OK ({ok_count} míst)")
+
+        if batch_i < n_batches - 1:
+            time.sleep(BATCH_PAUSE_S)
 
     return results
 
@@ -250,8 +265,10 @@ def _parse_item(item: dict, now_utc: datetime) -> dict:
 
 
 def main():
-    print("\n=== Fáze 4d — 24h předpověď ===")
-    print(f"  Míst: {len(PLACES)}, dávka OM: {OM_BATCH}")
+    n_batches = (len(PLACES) + OM_BATCH - 1) // OM_BATCH
+    print(f"\n=== Fáze 4d — 24h předpověď ===")
+    print(f"  Míst: {len(PLACES)}, dávka: {OM_BATCH} míst × {n_batches} requestů, "
+          f"forecast_days=1, timeout=(10,60)s")
 
     places_data = fetch_forecast24(PLACES)
 
@@ -273,9 +290,10 @@ def main():
     err_places = [p for p in places_data if "error" in p]
 
     if not ok_places:
-        print(f"  ✗ CHYBA: všechna místa ({len(err_places)}) selhala — forecast24.json NEPŘEPSÁN.",
+        # Měkké selhání — neblokuj celý pipeline, jen zaloguj
+        print(f"  ✗ WARN: všechna místa ({len(err_places)}) selhala — forecast24.json NEPŘEPSÁN.",
               file=sys.stderr)
-        sys.exit(1)
+        return   # exit 0, workflow pokračuje
 
     if err_places:
         print(f"  ⚠ WARN: {len(err_places)} míst selhalo, uložím {len(ok_places)} úspěšných.")

@@ -55,7 +55,7 @@ jobs:
         run: python pipeline/render.py
 
       - name: Run forecast24 (Fáze 4d)
-        run: python pipeline/forecast24.py
+        run: python pipeline/forecast24.py || echo "⚠ forecast24 selhal — pokračuji bez 24h předpovědi"
 
       - name: Upload data artifacts
         uses: actions/upload-artifact@v4
