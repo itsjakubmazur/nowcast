@@ -174,6 +174,19 @@ def template_verdict(forecast: dict) -> str:
     return " ".join(sentences)
 
 
+def looks_truncated(text: str) -> bool:
+    """Vrátí True, pokud verdikt vypadá prázdný / příliš krátký / useknutý uprostřed věty."""
+    if not text:
+        return True
+    t = text.strip()
+    if len(t) < 25:
+        return True
+    # Věta by měla končit interpunkcí (. ! ? …) nebo uvozovkou
+    if t[-1] not in ".!?…\"')":
+        return True
+    return False
+
+
 def call_gemini(prompt_str: str, api_key: str) -> str:
     """Zavolá Gemini API; při 429 zkusí flash-lite jako záložní model."""
     from google import genai
@@ -187,11 +200,21 @@ def call_gemini(prompt_str: str, api_key: str) -> str:
             contents=prompt_str,
             config=types.GenerateContentConfig(
                 system_instruction=SYSTEM_PROMPT,
-                max_output_tokens=300,
+                max_output_tokens=400,
                 temperature=0.2,
             ),
         )
-        return response.text.strip()
+        # Zaloguj důvod ukončení (MAX_TOKENS, STOP, ...)
+        finish_reason = None
+        try:
+            finish_reason = response.candidates[0].finish_reason
+        except Exception:
+            pass
+        print(f"  finish_reason: {finish_reason}")
+        text = (response.text or "").strip()
+        if finish_reason and str(finish_reason).upper().endswith("MAX_TOKENS"):
+            print("  WARN: odpověď ukončena limitem MAX_TOKENS — text může být useknutý")
+        return text
 
     try:
         print(f"  Zkouším {GEMINI_MODEL_PRIMARY}...")
@@ -223,10 +246,13 @@ def main():
     if api_key:
         print("\n=== Volám Gemini API ===")
         try:
-            verdict_text = call_gemini(prompt_str, api_key)
-            # Zjistíme, který model byl použit (flash nebo lite)
-            used_model = GEMINI_MODEL_PRIMARY  # call_gemini vrací text, model neznáme přesně
-            print(f"\nVERDIKT (Gemini):\n{verdict_text}")
+            candidate = call_gemini(prompt_str, api_key)
+            print(f"\nVERDIKT (Gemini):\n{candidate}")
+            if looks_truncated(candidate):
+                print("WARN: Gemini verdikt vypadá prázdný / useknutý — padám na šablonu", file=sys.stderr)
+            else:
+                verdict_text = candidate
+                used_model = GEMINI_MODEL_PRIMARY
         except Exception as e:
             print(f"WARN: Gemini API selhalo: {e} — používám šablonový verdikt", file=sys.stderr)
 
