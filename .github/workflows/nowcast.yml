@@ -51,6 +51,9 @@ jobs:
       - name: Run grid (Fáze 4a)
         run: python pipeline/grid.py
 
+      - name: Run render (Fáze 4c)
+        run: python pipeline/render.py
+
       - name: Upload data artifacts
         uses: actions/upload-artifact@v4
         with:

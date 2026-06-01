@@ -6,3 +6,4 @@ pyproj
 scipy
 google-genai
 opencv-python-headless
+Pillow
