@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Meteo Nowcast CZ</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/weather-icons@2.0.12/css/weather-icons.min.css" />
   <style>
     :root {
       --bg: #f4f6f8; --panel: #fff; --border: #dde1e7;
@@ -159,7 +160,23 @@
     .fc24-col.fc24-block { min-width: 80px; max-width: 96px; }
 
     .fc24-time  { font-size: 0.7rem; color: var(--muted); margin-bottom: 0.18rem; }
-    .fc24-icon  { font-size: 1.45rem; line-height: 1.2; }
+    .fc24-icon  { font-size: 1.7rem; line-height: 1.25; color: #374151; }
+    /* weather-icon barvy dle kategorie */
+    .fc24-icon .wi-day-sunny          { color: #f59e0b; }
+    .fc24-icon .wi-day-cloudy,
+    .fc24-icon .wi-day-cloudy-high    { color: #f59e0b; }
+    .fc24-icon .wi-cloudy,
+    .fc24-icon .wi-overcast           { color: #9ca3af; }
+    .fc24-icon .wi-fog                { color: #9ca3af; }
+    .fc24-icon .wi-sprinkle,
+    .fc24-icon .wi-showers,
+    .fc24-icon .wi-rain,
+    .fc24-icon .wi-rain-mix,
+    .fc24-icon .wi-storm-showers      { color: #3b82f6; }
+    .fc24-icon .wi-snow,
+    .fc24-icon .wi-snow-wind          { color: #60a5fa; }
+    .fc24-icon .wi-thunderstorm,
+    .fc24-icon .wi-hail               { color: #7c3aed; }
     .fc24-temp  { font-size: 0.82rem; font-weight: 600; margin-top: 0.15rem; }
     .fc24-range { font-size: 0.76rem; color: var(--muted); }
     .fc24-sub   {
@@ -184,34 +201,8 @@
 
 <header>
   <h1>🌧️ Meteo Nowcast CZ</h1>
-  <span class="subtitle">Radarová smyčka · Krátkodobá předpověď</span>
+  <span class="subtitle">Krátkodobá předpověď · Radarová smyčka</span>
 </header>
-
-<div id="map"></div>
-
-<!-- Radar controls -->
-<div class="radar-bar" id="radar-bar" style="display:none">
-  <div class="radar-row">
-    <button class="ctrl" id="btn-prev" title="Předchozí snímek">◀</button>
-    <button class="ctrl" id="btn-play" title="Přehrát smyčku">▶ Play</button>
-    <button class="ctrl" id="btn-next" title="Další snímek">▶</button>
-    <div class="timeline-wrap">
-      <input type="range" id="timeline" min="0" value="0" />
-      <div id="t0-tick"></div>
-      <div id="t0-marker">teď</div>
-    </div>
-    <div id="frame-time">—</div>
-  </div>
-  <div class="radar-row">
-    <label>Průhlednost radaru:</label>
-    <input type="range" id="opacity-slider" min="0" max="100" value="70" />
-    <span id="opacity-val" style="font-size:0.78rem;color:var(--muted);min-width:32px">70 %</span>
-    <span id="radar-updated" style="margin-left:auto;font-size:0.75rem;color:var(--muted)"></span>
-  </div>
-  <div class="radar-row">
-    <span id="radar-source" style="font-size:0.72rem;color:var(--muted);font-style:italic"></span>
-  </div>
-</div>
 
 <!-- Location search -->
 <div class="loc-panel">
@@ -240,6 +231,32 @@
   <div class="fc24-scroll" id="fc24-scroll"></div>
 </div>
 
+<div id="map"></div>
+
+<!-- Radar controls -->
+<div class="radar-bar" id="radar-bar" style="display:none">
+  <div class="radar-row">
+    <button class="ctrl" id="btn-prev" title="Předchozí snímek">◀</button>
+    <button class="ctrl" id="btn-play" title="Přehrát smyčku">▶ Play</button>
+    <button class="ctrl" id="btn-next" title="Další snímek">▶</button>
+    <div class="timeline-wrap">
+      <input type="range" id="timeline" min="0" value="0" />
+      <div id="t0-tick"></div>
+      <div id="t0-marker">teď</div>
+    </div>
+    <div id="frame-time">—</div>
+  </div>
+  <div class="radar-row">
+    <label>Průhlednost radaru:</label>
+    <input type="range" id="opacity-slider" min="0" max="100" value="70" />
+    <span id="opacity-val" style="font-size:0.78rem;color:var(--muted);min-width:32px">70 %</span>
+    <span id="radar-updated" style="margin-left:auto;font-size:0.75rem;color:var(--muted)"></span>
+  </div>
+  <div class="radar-row">
+    <span id="radar-source" style="font-size:0.72rem;color:var(--muted);font-style:italic"></span>
+  </div>
+</div>
+
 <footer>Data: ČHMÚ (CC BY) · Open-Meteo (CC BY) · Předpověď generovaná v prohlížeči · Radarová odrazivost (dBZ, orientační)</footer>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -257,10 +274,11 @@ const END_PAUSE_MS      = 1800;  // pauza na konci před zacyklením
 
 // ── Fetch dat ──────────────────────────────────────────────────────────────────
 async function loadData() {
+  const v = `?v=${Date.now()}`;
   const [m, g, f24] = await Promise.all([
-    fetch("data/radar_manifest.json", { cache: "no-store" }).then(r => r.json()),
-    fetch("data/forecast_grid.json",  { cache: "no-store" }).then(r => r.json()),
-    fetch("data/forecast24.json",     { cache: "no-store" }).then(r => r.json()).catch(() => null),
+    fetch(`data/radar_manifest.json${v}`).then(r => r.json()),
+    fetch(`data/forecast_grid.json${v}`).then(r => r.json()),
+    fetch(`data/forecast24.json${v}`).then(r => r.json()).catch(() => null),
   ]);
   MANIFEST   = m;
   GRID       = g;
@@ -464,29 +482,34 @@ function templateVerdict(ptId) {
   return { text: sentences.join(" "), chips: chips.join("") };
 }
 
-// ── WMO weather_code → emoji ikona ────────────────────────────────────────────
-const WC_ICON = (() => {
+// ── WMO weather_code → weather-icons třída (Erik Flowers, https://erikflowers.github.io/weather-icons/) ──
+const WC_CLASS = (() => {
   const m = {};
-  const set = (codes, icon) => codes.forEach(c => m[c] = icon);
-  set([0],                   "☀️");
-  set([1],                   "🌤️");
-  set([2],                   "⛅");
-  set([3],                   "☁️");
-  set([45, 48],              "🌫️");
-  set([51, 53, 55],          "🌦️");   // mrholení
-  set([56, 57],              "🌧️");   // mrznoucí mrholení
-  set([61, 63, 65],          "🌧️");   // déšť
-  set([66, 67],              "🌧️");   // mrznoucí déšť
-  set([71, 73, 75, 77],      "🌨️");   // sněžení
-  set([80, 81, 82],          "🌦️");   // přeháňky
-  set([85, 86],              "🌨️");   // sněhové přeháňky
-  set([95],                  "⛈️");
-  set([96, 99],              "⛈️");   // bouřky s kroupami
+  const set = (codes, cls) => codes.forEach(c => m[c] = cls);
+  set([0],              "wi-day-sunny");
+  set([1],              "wi-day-cloudy");
+  set([2],              "wi-day-cloudy-high");
+  set([3],              "wi-cloudy");
+  set([45, 48],         "wi-fog");
+  set([51, 53],         "wi-sprinkle");
+  set([55],             "wi-showers");
+  set([56, 57],         "wi-rain-mix");
+  set([61, 63],         "wi-rain");
+  set([65],             "wi-rain");
+  set([66, 67],         "wi-rain-mix");
+  set([71, 73],         "wi-snow");
+  set([75, 77],         "wi-snow-wind");
+  set([80, 81],         "wi-showers");
+  set([82],             "wi-storm-showers");
+  set([85, 86],         "wi-snow");
+  set([95],             "wi-thunderstorm");
+  set([96, 99],         "wi-hail");
   return m;
 })();
 
 function wcIcon(wc) {
-  return wc != null ? (WC_ICON[wc] ?? "🌡️") : "—";
+  const cls = wc != null ? (WC_CLASS[wc] ?? "wi-na") : "wi-na";
+  return `<i class="wi ${cls}"></i>`;
 }
 
 // ── 24h forecast timeline ─────────────────────────────────────────────────────
