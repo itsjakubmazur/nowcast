@@ -188,7 +188,13 @@ def looks_truncated(text: str) -> bool:
 
 
 def call_gemini(prompt_str: str, api_key: str) -> str:
-    """Zavolá Gemini API; při 429 zkusí flash-lite jako záložní model."""
+    """
+    Zavolá Gemini API s retry + exponential backoff.
+    - 503 (UNAVAILABLE) / 429 (rate limit): zkus znovu, max 3 pokusy, prodleva ~2s, 4s, 8s.
+    - Při 429 přepni od 2. pokusu na flash-lite (vyšší denní limit).
+    - Po vyčerpání pokusů vyhodí výjimku (volající spadne na template_verdict).
+    """
+    import time
     from google import genai
     from google.genai import types
 
@@ -219,14 +225,34 @@ def call_gemini(prompt_str: str, api_key: str) -> str:
             print("  WARN: odpověď ukončena limitem MAX_TOKENS — text může být useknutý")
         return text
 
-    try:
-        print(f"  Zkouším {GEMINI_MODEL_PRIMARY}...")
-        return _call(GEMINI_MODEL_PRIMARY)
-    except Exception as e:
-        if "429" in str(e) or "quota" in str(e).lower() or "RESOURCE_EXHAUSTED" in str(e):
-            print(f"  429 / quota na {GEMINI_MODEL_PRIMARY}, zkouším {GEMINI_MODEL_FALLBACK}...")
-            return _call(GEMINI_MODEL_FALLBACK)
-        raise
+    max_attempts = 3
+    last_exc = None
+    for attempt in range(1, max_attempts + 1):
+        # Při rate limitu (429) přepni od 2. pokusu na flash-lite
+        model = GEMINI_MODEL_PRIMARY
+        if attempt > 1 and last_exc is not None:
+            es = str(last_exc)
+            if "429" in es or "quota" in es.lower() or "RESOURCE_EXHAUSTED" in es:
+                model = GEMINI_MODEL_FALLBACK
+
+        try:
+            print(f"  Pokus {attempt}/{max_attempts} — {model}...")
+            return _call(model)
+        except Exception as e:
+            es = str(e)
+            retryable = (
+                "503" in es or "UNAVAILABLE" in es
+                or "429" in es or "quota" in es.lower() or "RESOURCE_EXHAUSTED" in es
+            )
+            last_exc = e
+            if not retryable or attempt == max_attempts:
+                raise
+            delay = 2 ** attempt  # 2s, 4s, 8s
+            print(f"  Chyba ({es[:80]}...) — retry za {delay}s")
+            time.sleep(delay)
+
+    # Sem se kód nedostane (buď return, nebo raise výše)
+    raise last_exc
 
 
 def main():
