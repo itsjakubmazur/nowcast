@@ -6,298 +6,544 @@
   <title>Meteo Nowcast CZ</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
-    :root { --bg:#0d1117; --panel:#161b22; --border:#30363d; --muted:#8b949e; --fg:#e6edf3; }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0; font-family: system-ui, sans-serif;
-      background: var(--bg); color: var(--fg);
+    :root {
+      --bg: #f4f6f8; --panel: #fff; --border: #dde1e7;
+      --muted: #6b7280; --fg: #1a1d23; --accent: #2563eb;
+      --t0-color: #f59e0b;
     }
-    header { padding: 1rem 1.25rem 0.5rem; }
-    h1 { font-size: 1.4rem; margin: 0; }
-    .subtitle { color: var(--muted); font-size: 0.85rem; margin-top: 0.25rem; }
-    .controls {
-      display: flex; flex-wrap: wrap; gap: 0.5rem;
-      padding: 0.75rem 1.25rem;
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--fg); }
+
+    /* ── Header ─────────────────────────────────────────────────────── */
+    header {
+      padding: 0.75rem 1rem 0.5rem;
+      display: flex; align-items: baseline; gap: 0.75rem;
+      border-bottom: 1px solid var(--border); background: var(--panel);
     }
+    h1 { font-size: 1.2rem; }
+    .subtitle { color: var(--muted); font-size: 0.8rem; }
+
+    /* ── Map ─────────────────────────────────────────────────────────── */
+    #map { height: 420px; width: 100%; }
+
+    /* ── Radar controls ─────────────────────────────────────────────── */
+    .radar-bar {
+      background: var(--panel); border-bottom: 1px solid var(--border);
+      padding: 0.6rem 1rem; display: flex; flex-direction: column; gap: 0.5rem;
+    }
+    .radar-row { display: flex; align-items: center; gap: 0.6rem; }
+    .radar-row label { font-size: 0.78rem; color: var(--muted); white-space: nowrap; }
+
+    /* Timeline slider */
+    .timeline-wrap { position: relative; flex: 1; }
+    #timeline {
+      width: 100%; height: 6px; cursor: pointer;
+      -webkit-appearance: none; appearance: none;
+      background: #d1d5db; border-radius: 3px; outline: none;
+    }
+    #timeline::-webkit-slider-thumb {
+      -webkit-appearance: none; width: 16px; height: 16px;
+      border-radius: 50%; background: var(--accent); cursor: pointer;
+    }
+    /* t0 marker underneath the slider */
+    #t0-marker {
+      position: absolute; bottom: -14px;
+      transform: translateX(-50%);
+      font-size: 0.68rem; color: var(--t0-color); font-weight: 700;
+      pointer-events: none; white-space: nowrap;
+    }
+    #t0-tick {
+      position: absolute; top: 50%; transform: translateX(-50%) translateY(-50%);
+      width: 3px; height: 12px; background: var(--t0-color);
+      border-radius: 2px; pointer-events: none;
+    }
+
+    #frame-time {
+      font-size: 0.85rem; font-weight: 600; min-width: 80px; text-align: right;
+    }
+    .nowcast-label { color: var(--accent); }
+    .t0-label { color: var(--t0-color); }
+
+    button.ctrl {
+      padding: 0.3rem 0.65rem; border-radius: 6px; cursor: pointer;
+      border: 1px solid var(--border); background: var(--panel); color: var(--fg);
+      font-size: 0.9rem; line-height: 1;
+    }
+    button.ctrl:hover { background: #f0f2f5; }
+    button.ctrl.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+    #opacity-slider {
+      width: 80px; -webkit-appearance: none; appearance: none;
+      height: 4px; background: #d1d5db; border-radius: 2px; outline: none;
+    }
+    #opacity-slider::-webkit-slider-thumb {
+      -webkit-appearance: none; width: 14px; height: 14px;
+      border-radius: 50%; background: var(--muted); cursor: pointer;
+    }
+
+    /* ── Location panel ──────────────────────────────────────────────── */
+    .loc-panel {
+      padding: 0.75rem 1rem; background: var(--panel);
+      border-bottom: 1px solid var(--border);
+    }
+    .loc-row { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: flex-start; }
+    .suggest { position: relative; flex: 1 1 200px; }
     input[type=text] {
-      flex: 1 1 200px; min-width: 160px;
-      padding: 0.6rem 0.8rem; border-radius: 8px;
-      border: 1px solid var(--border); background: var(--panel); color: var(--fg);
-      font-size: 0.95rem;
-    }
-    button {
-      padding: 0.6rem 0.9rem; border-radius: 8px; cursor: pointer;
-      border: 1px solid var(--border); background: var(--panel); color: var(--fg);
-      font-size: 0.9rem;
-    }
-    button:hover { background: #21262d; }
-    #map { height: 320px; margin: 0 1.25rem; border-radius: 10px; border: 1px solid var(--border); }
-    .result { padding: 1rem 1.25rem; }
-    .place { font-size: 1.05rem; font-weight: 600; }
-    .dist { color: var(--muted); font-size: 0.85rem; margin-bottom: 0.75rem; }
-    .verdict {
-      background: var(--panel); border: 1px solid var(--border);
-      border-radius: 10px; padding: 1rem 1.25rem; line-height: 1.6; font-size: 1.02rem;
-    }
-    .warn-chip {
-      display: inline-block; padding: 0.15rem 0.6rem; border-radius: 999px;
-      font-size: 0.8rem; font-weight: 600; margin: 0.25rem 0.25rem 0 0; color: #0d1117;
-    }
-    .c-yellow { background: #d9b400; } .c-orange { background: #e8730c; color:#fff;}
-    .c-red { background: #d1242f; color: #fff; } .c-unknown { background: #6e7681; color:#fff;}
-    .hint { color: var(--muted); font-size: 0.85rem; }
-    .suggest {
-      position: relative;
+      width: 100%; padding: 0.55rem 0.8rem;
+      border-radius: 7px; border: 1px solid var(--border);
+      background: var(--bg); color: var(--fg); font-size: 0.95rem;
     }
     #suggestions {
-      list-style: none; margin: 0.25rem 0 0; padding: 0;
-      border: 1px solid var(--border); border-radius: 8px; background: var(--panel);
-      max-height: 220px; overflow-y: auto; display: none;
+      list-style: none; position: absolute; z-index: 1000; width: 100%;
+      border: 1px solid var(--border); border-radius: 7px; background: var(--panel);
+      max-height: 210px; overflow-y: auto; display: none; box-shadow: 0 4px 12px #0002;
     }
-    #suggestions li { padding: 0.5rem 0.8rem; cursor: pointer; }
-    #suggestions li:hover { background: #21262d; }
-    footer { padding: 1rem 1.25rem 2rem; font-size: 0.75rem; color: #484f58; }
-    .updated { color: var(--muted); font-size: 0.8rem; }
+    #suggestions li { padding: 0.5rem 0.8rem; cursor: pointer; font-size: 0.9rem; }
+    #suggestions li:hover { background: var(--bg); }
+    button.loc-btn {
+      padding: 0.55rem 0.85rem; border-radius: 7px; cursor: pointer;
+      border: 1px solid var(--border); background: var(--bg); color: var(--fg);
+      font-size: 0.9rem; white-space: nowrap;
+    }
+    button.loc-btn:hover { background: #e8eaf0; }
+
+    /* ── Forecast card ───────────────────────────────────────────────── */
+    .forecast-card {
+      margin: 0.75rem 1rem; padding: 1rem;
+      background: var(--panel); border: 1px solid var(--border);
+      border-radius: 10px;
+    }
+    .place { font-size: 1rem; font-weight: 600; }
+    .dist  { color: var(--muted); font-size: 0.8rem; margin: 0.2rem 0 0.75rem; }
+    .verdict-text { line-height: 1.65; font-size: 0.98rem; }
+    .hint { color: var(--muted); }
+
+    .warn-chip {
+      display: inline-block; padding: 0.15rem 0.6rem; border-radius: 999px;
+      font-size: 0.78rem; font-weight: 600; margin: 0 0.3rem 0.4rem 0;
+    }
+    .c-yellow  { background: #fbbf24; color: #1a1d23; }
+    .c-orange  { background: #f97316; color: #fff; }
+    .c-red     { background: #ef4444; color: #fff; }
+    .c-unknown { background: #9ca3af; color: #fff; }
+
+    footer {
+      padding: 1rem 1rem 2rem; font-size: 0.72rem; color: var(--muted);
+    }
+    .updated { color: var(--muted); font-size: 0.75rem; margin-top: 0.5rem; }
   </style>
 </head>
 <body>
-  <header>
-    <h1>🌧️ Meteo Nowcast CZ</h1>
-    <div class="subtitle">Krátkodobá předpověď pro libovolné místo v ČR</div>
-  </header>
 
-  <div class="controls">
-    <div class="suggest" style="flex:1 1 240px;">
-      <input id="search" type="text" placeholder="Hledat obec (např. Třinec)…" autocomplete="off" />
+<header>
+  <h1>🌧️ Meteo Nowcast CZ</h1>
+  <span class="subtitle">Radarová smyčka · Krátkodobá předpověď</span>
+</header>
+
+<div id="map"></div>
+
+<!-- Radar controls -->
+<div class="radar-bar" id="radar-bar" style="display:none">
+  <div class="radar-row">
+    <button class="ctrl" id="btn-prev" title="Předchozí snímek">◀</button>
+    <button class="ctrl" id="btn-play" title="Přehrát smyčku">▶ Play</button>
+    <button class="ctrl" id="btn-next" title="Další snímek">▶</button>
+    <div class="timeline-wrap">
+      <input type="range" id="timeline" min="0" value="0" />
+      <div id="t0-tick"></div>
+      <div id="t0-marker">teď</div>
+    </div>
+    <div id="frame-time">—</div>
+  </div>
+  <div class="radar-row">
+    <label>Průhlednost radaru:</label>
+    <input type="range" id="opacity-slider" min="0" max="100" value="70" />
+    <span id="opacity-val" style="font-size:0.78rem;color:var(--muted);min-width:32px">70 %</span>
+    <span id="radar-updated" style="margin-left:auto;font-size:0.75rem;color:var(--muted)"></span>
+  </div>
+</div>
+
+<!-- Location search -->
+<div class="loc-panel">
+  <div class="loc-row">
+    <div class="suggest">
+      <input id="search" type="text" placeholder="Hledat obec (např. Ostrava)…" autocomplete="off" />
       <ul id="suggestions"></ul>
     </div>
-    <button id="geo">📍 Moje poloha</button>
+    <button class="loc-btn" id="geo">📍 Moje poloha</button>
   </div>
+</div>
 
-  <div id="map"></div>
-
-  <div class="result">
-    <div class="place" id="place">Zvolte místo</div>
-    <div class="dist" id="dist"></div>
-    <div class="verdict" id="verdict">
-      <span class="hint">Vyhledejte obec, klikněte do mapy, nebo použijte „Moje poloha".</span>
-    </div>
-    <div class="updated" id="updated"></div>
+<!-- Forecast -->
+<div class="forecast-card">
+  <div class="place" id="place">Zvolte místo</div>
+  <div class="dist"  id="dist"></div>
+  <div class="verdict-text" id="verdict">
+    <span class="hint">Vyhledejte obec, klikněte do mapy nebo použijte „Moje poloha".</span>
   </div>
+  <div class="updated" id="updated"></div>
+</div>
 
-  <footer>Data: ČHMÚ (CC BY) · Open-Meteo (CC BY) · Předpověď generovaná v prohlížeči</footer>
+<footer>Data: ČHMÚ (CC BY) · Open-Meteo (CC BY) · Předpověď generovaná v prohlížeči</footer>
 
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script>
-  // ── Stav (žádný localStorage — drží se v paměti + URL) ──────────────────────
-  let GRID = null;
-  let map, marker;
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+// ── Globální stav ──────────────────────────────────────────────────────────────
+let MANIFEST = null, GRID = null;
+let currentFrame = 0, playing = false, playTimer = null;
+let radarOpacity = 0.70;
 
-  // ── Načtení mřížky ──────────────────────────────────────────────────────────
-  async function loadGrid() {
-    const r = await fetch("data/forecast_grid.json", { cache: "no-store" });
-    if (!r.ok) throw new Error("forecast_grid.json nedostupný");
-    GRID = await r.json();
-    const gen = new Date(GRID.generated_at_utc);
-    document.getElementById("updated").textContent =
-      "Aktualizováno: " + gen.toLocaleString("cs-CZ", { timeZone: "Europe/Prague" });
-  }
+let map, radarOverlay, locationMarker;
+let preloadedImgs = [];   // Image objekty pro cache prohlížeče
 
-  // ── Geo pomocné ───────────────────────────────────────────────────────────────
-  function haversine(lat1, lon1, lat2, lon2) {
-    const R = 6371, rad = Math.PI / 180;
-    const dp = (lat2 - lat1) * rad, dl = (lon2 - lon1) * rad;
-    const a = Math.sin(dp / 2) ** 2 +
-              Math.cos(lat1 * rad) * Math.cos(lat2 * rad) * Math.sin(dl / 2) ** 2;
-    return 2 * R * Math.asin(Math.sqrt(a));
-  }
+const PLAY_INTERVAL_MS  = 500;   // 2 snímky/s
+const END_PAUSE_MS      = 1800;  // pauza na konci před zacyklením
 
-  function nearestPoint(lat, lon) {
-    let best = -1, bestD = Infinity;
-    for (let i = 0; i < GRID.pts.length; i++) {
-      const d = haversine(lat, lon, GRID.pts[i][0], GRID.pts[i][1]);
-      if (d < bestD) { bestD = d; best = i; }
-    }
-    return { id: best, dist: bestD };
-  }
+// ── Fetch dat ──────────────────────────────────────────────────────────────────
+async function loadData() {
+  const [m, g] = await Promise.all([
+    fetch("data/radar_manifest.json", { cache: "no-store" }).then(r => r.json()),
+    fetch("data/forecast_grid.json",  { cache: "no-store" }).then(r => r.json()),
+  ]);
+  MANIFEST = m;
+  GRID     = g;
+}
 
-  function nearestNwp(lat, lon) {
-    const pts = GRID.nwp.pts;
-    let best = null, bestD = Infinity;
-    for (const p of pts) {
-      const d = haversine(lat, lon, p[0], p[1]);
-      if (d < bestD) { bestD = d; best = p; }
-    }
-    return best; // [lat, lon, rain_from_utc, peak_gusts_ms, max_cape]
-  }
-
-  // ── Čas UTC → Europe/Prague "HH:MM" ──────────────────────────────────────────
-  function localHM(utcIso) {
-    const d = new Date(utcIso);
-    return d.toLocaleTimeString("cs-CZ",
-      { timeZone: "Europe/Prague", hour: "2-digit", minute: "2-digit" });
-  }
-  function stepToLocal(stepIdx) {
-    const t0 = new Date(GRID.t0_utc);
-    const ms = t0.getTime() + (stepIdx + 1) * GRID.step_min * 60000;
-    return localHM(new Date(ms).toISOString());
-  }
-
-  // ── Slovní popis srážek / vítr (stejná logika jako Python) ──────────────────
-  function rainIntensity(peak) {
-    if (peak < 0.5) return "slabé přeháňky";
-    if (peak < 2.5) return "slabý déšť";
-    if (peak < 7.5) return "mírný déšť";
-    if (peak < 15)  return "vydatný déšť";
-    return "silný déšť";
-  }
-  function gustsKmh(ms) { return Math.round(ms * 3.6 / 10) * 10; }
-  const COLOR_CZ = { yellow: "žlutou", orange: "oranžovou", red: "červenou" };
-
-  // ── template_verdict v JS (mirror Python šablony) ───────────────────────────
-  function templateVerdict(id) {
-    const sentences = [];
-    const pt = GRID.pts[id];
-
-    // Výstrahy pro tento bod: polygon match (wmatch) + celostátní (global)
-    const matchedIdx = new Set(GRID.wmatch[String(id)] || []);
-    const warnings = [];
-    GRID.warnings.forEach((w, wi) => {
-      if (w.global || matchedIdx.has(wi)) warnings.push(w);
-    });
-
-    // 0) Výstraha vždy první
-    if (warnings.length) {
-      const w = warnings[0];
-      const barva = COLOR_CZ[w.color] || w.color;
-      sentences.push(
-        `ČHMÚ vydalo ${barva} výstrahu (${w.event}), platnou od ${localHM(w.onset_utc)} do ${localHM(w.expires_utc)}.`
-      );
-    }
-
-    // 1) Nowcast srážky (0–2 h)
-    const a = GRID.act[String(id)];  // [arr, end, peak, total]
-    if (a) {
-      const intenzita = rainIntensity(a[2]);
-      const total = a[3] < 1 ? "do 1 mm" : `kolem ${Math.round(a[3])} mm`;
-      sentences.push(
-        `V nejbližších hodinách se očekává ${intenzita} od ${stepToLocal(a[0])} do ${stepToLocal(a[1])}, úhrn ${total}.`
-      );
-    } else if (!warnings.length) {
-      sentences.push("Srážky se v nejbližších hodinách neočekávají.");
-    }
-
-    // 2) NWP další výhled + vítr
-    const nwp = nearestNwp(pt[0], pt[1]);
-    if (nwp && nwp[2]) {
-      sentences.push(`Srážky jsou možné i v dalším výhledu, přibližně od ${localHM(nwp[2])}.`);
-    }
-    if (nwp && nwp[3] && nwp[3] >= 8) {
-      sentences.push(`Vítr může v nárazech dosahovat kolem ${gustsKmh(nwp[3])} km/h.`);
-    }
-
-    return { text: sentences.join(" "), warnings };
-  }
-
-  // ── Zobrazení výsledku pro lat/lon ──────────────────────────────────────────
-  function showForecast(lat, lon, label) {
-    const { id, dist } = nearestPoint(lat, lon);
-    const pt = GRID.pts[id];
-    const { text, warnings } = templateVerdict(id);
-
-    document.getElementById("place").textContent = label || "Vybrané místo";
-    document.getElementById("dist").textContent =
-      `Předpověď pro nejbližší bod mřížky — ${dist.toFixed(1)} km od zvoleného místa.`;
-
-    let chips = "";
-    for (const w of warnings) {
-      const cls = ["yellow", "orange", "red"].includes(w.color) ? w.color : "unknown";
-      chips += `<span class="warn-chip c-${cls}">${w.event}</span>`;
-    }
-    document.getElementById("verdict").innerHTML =
-      (chips ? `<div>${chips}</div>` : "") + `<div style="margin-top:.5rem">${text}</div>`;
-
-    // marker
-    if (marker) marker.remove();
-    marker = L.marker([pt[0], pt[1]]).addTo(map);
-    map.setView([lat, lon], 9);
-
-    // URL stav (bez localStorage)
-    const u = new URL(window.location);
-    u.searchParams.set("lat", lat.toFixed(4));
-    u.searchParams.set("lon", lon.toFixed(4));
-    if (label) u.searchParams.set("q", label);
-    history.replaceState(null, "", u);
-  }
-
-  // ── Geokódování přes Open-Meteo (zdarma, bez klíče) ─────────────────────────
-  let searchTimer = null;
-  async function geocode(name) {
-    const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(name)}&count=6&language=cs&country=CZ`;
-    const r = await fetch(url);
-    const j = await r.json();
-    return j.results || [];
-  }
-
-  function renderSuggestions(list) {
-    const ul = document.getElementById("suggestions");
-    ul.innerHTML = "";
-    if (!list.length) { ul.style.display = "none"; return; }
-    for (const res of list) {
-      const li = document.createElement("li");
-      const admin = res.admin1 ? `, ${res.admin1}` : "";
-      li.textContent = `${res.name}${admin}`;
-      li.onclick = () => {
-        document.getElementById("search").value = res.name;
-        ul.style.display = "none";
-        showForecast(res.latitude, res.longitude, res.name);
-      };
-      ul.appendChild(li);
-    }
-    ul.style.display = "block";
-  }
-
-  // ── Init ────────────────────────────────────────────────────────────────────
-  window.addEventListener("DOMContentLoaded", async () => {
-    map = L.map("map").setView([49.8, 15.5], 7);
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      maxZoom: 18, attribution: "© OpenStreetMap"
-    }).addTo(map);
-
-    map.on("click", (e) => {
-      if (GRID) showForecast(e.latlng.lat, e.latlng.lng, "Bod na mapě");
-    });
-
-    document.getElementById("search").addEventListener("input", (e) => {
-      const v = e.target.value.trim();
-      clearTimeout(searchTimer);
-      if (v.length < 2) { document.getElementById("suggestions").style.display = "none"; return; }
-      searchTimer = setTimeout(async () => {
-        try { renderSuggestions(await geocode(v)); } catch (_) {}
-      }, 300);
-    });
-
-    document.getElementById("geo").addEventListener("click", () => {
-      if (!navigator.geolocation) { alert("Geolokace není podporována."); return; }
-      navigator.geolocation.getCurrentPosition(
-        (pos) => showForecast(pos.coords.latitude, pos.coords.longitude, "Moje poloha"),
-        () => alert("Polohu se nepodařilo zjistit.")
-      );
-    });
-
-    try {
-      await loadGrid();
-      // Obnov stav z URL
-      const u = new URL(window.location);
-      const lat = parseFloat(u.searchParams.get("lat"));
-      const lon = parseFloat(u.searchParams.get("lon"));
-      const q = u.searchParams.get("q");
-      if (!isNaN(lat) && !isNaN(lon)) showForecast(lat, lon, q || "Vybrané místo");
-    } catch (err) {
-      document.getElementById("verdict").innerHTML =
-        `<span class="hint">Data se nepodařilo načíst (${err.message}). Pipeline možná ještě neproběhla.</span>`;
-    }
+// ── Preload PNG do cache prohlížeče ───────────────────────────────────────────
+function preloadFrames() {
+  preloadedImgs = MANIFEST.frames.map(f => {
+    const img = new Image();
+    img.src = `data/radar_frames/${f.file}`;
+    return img;
   });
-  </script>
+}
+
+// ── Inicializace mapy ─────────────────────────────────────────────────────────
+function initMap() {
+  map = L.map("map", { zoomControl: true }).setView([49.8, 15.5], 7);
+
+  // CARTO Positron — světlý podklad, čitelný pod průhledným radarem
+  L.tileLayer(
+    "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
+    {
+      attribution: "© <a href='https://www.openstreetmap.org/copyright'>OpenStreetMap</a> © <a href='https://carto.com/attributions'>CARTO</a>",
+      subdomains: "abcd", maxZoom: 19,
+    }
+  ).addTo(map);
+
+  // Radar overlay: bounds = [[SW_lat, SW_lon], [NE_lat, NE_lon]]
+  const bounds = MANIFEST.bounds;
+  radarOverlay = L.imageOverlay(
+    preloadedImgs[0].src,
+    bounds,
+    { opacity: radarOpacity, interactive: false, zIndex: 200 }
+  ).addTo(map);
+
+  // Klik do mapy
+  map.on("click", e => {
+    if (GRID) showForecast(e.latlng.lat, e.latlng.lng, "Bod na mapě");
+  });
+}
+
+// ── Radar ovládání ─────────────────────────────────────────────────────────────
+function showFrame(idx) {
+  const frames = MANIFEST.frames;
+  currentFrame = Math.max(0, Math.min(idx, frames.length - 1));
+  const f = frames[currentFrame];
+
+  // Swap URL — browser táhne z cache díky preloadu
+  radarOverlay.setUrl(preloadedImgs[currentFrame].src);
+
+  // Slider
+  document.getElementById("timeline").value = currentFrame;
+
+  // Časový popis
+  let label = "";
+  if (f.type === "t0")      label = `<span class='t0-label'>● teď</span>`;
+  else if (f.type === "nowcast") {
+    const t0idx  = MANIFEST.t0_index;
+    const step   = currentFrame - t0idx;
+    const minAhead = step * (MANIFEST.frames.length > 12 ? 10 : 10);
+    label = `<span class='nowcast-label'>+${(currentFrame - t0idx) * 10} min</span>`;
+  }
+  document.getElementById("frame-time").innerHTML =
+    `<strong>${f.time_local}</strong> ${label}`;
+
+  // Zvýraznění t0 na slideru
+  const pct = (MANIFEST.t0_index / (frames.length - 1)) * 100;
+  document.getElementById("t0-tick").style.left   = pct + "%";
+  document.getElementById("t0-marker").style.left = pct + "%";
+}
+
+function stepFrame(delta) {
+  showFrame(currentFrame + delta);
+}
+
+function togglePlay() {
+  playing = !playing;
+  const btn = document.getElementById("btn-play");
+  if (playing) {
+    btn.textContent = "⏸ Pause";
+    btn.classList.add("active");
+    playTimer = setInterval(() => {
+      if (currentFrame >= MANIFEST.frames.length - 1) {
+        // Konec smyčky — krátká pauza, pak znovu od začátku
+        clearInterval(playTimer);
+        setTimeout(() => {
+          showFrame(0);
+          if (playing) {
+            playTimer = setInterval(advanceAndLoop, PLAY_INTERVAL_MS);
+          }
+        }, END_PAUSE_MS);
+      } else {
+        showFrame(currentFrame + 1);
+      }
+    }, PLAY_INTERVAL_MS);
+  } else {
+    clearInterval(playTimer);
+    btn.textContent = "▶ Play";
+    btn.classList.remove("active");
+  }
+}
+
+function advanceAndLoop() {
+  if (currentFrame >= MANIFEST.frames.length - 1) {
+    clearInterval(playTimer);
+    setTimeout(() => {
+      showFrame(0);
+      if (playing) playTimer = setInterval(advanceAndLoop, PLAY_INTERVAL_MS);
+    }, END_PAUSE_MS);
+  } else {
+    showFrame(currentFrame + 1);
+  }
+}
+
+// ── Geo pomocné ────────────────────────────────────────────────────────────────
+function haversine(la1, lo1, la2, lo2) {
+  const R = 6371, r = Math.PI / 180;
+  const dp = (la2 - la1) * r, dl = (lo2 - lo1) * r;
+  const a = Math.sin(dp/2)**2 + Math.cos(la1*r)*Math.cos(la2*r)*Math.sin(dl/2)**2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
+function nearestPt(lat, lon) {
+  let best = 0, bd = Infinity;
+  for (let i = 0; i < GRID.pts.length; i++) {
+    const d = haversine(lat, lon, GRID.pts[i][0], GRID.pts[i][1]);
+    if (d < bd) { bd = d; best = i; }
+  }
+  return { id: best, dist: bd };
+}
+function nearestNwp(lat, lon) {
+  const pts = GRID.nwp.pts; let best = null, bd = Infinity;
+  for (const p of pts) {
+    const d = haversine(lat, lon, p[0], p[1]);
+    if (d < bd) { bd = d; best = p; }
+  }
+  return best;
+}
+function localHM(utcIso) {
+  return new Date(utcIso).toLocaleTimeString("cs-CZ",
+    { timeZone: "Europe/Prague", hour: "2-digit", minute: "2-digit" });
+}
+function stepToLocal(stepIdx) {
+  const t0  = new Date(GRID.t0_utc);
+  const ms  = t0.getTime() + (stepIdx + 1) * GRID.step_min * 60000;
+  return localHM(new Date(ms).toISOString());
+}
+
+// ── JS šablonový verdikt (zrcadlo Python template_verdict) ────────────────────
+function rainIntensity(peak) {
+  if (peak < 0.5)  return "slabé přeháňky";
+  if (peak < 2.5)  return "slabý déšť";
+  if (peak < 7.5)  return "mírný déšť";
+  if (peak < 15)   return "vydatný déšť";
+  return "silný déšť";
+}
+function gustsKmh(ms) { return Math.round(ms * 3.6 / 10) * 10; }
+const COLOR_CZ = { yellow: "žlutou", orange: "oranžovou", red: "červenou" };
+
+function templateVerdict(ptId) {
+  const sentences = [], chips = [];
+
+  // Výstrahy: polygon match + celostátní
+  const matchIdx = new Set(GRID.wmatch[String(ptId)] || []);
+  const warns = GRID.warnings.filter((w, wi) => w.global || matchIdx.has(wi));
+
+  // 0) Výstraha první
+  for (const w of warns) {
+    const cls  = ["yellow","orange","red"].includes(w.color) ? w.color : "unknown";
+    chips.push(`<span class="warn-chip c-${cls}">${w.event}</span>`);
+  }
+  if (warns.length) {
+    const w = warns[0];
+    const barva = COLOR_CZ[w.color] || w.color;
+    sentences.push(
+      `ČHMÚ vydalo ${barva} výstrahu (${w.event}), platnou od ${localHM(w.onset_utc)} do ${localHM(w.expires_utc)}.`
+    );
+  }
+
+  // 1) Nowcast srážky (0–2 h)
+  const a = GRID.act[String(ptId)];
+  if (a) {
+    const intenzita = rainIntensity(a[2]);
+    const total = a[3] < 1 ? "do 1 mm" : `kolem ${Math.round(a[3])} mm`;
+    sentences.push(
+      `V nejbližších hodinách se očekává ${intenzita} od ${stepToLocal(a[0])} do ${stepToLocal(a[1])}, úhrn ${total}.`
+    );
+  } else if (!warns.length) {
+    sentences.push("Srážky se v nejbližších hodinách neočekávají.");
+  }
+
+  // 2) NWP výhled + vítr
+  const nwp = nearestNwp(GRID.pts[ptId][0], GRID.pts[ptId][1]);
+  if (nwp && nwp[2]) {
+    sentences.push(`Srážky jsou možné i v dalším výhledu, přibližně od ${localHM(nwp[2])}.`);
+  }
+  if (nwp && nwp[3] && nwp[3] >= 8) {
+    sentences.push(`Vítr může v nárazech dosahovat kolem ${gustsKmh(nwp[3])} km/h.`);
+  }
+
+  return { text: sentences.join(" "), chips: chips.join("") };
+}
+
+function showForecast(lat, lon, label) {
+  const { id, dist } = nearestPt(lat, lon);
+  const { text, chips } = templateVerdict(id);
+  const pt = GRID.pts[id];
+
+  document.getElementById("place").textContent = label || "Vybrané místo";
+  document.getElementById("dist").textContent =
+    `Nejbližší bod mřížky: ${dist.toFixed(1)} km`;
+
+  document.getElementById("verdict").innerHTML =
+    (chips ? `<div style="margin-bottom:.4rem">${chips}</div>` : "") +
+    `<div class="verdict-text">${text}</div>`;
+
+  // Marker na mřížkovém bodě (zIndex > radarový overlay)
+  if (locationMarker) locationMarker.remove();
+  locationMarker = L.marker([pt[0], pt[1]], { zIndexOffset: 500 }).addTo(map);
+  map.setView([lat, lon], Math.max(map.getZoom(), 9));
+
+  // URL stav
+  const u = new URL(window.location);
+  u.searchParams.set("lat", lat.toFixed(4));
+  u.searchParams.set("lon", lon.toFixed(4));
+  if (label) u.searchParams.set("q", label);
+  history.replaceState(null, "", u);
+}
+
+// ── Geokódování (Open-Meteo Geocoding, bez klíče) ────────────────────────────
+let searchTimer = null;
+async function geocode(q) {
+  const r = await fetch(
+    `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=6&language=cs&country=CZ`
+  );
+  return (await r.json()).results || [];
+}
+function renderSuggestions(list) {
+  const ul = document.getElementById("suggestions");
+  ul.innerHTML = "";
+  if (!list.length) { ul.style.display = "none"; return; }
+  for (const res of list) {
+    const li = document.createElement("li");
+    li.textContent = res.name + (res.admin1 ? `, ${res.admin1}` : "");
+    li.onclick = () => {
+      document.getElementById("search").value = res.name;
+      ul.style.display = "none";
+      showForecast(res.latitude, res.longitude, res.name);
+    };
+    ul.appendChild(li);
+  }
+  ul.style.display = "block";
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+window.addEventListener("DOMContentLoaded", async () => {
+  try {
+    await loadData();
+  } catch (err) {
+    document.getElementById("verdict").innerHTML =
+      `<span class="hint">Data se nepodařilo načíst (${err.message}). Pipeline možná ještě neproběhla.</span>`;
+    // Inicializuj alespoň mapu bez dat
+    map = L.map("map").setView([49.8, 15.5], 7);
+    L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
+      { attribution: "© OpenStreetMap © CARTO", subdomains: "abcd" }).addTo(map);
+    return;
+  }
+
+  preloadFrames();
+  initMap();
+
+  // Radar controls
+  const nf = MANIFEST.frames.length;
+  document.getElementById("timeline").max = nf - 1;
+  document.getElementById("radar-bar").style.display = "";
+
+  // Nastav t0 marker
+  const t0pct = (MANIFEST.t0_index / (nf - 1)) * 100;
+  document.getElementById("t0-tick").style.left   = t0pct + "%";
+  document.getElementById("t0-marker").style.left = t0pct + "%";
+
+  // Začni na t0
+  showFrame(MANIFEST.t0_index);
+
+  // Radar updated timestamp
+  const gen = new Date(MANIFEST.generated_at_utc);
+  document.getElementById("radar-updated").textContent =
+    "Radar: " + gen.toLocaleString("cs-CZ", { timeZone: "Europe/Prague" });
+
+  // forecast_grid updated timestamp
+  if (GRID.generated_at_utc) {
+    document.getElementById("updated").textContent =
+      "Prognóza: " + new Date(GRID.generated_at_utc).toLocaleString("cs-CZ", { timeZone: "Europe/Prague" });
+  }
+
+  // Slider events
+  document.getElementById("timeline").addEventListener("input", e => {
+    if (playing) togglePlay();  // zastaví přehrávání při ručním scrollu
+    showFrame(+e.target.value);
+  });
+  document.getElementById("btn-prev").addEventListener("click", () => stepFrame(-1));
+  document.getElementById("btn-next").addEventListener("click", () => stepFrame(+1));
+  document.getElementById("btn-play").addEventListener("click", togglePlay);
+
+  // Opacity
+  document.getElementById("opacity-slider").addEventListener("input", e => {
+    radarOpacity = +e.target.value / 100;
+    document.getElementById("opacity-val").textContent = e.target.value + " %";
+    radarOverlay.setOpacity(radarOpacity);
+  });
+
+  // Search
+  document.getElementById("search").addEventListener("input", e => {
+    clearTimeout(searchTimer);
+    const v = e.target.value.trim();
+    if (v.length < 2) { document.getElementById("suggestions").style.display = "none"; return; }
+    searchTimer = setTimeout(async () => {
+      try { renderSuggestions(await geocode(v)); } catch (_) {}
+    }, 300);
+  });
+  document.addEventListener("click", e => {
+    if (!e.target.closest(".suggest"))
+      document.getElementById("suggestions").style.display = "none";
+  });
+
+  // Geolocation
+  document.getElementById("geo").addEventListener("click", () => {
+    if (!navigator.geolocation) { alert("Geolokace není podporována."); return; }
+    navigator.geolocation.getCurrentPosition(
+      p => showForecast(p.coords.latitude, p.coords.longitude, "Moje poloha"),
+      () => alert("Polohu se nepodařilo zjistit.")
+    );
+  });
+
+  // Obnov stav z URL
+  const u = new URL(window.location);
+  const lat = parseFloat(u.searchParams.get("lat"));
+  const lon = parseFloat(u.searchParams.get("lon"));
+  const q   = u.searchParams.get("q");
+  if (!isNaN(lat) && !isNaN(lon)) showForecast(lat, lon, q || "Vybrané místo");
+});
+</script>
 </body>
 </html>

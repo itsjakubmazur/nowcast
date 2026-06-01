@@ -308,6 +308,9 @@ def main():
     forecast = run_extrapolation(maxz_stack, start_rr, N_LEADTIMES, TIMESTEP_MIN)
     print(f"  Forecast shape: {forecast.shape}")
 
+    # Uloží plné 3D pole pro render.py (nevkládáme do git — generuje se za běhu)
+    np.save(DATA_DIR / "forecast_array.npy", forecast)
+
     # ── 5. Časová řada ─────────────────────────────────────────────────────────
     print(f"\n=== Časová řada pro pixel ({row_px}, {col_px}) | t0={t0.isoformat()} ===")
     ts = extract_timeseries(forecast, t0, row_px, col_px, TIMESTEP_MIN, RAIN_THRESHOLD_MM_H)
