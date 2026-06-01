@@ -48,6 +48,9 @@ jobs:
           NOWCAST_LON: '14.42'
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
 
+      - name: Run grid (Fáze 4a)
+        run: python pipeline/grid.py
+
       - name: Upload data artifacts
         uses: actions/upload-artifact@v4
         with:

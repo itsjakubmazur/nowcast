@@ -4,44 +4,300 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Meteo Nowcast CZ</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
+    :root { --bg:#0d1117; --panel:#161b22; --border:#30363d; --muted:#8b949e; --fg:#e6edf3; }
+    * { box-sizing: border-box; }
     body {
-      margin: 0;
-      font-family: system-ui, sans-serif;
-      background: #0d1117;
-      color: #e6edf3;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      min-height: 100vh;
-      text-align: center;
+      margin: 0; font-family: system-ui, sans-serif;
+      background: var(--bg); color: var(--fg);
     }
-    h1 { font-size: 2rem; margin-bottom: 0.5rem; }
-    .subtitle { color: #8b949e; margin-bottom: 2rem; }
-    .badge {
-      background: #21262d;
-      border: 1px solid #30363d;
-      border-radius: 8px;
-      padding: 1rem 2rem;
+    header { padding: 1rem 1.25rem 0.5rem; }
+    h1 { font-size: 1.4rem; margin: 0; }
+    .subtitle { color: var(--muted); font-size: 0.85rem; margin-top: 0.25rem; }
+    .controls {
+      display: flex; flex-wrap: wrap; gap: 0.5rem;
+      padding: 0.75rem 1.25rem;
+    }
+    input[type=text] {
+      flex: 1 1 200px; min-width: 160px;
+      padding: 0.6rem 0.8rem; border-radius: 8px;
+      border: 1px solid var(--border); background: var(--panel); color: var(--fg);
+      font-size: 0.95rem;
+    }
+    button {
+      padding: 0.6rem 0.9rem; border-radius: 8px; cursor: pointer;
+      border: 1px solid var(--border); background: var(--panel); color: var(--fg);
       font-size: 0.9rem;
-      color: #8b949e;
     }
-    footer {
-      position: fixed;
-      bottom: 1rem;
-      font-size: 0.75rem;
-      color: #484f58;
+    button:hover { background: #21262d; }
+    #map { height: 320px; margin: 0 1.25rem; border-radius: 10px; border: 1px solid var(--border); }
+    .result { padding: 1rem 1.25rem; }
+    .place { font-size: 1.05rem; font-weight: 600; }
+    .dist { color: var(--muted); font-size: 0.85rem; margin-bottom: 0.75rem; }
+    .verdict {
+      background: var(--panel); border: 1px solid var(--border);
+      border-radius: 10px; padding: 1rem 1.25rem; line-height: 1.6; font-size: 1.02rem;
     }
+    .warn-chip {
+      display: inline-block; padding: 0.15rem 0.6rem; border-radius: 999px;
+      font-size: 0.8rem; font-weight: 600; margin: 0.25rem 0.25rem 0 0; color: #0d1117;
+    }
+    .c-yellow { background: #d9b400; } .c-orange { background: #e8730c; color:#fff;}
+    .c-red { background: #d1242f; color: #fff; } .c-unknown { background: #6e7681; color:#fff;}
+    .hint { color: var(--muted); font-size: 0.85rem; }
+    .suggest {
+      position: relative;
+    }
+    #suggestions {
+      list-style: none; margin: 0.25rem 0 0; padding: 0;
+      border: 1px solid var(--border); border-radius: 8px; background: var(--panel);
+      max-height: 220px; overflow-y: auto; display: none;
+    }
+    #suggestions li { padding: 0.5rem 0.8rem; cursor: pointer; }
+    #suggestions li:hover { background: #21262d; }
+    footer { padding: 1rem 1.25rem 2rem; font-size: 0.75rem; color: #484f58; }
+    .updated { color: var(--muted); font-size: 0.8rem; }
   </style>
 </head>
 <body>
-  <h1>🌧️ Meteo Nowcast CZ</h1>
-  <p class="subtitle">Krátkodobá předpověď počasí pro ČR</p>
-  <div class="badge">
-    Fáze 0 — Skeleton nasazen.<br />
-    Pipeline se teprve staví — brzy přibydou data.
+  <header>
+    <h1>🌧️ Meteo Nowcast CZ</h1>
+    <div class="subtitle">Krátkodobá předpověď pro libovolné místo v ČR</div>
+  </header>
+
+  <div class="controls">
+    <div class="suggest" style="flex:1 1 240px;">
+      <input id="search" type="text" placeholder="Hledat obec (např. Třinec)…" autocomplete="off" />
+      <ul id="suggestions"></ul>
+    </div>
+    <button id="geo">📍 Moje poloha</button>
   </div>
-  <footer>Data: ČHMÚ (CC BY) · Open-Meteo (CC BY)</footer>
+
+  <div id="map"></div>
+
+  <div class="result">
+    <div class="place" id="place">Zvolte místo</div>
+    <div class="dist" id="dist"></div>
+    <div class="verdict" id="verdict">
+      <span class="hint">Vyhledejte obec, klikněte do mapy, nebo použijte „Moje poloha".</span>
+    </div>
+    <div class="updated" id="updated"></div>
+  </div>
+
+  <footer>Data: ČHMÚ (CC BY) · Open-Meteo (CC BY) · Předpověď generovaná v prohlížeči</footer>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+  // ── Stav (žádný localStorage — drží se v paměti + URL) ──────────────────────
+  let GRID = null;
+  let map, marker;
+
+  // ── Načtení mřížky ──────────────────────────────────────────────────────────
+  async function loadGrid() {
+    const r = await fetch("data/forecast_grid.json", { cache: "no-store" });
+    if (!r.ok) throw new Error("forecast_grid.json nedostupný");
+    GRID = await r.json();
+    const gen = new Date(GRID.generated_at_utc);
+    document.getElementById("updated").textContent =
+      "Aktualizováno: " + gen.toLocaleString("cs-CZ", { timeZone: "Europe/Prague" });
+  }
+
+  // ── Geo pomocné ───────────────────────────────────────────────────────────────
+  function haversine(lat1, lon1, lat2, lon2) {
+    const R = 6371, rad = Math.PI / 180;
+    const dp = (lat2 - lat1) * rad, dl = (lon2 - lon1) * rad;
+    const a = Math.sin(dp / 2) ** 2 +
+              Math.cos(lat1 * rad) * Math.cos(lat2 * rad) * Math.sin(dl / 2) ** 2;
+    return 2 * R * Math.asin(Math.sqrt(a));
+  }
+
+  function nearestPoint(lat, lon) {
+    let best = -1, bestD = Infinity;
+    for (let i = 0; i < GRID.pts.length; i++) {
+      const d = haversine(lat, lon, GRID.pts[i][0], GRID.pts[i][1]);
+      if (d < bestD) { bestD = d; best = i; }
+    }
+    return { id: best, dist: bestD };
+  }
+
+  function nearestNwp(lat, lon) {
+    const pts = GRID.nwp.pts;
+    let best = null, bestD = Infinity;
+    for (const p of pts) {
+      const d = haversine(lat, lon, p[0], p[1]);
+      if (d < bestD) { bestD = d; best = p; }
+    }
+    return best; // [lat, lon, rain_from_utc, peak_gusts_ms, max_cape]
+  }
+
+  // ── Čas UTC → Europe/Prague "HH:MM" ──────────────────────────────────────────
+  function localHM(utcIso) {
+    const d = new Date(utcIso);
+    return d.toLocaleTimeString("cs-CZ",
+      { timeZone: "Europe/Prague", hour: "2-digit", minute: "2-digit" });
+  }
+  function stepToLocal(stepIdx) {
+    const t0 = new Date(GRID.t0_utc);
+    const ms = t0.getTime() + (stepIdx + 1) * GRID.step_min * 60000;
+    return localHM(new Date(ms).toISOString());
+  }
+
+  // ── Slovní popis srážek / vítr (stejná logika jako Python) ──────────────────
+  function rainIntensity(peak) {
+    if (peak < 0.5) return "slabé přeháňky";
+    if (peak < 2.5) return "slabý déšť";
+    if (peak < 7.5) return "mírný déšť";
+    if (peak < 15)  return "vydatný déšť";
+    return "silný déšť";
+  }
+  function gustsKmh(ms) { return Math.round(ms * 3.6 / 10) * 10; }
+  const COLOR_CZ = { yellow: "žlutou", orange: "oranžovou", red: "červenou" };
+
+  // ── template_verdict v JS (mirror Python šablony) ───────────────────────────
+  function templateVerdict(id) {
+    const sentences = [];
+    const pt = GRID.pts[id];
+
+    // Výstrahy pro tento bod: polygon match (wmatch) + celostátní (global)
+    const matchedIdx = new Set(GRID.wmatch[String(id)] || []);
+    const warnings = [];
+    GRID.warnings.forEach((w, wi) => {
+      if (w.global || matchedIdx.has(wi)) warnings.push(w);
+    });
+
+    // 0) Výstraha vždy první
+    if (warnings.length) {
+      const w = warnings[0];
+      const barva = COLOR_CZ[w.color] || w.color;
+      sentences.push(
+        `ČHMÚ vydalo ${barva} výstrahu (${w.event}), platnou od ${localHM(w.onset_utc)} do ${localHM(w.expires_utc)}.`
+      );
+    }
+
+    // 1) Nowcast srážky (0–2 h)
+    const a = GRID.act[String(id)];  // [arr, end, peak, total]
+    if (a) {
+      const intenzita = rainIntensity(a[2]);
+      const total = a[3] < 1 ? "do 1 mm" : `kolem ${Math.round(a[3])} mm`;
+      sentences.push(
+        `V nejbližších hodinách se očekává ${intenzita} od ${stepToLocal(a[0])} do ${stepToLocal(a[1])}, úhrn ${total}.`
+      );
+    } else if (!warnings.length) {
+      sentences.push("Srážky se v nejbližších hodinách neočekávají.");
+    }
+
+    // 2) NWP další výhled + vítr
+    const nwp = nearestNwp(pt[0], pt[1]);
+    if (nwp && nwp[2]) {
+      sentences.push(`Srážky jsou možné i v dalším výhledu, přibližně od ${localHM(nwp[2])}.`);
+    }
+    if (nwp && nwp[3] && nwp[3] >= 8) {
+      sentences.push(`Vítr může v nárazech dosahovat kolem ${gustsKmh(nwp[3])} km/h.`);
+    }
+
+    return { text: sentences.join(" "), warnings };
+  }
+
+  // ── Zobrazení výsledku pro lat/lon ──────────────────────────────────────────
+  function showForecast(lat, lon, label) {
+    const { id, dist } = nearestPoint(lat, lon);
+    const pt = GRID.pts[id];
+    const { text, warnings } = templateVerdict(id);
+
+    document.getElementById("place").textContent = label || "Vybrané místo";
+    document.getElementById("dist").textContent =
+      `Předpověď pro nejbližší bod mřížky — ${dist.toFixed(1)} km od zvoleného místa.`;
+
+    let chips = "";
+    for (const w of warnings) {
+      const cls = ["yellow", "orange", "red"].includes(w.color) ? w.color : "unknown";
+      chips += `<span class="warn-chip c-${cls}">${w.event}</span>`;
+    }
+    document.getElementById("verdict").innerHTML =
+      (chips ? `<div>${chips}</div>` : "") + `<div style="margin-top:.5rem">${text}</div>`;
+
+    // marker
+    if (marker) marker.remove();
+    marker = L.marker([pt[0], pt[1]]).addTo(map);
+    map.setView([lat, lon], 9);
+
+    // URL stav (bez localStorage)
+    const u = new URL(window.location);
+    u.searchParams.set("lat", lat.toFixed(4));
+    u.searchParams.set("lon", lon.toFixed(4));
+    if (label) u.searchParams.set("q", label);
+    history.replaceState(null, "", u);
+  }
+
+  // ── Geokódování přes Open-Meteo (zdarma, bez klíče) ─────────────────────────
+  let searchTimer = null;
+  async function geocode(name) {
+    const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(name)}&count=6&language=cs&country=CZ`;
+    const r = await fetch(url);
+    const j = await r.json();
+    return j.results || [];
+  }
+
+  function renderSuggestions(list) {
+    const ul = document.getElementById("suggestions");
+    ul.innerHTML = "";
+    if (!list.length) { ul.style.display = "none"; return; }
+    for (const res of list) {
+      const li = document.createElement("li");
+      const admin = res.admin1 ? `, ${res.admin1}` : "";
+      li.textContent = `${res.name}${admin}`;
+      li.onclick = () => {
+        document.getElementById("search").value = res.name;
+        ul.style.display = "none";
+        showForecast(res.latitude, res.longitude, res.name);
+      };
+      ul.appendChild(li);
+    }
+    ul.style.display = "block";
+  }
+
+  // ── Init ────────────────────────────────────────────────────────────────────
+  window.addEventListener("DOMContentLoaded", async () => {
+    map = L.map("map").setView([49.8, 15.5], 7);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 18, attribution: "© OpenStreetMap"
+    }).addTo(map);
+
+    map.on("click", (e) => {
+      if (GRID) showForecast(e.latlng.lat, e.latlng.lng, "Bod na mapě");
+    });
+
+    document.getElementById("search").addEventListener("input", (e) => {
+      const v = e.target.value.trim();
+      clearTimeout(searchTimer);
+      if (v.length < 2) { document.getElementById("suggestions").style.display = "none"; return; }
+      searchTimer = setTimeout(async () => {
+        try { renderSuggestions(await geocode(v)); } catch (_) {}
+      }, 300);
+    });
+
+    document.getElementById("geo").addEventListener("click", () => {
+      if (!navigator.geolocation) { alert("Geolokace není podporována."); return; }
+      navigator.geolocation.getCurrentPosition(
+        (pos) => showForecast(pos.coords.latitude, pos.coords.longitude, "Moje poloha"),
+        () => alert("Polohu se nepodařilo zjistit.")
+      );
+    });
+
+    try {
+      await loadGrid();
+      // Obnov stav z URL
+      const u = new URL(window.location);
+      const lat = parseFloat(u.searchParams.get("lat"));
+      const lon = parseFloat(u.searchParams.get("lon"));
+      const q = u.searchParams.get("q");
+      if (!isNaN(lat) && !isNaN(lon)) showForecast(lat, lon, q || "Vybrané místo");
+    } catch (err) {
+      document.getElementById("verdict").innerHTML =
+        `<span class="hint">Data se nepodařilo načíst (${err.message}). Pipeline možná ještě neproběhla.</span>`;
+    }
+  });
+  </script>
 </body>
 </html>

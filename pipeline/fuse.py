@@ -139,6 +139,7 @@ def parse_cap_file(xml_bytes: bytes, now_utc: datetime) -> list[dict]:
                     color = pval.lower() or color
 
             areas_desc, cisorp_codes = [], set()
+            polygons: list[list[list[float]]] = []
             for area in info.findall(f"{{{NS}}}area") or info.findall("area"):
                 aname = _cap(area, "areaDesc")
                 if aname:
@@ -148,6 +149,20 @@ def parse_cap_file(xml_bytes: bytes, now_utc: datetime) -> list[dict]:
                     vval  = _cap(gc, "value")
                     if vname.upper() == "CISORP":
                         cisorp_codes.add(vval)
+                # Polygon: "lat,lon lat,lon ..." — pro point-in-polygon match na libovolný bod
+                for poly in area.findall(f"{{{NS}}}polygon") or area.findall("polygon"):
+                    ptxt = (poly.text or "").strip()
+                    if not ptxt:
+                        continue
+                    coords = []
+                    for pair in ptxt.split():
+                        try:
+                            la, lo = pair.split(",")
+                            coords.append([float(la), float(lo)])
+                        except ValueError:
+                            continue
+                    if len(coords) >= 3:
+                        polygons.append(coords)
 
             # Deduplikace info: jev+onset+firstArea jako fallback key
             dedup_key = f"{event}|{onset.isoformat()}|{areas_desc[0] if areas_desc else ''}"
@@ -165,17 +180,18 @@ def parse_cap_file(xml_bytes: bytes, now_utc: datetime) -> list[dict]:
                 "expires_utc":  expires.isoformat(),
                 "areas":        areas_desc,
                 "cisorp_codes": sorted(cisorp_codes),
+                "polygons":     polygons,
                 "description":  desc[:300] if desc else "",
             })
 
     return results
 
 
-def fetch_cap_warnings(lat: float, lon: float,
-                       prague_cisorp: set[str] = CISORP_PRAGUE) -> list[dict]:
+def fetch_all_active_warnings() -> list[dict]:
     """
-    Stáhne platné CAP výstrahy z ČHMÚ. Nikdy nevyhodí výjimku ani nezamrzne —
-    při jakémkoliv selhání vrátí prázdný seznam a zaloguje varování.
+    Stáhne VŠECHNY aktuálně platné CAP výstrahy z ČHMÚ (celá ČR, bez filtru lokace).
+    Vyfiltruje jen reálné výstrahy (Moderate/Severe/Extreme, ne green placeholdery).
+    Nikdy nevyhodí výjimku ani nezamrzne — při selhání vrátí prázdný seznam.
     """
     now_utc = datetime.now(timezone.utc)
     all_warnings: list[dict] = []
@@ -233,28 +249,39 @@ def fetch_cap_warnings(lat: float, lon: float,
         print(f"    [{w['color'].upper():7s}] {w['event'][:40]:40s} "
               f"CISORP=[{codes_s}] oblast=[{areas_s}]")
 
-    # ── Filtr: Praha (CISORP 1100) ─────────────────────────────────────────────
-    prague_warnings = [
-        w for w in all_warnings
-        if bool(set(w["cisorp_codes"]) & prague_cisorp)
-        or any("praha" in a.lower() for a in w["areas"])
-    ]
-    print(f"  CAP: {len(prague_warnings)} výstrah pro Prahu (CISORP {prague_cisorp})")
-
     # ── Filtr: jen reálné výstrahy (zahoď green/Minor placeholdery) ────────────
     # "Žádná výstraha před…" / "Žádný výhled" jsou stupně Minor (barva green).
     ACTIVE_SEVERITY = {"Moderate", "Severe", "Extreme"}
     active = [
-        w for w in prague_warnings
+        w for w in all_warnings
         if w["severity"] in ACTIVE_SEVERITY and w["color"].lower() != "green"
     ]
-    dropped = len(prague_warnings) - len(active)
-    print(f"  CAP: {len(active)} aktivních výstrah pro Prahu "
+    dropped = len(all_warnings) - len(active)
+    print(f"  CAP: {len(active)} aktivních výstrah celkem "
           f"(odfiltrováno {dropped} placeholderů green/Minor)")
     for w in active:
+        npoly = sum(len(p) for p in w.get("polygons", []))
         print(f"    → [{w['color'].upper():7s}] {w['event']} "
-              f"(do {w['expires_utc']})")
+              f"(do {w['expires_utc']}, polygon body={npoly})")
     return active
+
+
+def fetch_cap_warnings(lat: float, lon: float,
+                       prague_cisorp: set[str] = CISORP_PRAGUE) -> list[dict]:
+    """
+    Vrátí platné výstrahy pro jednu lokaci (zpětná kompatibilita pro Prahu).
+    Použije fetch_all_active_warnings() a vyfiltruje podle CISORP / názvu oblasti.
+    """
+    active_all = fetch_all_active_warnings()
+    prague_warnings = [
+        w for w in active_all
+        if bool(set(w["cisorp_codes"]) & prague_cisorp)
+        or any("praha" in a.lower() for a in w["areas"])
+    ]
+    print(f"  CAP: {len(prague_warnings)} výstrah pro Prahu (CISORP {prague_cisorp})")
+    for w in prague_warnings:
+        print(f"    → [{w['color'].upper():7s}] {w['event']} (do {w['expires_utc']})")
+    return prague_warnings
 
 
 # ── Fúze nowcast + Open-Meteo ──────────────────────────────────────────────────
