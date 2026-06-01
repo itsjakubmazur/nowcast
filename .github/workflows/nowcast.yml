@@ -59,6 +59,11 @@ jobs:
       - name: Run render (Fáze 4c)
         run: python pipeline/render.py
 
+      - name: Run wu (WU PWS stanice)
+        run: python pipeline/wu.py || echo "wu.py selhalo (WU_API_KEY?), pokračuji"
+        env:
+          WU_API_KEY: ${{ secrets.WU_API_KEY }}
+
       - name: Upload data artifacts
         uses: actions/upload-artifact@v4
         with:

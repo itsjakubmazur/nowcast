@@ -137,6 +137,13 @@
     }
     .updated { color: var(--muted); font-size: 0.75rem; margin-top: 0.5rem; }
 
+    /* WU stanice markery */
+    .wu-marker-own   { background:#f59e0b; border:2px solid #fff; border-radius:50%; width:14px; height:14px; box-shadow:0 0 0 2px #f59e0b; }
+    .wu-marker-other { background:#6366f1; border:2px solid #fff; border-radius:50%; width:10px; height:10px; }
+    .wu-popup { font-size:0.82rem; min-width:160px; }
+    .wu-popup strong { font-size:0.9rem; }
+    .wu-popup .wu-own-badge { color:#f59e0b; font-weight:700; font-size:0.7rem; }
+
     /* ── 24h forecast timeline ───────────────────────────────────────────── */
     .fc24 {
       margin: 0 1rem 0.75rem; padding: 0.85rem 1rem 0.75rem;
@@ -416,7 +423,7 @@
   <span style="color:var(--muted);font-size:0.75rem" id="storm-age"></span>
 </div>
 
-<footer>Data: ČHMÚ (CC BY) · Open-Meteo (CC BY) · Blesky: RainViewer · Předpověď generovaná v prohlížeči</footer>
+<footer>Data: ČHMÚ (CC BY) · Open-Meteo (CC BY) · Radar: RainViewer · Stanice: Weather Underground · Předpověď generovaná v prohlížeči</footer>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
@@ -429,6 +436,10 @@ let map, radarOverlay, locationMarker;
 let lightningLayer = null, lightningOn = false;
 let lightningStrikes = [];
 let preloadedImgs = [];
+
+// WU stanice
+let WU = null;
+let wuMarkers = [];
 
 // Globální radar (RainViewer)
 let globalMode = false;
@@ -447,12 +458,14 @@ const AUTO_REFRESH_MS   = 5 * 60 * 1000;
 async function loadData() {
   const v    = `?v=${Date.now()}`;
   const opts = { cache: "no-store" };
-  const [m, g] = await Promise.all([
+  const [m, g, wu] = await Promise.all([
     fetch(`data/radar_manifest.json${v}`, opts).then(r => r.json()),
     fetch(`data/forecast_grid.json${v}`,  opts).then(r => r.json()),
+    fetch(`data/wu_stations.json${v}`,    opts).then(r => r.json()).catch(() => null),
   ]);
   MANIFEST = m;
   GRID     = g;
+  WU       = wu;
 }
 
 // ── Preload PNG do cache prohlížeče ───────────────────────────────────────────
@@ -466,6 +479,58 @@ function preloadFrames() {
 }
 
 // ── Inicializace mapy ─────────────────────────────────────────────────────────
+// ── WU stanice na mapě ────────────────────────────────────────────────────────
+function renderWuMarkers() {
+  // Odstraň staré markery
+  wuMarkers.forEach(m => m.remove());
+  wuMarkers = [];
+  if (!WU || !WU.stations || !map) return;
+
+  WU.stations.forEach(s => {
+    const icon = L.divIcon({
+      className: "",
+      html: `<div class="${s.own ? "wu-marker-own" : "wu-marker-other"}"></div>`,
+      iconSize: s.own ? [14, 14] : [10, 10],
+      iconAnchor: s.own ? [7, 7] : [5, 5],
+    });
+
+    const windDir = s.wind_dir != null ? degToCompass(s.wind_dir) : "—";
+    const age     = s.time_utc ? ageMinutes(s.time_utc) : null;
+    const ageStr  = age != null ? `<span style="color:var(--muted);font-size:.7rem"> před ${age} min</span>` : "";
+
+    const popup = `
+      <div class="wu-popup">
+        <strong>${s.name || s.id}</strong>
+        ${s.own ? '<span class="wu-own-badge"> ★ MOJE</span>' : ""}${ageStr}<br>
+        🌡️ ${s.temp != null ? s.temp + " °C" : "—"}
+        ${s.feels != null && Math.abs(s.feels - s.temp) >= 2 ? `<small style="color:var(--muted)">(pocit ${s.feels}°)</small>` : ""}<br>
+        💧 ${s.humidity != null ? s.humidity + " %" : "—"} &nbsp;
+        🌬️ ${s.wind_kmh != null ? s.wind_kmh + " km/h " + windDir : "—"}
+        ${s.gust_kmh > 0 ? `<small>(nárazy ${s.gust_kmh})</small>` : ""}<br>
+        🔵 ${s.pressure != null ? s.pressure + " hPa" : "—"} &nbsp;
+        🌧️ ${s.precip_rate != null ? s.precip_rate + " mm/h" : "—"}
+        <br><small style="color:var(--muted)">${s.id}</small>
+      </div>`;
+
+    const marker = L.marker([s.lat, s.lon], { icon, zIndexOffset: s.own ? 1000 : 100 })
+      .bindPopup(popup)
+      .addTo(map);
+    wuMarkers.push(marker);
+  });
+
+  console.log(`WU: ${wuMarkers.length} markerů na mapě`);
+}
+
+function degToCompass(deg) {
+  const dirs = ["S","SSV","SV","VSV","V","VJV","JV","JJV","J","JJZ","JZ","ZJZ","Z","ZSZ","SZ","SSZ"];
+  return dirs[Math.round(deg / 22.5) % 16];
+}
+
+function ageMinutes(isoStr) {
+  try { return Math.round((Date.now() - new Date(isoStr).getTime()) / 60000); }
+  catch { return null; }
+}
+
 // ── Blesky (RainViewer) ────────────────────────────────────────────────────────
 const RAINVIEWER_API = "https://api.rainviewer.com/public/weather-maps.json";
 let lightningRefreshTimer = null;
@@ -1373,6 +1438,7 @@ async function refreshAll() {
     await loadData();
     preloadFrames();
     applyManifestUI();
+    renderWuMarkers();
     // Pokud je vybrané místo, obnov verdikt + 24h
     if (_currentLat !== null) {
       // Verdikt z grid (synchronní)
@@ -1475,6 +1541,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   document.getElementById("radar-bar").style.display = "";
   applyManifestUI();
   renderFavRow();
+  renderWuMarkers();
 
   // Slider events
   document.getElementById("timeline").addEventListener("input", e => {
