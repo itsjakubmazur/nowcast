@@ -1038,8 +1038,7 @@ function wcIcon(wc, hour) {
     const night = hour < 6 || hour >= 21;
     if (night) {
       if (wc === 0) e = "🌙";
-      else if (wc === 1) e = "🌛";
-      else if (wc === 2) e = "🌥️";  // oblačno v noci zachováme ⛅→🌥
+      else if (wc === 1 || wc === 2) e = "🌙🌥";
     }
   }
   return `<span class="wc-emoji">${e}</span>`;
