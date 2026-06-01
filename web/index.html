@@ -562,12 +562,14 @@ function mostSevere(arr) {
 function _nn(v, def = 0) { return v != null ? v : def; }
 
 function parseFc24(data) {
-  const now = new Date();
-  // Zaokrouhli na aktuální celou hodinu (Europe/Prague timezone, ale JS Date je lokální)
-  now.setMinutes(0, 0, 0);
+  // Aktuální hodina v Prague — string comparison (OM vrací "2024-06-01T14:00", bez tz suffix)
+  const nowPrague = (() => {
+    const s = new Date().toLocaleString("sv-SE", { timeZone: "Europe/Prague" });
+    return s.slice(0, 14) + "00";  // "2024-06-01T14:00"
+  })();
 
   const h     = data.hourly || {};
-  const times = (h.time || []).map(t => new Date(t));   // OM vrací ISO bez tz → interpretuje jako local kvůli timezone=Europe/Prague
+  const times = h.time || [];   // OM strings: "2024-06-01T14:00" — use as strings
   const wc    = h.weather_code || [];
   const temp  = h.temperature_2m || [];
   const prec  = h.precipitation || [];
@@ -575,8 +577,8 @@ function parseFc24(data) {
   const wind  = h.wind_speed_10m || [];
   const gust  = h.wind_gusts_10m || [];
 
-  // Najdi první index >= now
-  let si = times.findIndex(t => t >= now);
+  // Najdi první index >= aktuální hodina (string comparison funguje pro ISO formát)
+  let si = times.findIndex(t => t >= nowPrague);
   if (si < 0) si = 0;
 
   const hourly = [];
@@ -584,7 +586,7 @@ function parseFc24(data) {
     const i = si + k;
     if (i >= times.length) break;
     hourly.push({
-      t:      times[i].toLocaleTimeString("cs-CZ", {hour:"2-digit", minute:"2-digit", timeZone:"Europe/Prague"}),
+      t:      times[i].slice(11, 16),  // "14:00" — přímé vyjmutí, žádné Date parsing
       wc:     wc[i] ?? null,
       temp:   temp[i] != null ? Math.round(temp[i]) : null,
       precip: Math.round(_nn(prec[i]) * 10) / 10,
@@ -600,8 +602,8 @@ function parseFc24(data) {
     const ie = Math.min(i + BLOCK_H, end, times.length);
     const sl = (arr) => arr.slice(i, ie).filter(v => v != null);
     const tsl = sl(temp), psl = sl(prec), prbsl = sl(prob), gsl = sl(gust);
-    const tFrom = times[i].toLocaleTimeString("cs-CZ", {hour:"2-digit", minute:"2-digit", timeZone:"Europe/Prague"}).slice(0,5);
-    const tTo   = times[Math.min(ie, times.length-1)].toLocaleTimeString("cs-CZ", {hour:"2-digit", minute:"2-digit", timeZone:"Europe/Prague"}).slice(0,5);
+    const tFrom = times[i].slice(11, 16);
+    const tTo   = times[Math.min(ie, times.length-1)].slice(11, 16);
     blocks.push({
       t:      `${tFrom}–${tTo}`,
       wc:     mostSevere(wc.slice(i, ie)),
@@ -669,12 +671,16 @@ async function showFc24(lat, lon, label) {
     + `&hourly=weather_code,temperature_2m,precipitation,precipitation_probability,wind_speed_10m,wind_gusts_10m`
     + `&forecast_days=2&timezone=Europe%2FPrague`;
 
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 15000);
   try {
-    const r = await fetch(url, { signal: AbortSignal.timeout(15000) });
+    const r = await fetch(url, { signal: ctrl.signal });
+    clearTimeout(timer);
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const data = await r.json();
     renderFc24(parseFc24(data), label);
   } catch (e) {
+    clearTimeout(timer);
     scroll.innerHTML = `<div style="padding:.6rem 1rem;color:var(--muted);font-size:.85rem">Předpověď se nepodařilo načíst (${e.message}).</div>`;
   }
 }
