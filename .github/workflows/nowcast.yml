@@ -2,9 +2,9 @@ name: Nowcast pipeline
 
 on:
   schedule:
-    # Každých ~10 minut (GitHub free tier může mít zpoždění)
+    # GitHub free tier cron je nespolehlivý — primárně triggerujeme přes cron-job.org → workflow_dispatch
     - cron: '*/10 * * * *'
-  workflow_dispatch:  # ruční spuštění pro testování
+  workflow_dispatch:  # trigger z externího cronu (cron-job.org) nebo ruční spuštění
 
 # Zabrání hromadění běhů — nový run zruší čekající, ne běžící
 concurrency:
