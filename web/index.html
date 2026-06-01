@@ -498,7 +498,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   // Popisek zdroje — férově: vizuál je z odrazivosti, ne přesné QPE
   const srcEl = document.getElementById("radar-source");
   if (srcEl) {
-    srcEl.textContent = (MANIFEST.source_label || "Radarová odrazivost (orientační intenzita)")
+    srcEl.textContent = (MANIFEST.source_label || "Radarová odrazivost (dBZ) — orientační intenzita srážek")
       + " · číselný odhad úhrnů je přesnější";
   }
 
