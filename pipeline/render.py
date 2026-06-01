@@ -1,13 +1,9 @@
 """
 Fáze 4c — Render radarových PNG snímků pro webovou smyčku
-- VŠECH 18 snímků (6 historických + 12 nowcast) z JEDNOHO zdroje: MAX_Z odrazivost.
-  → konzistentní škála, plynulá návaznost přes t0, žádný skok mezi zdroji.
-- Minulost: 6 skutečných MAX_Z snímků (10-min kroky) → kalibrované Z→R.
-- Nowcast: poslední MAX_Z pole advektované pohybovým polem (12 kroků) → reálný pohyb.
-- KALIBRACE: dBZ ořez na 55 dBZ PŘED Z→R (odřízne kroupová jádra), výsledek tvrdě
-  na max 30 mm/h. Cíl: realistická maxima, sanity check (>50) nikdy nehlásí.
-- POZN.: tohle je VIZUÁLNÍ odhad intenzity z odrazivosti, NE přesné QPE.
-  Číselný odhad úhrnů (MERGE) zůstává v nowcast.py/grid.py — render to needituje.
+- VŠECH 18 snímků (6 historických + 12 nowcast) ze stejného zdroje: MAX_Z odrazivost.
+- Barvení PŘÍMO v dBZ (žádný Z→R, žádný strop) — jako ČHMÚ/Windy.
+- Pevná škála 5–65 dBZ, plynulý gradient, < 5 dBZ průhledné.
+- Nowcast: poslední MAX_Z pole advektované pohybovým polem (lucaskanade).
 - PNG kvantizované (paleta 256, FASTOCTREE s alfou) → ~10–40 kB/snímek
 - Výstup: data/radar_frames/frame_00..17.png + data/radar_manifest.json
 """
@@ -23,87 +19,83 @@ from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).parent))
 from ingest import DATA_DIR
-from nowcast import (
-    TIMESTEP_MIN, N_LEADTIMES,
-    load_sequence,
-)
+from nowcast import TIMESTEP_MIN, N_LEADTIMES, load_sequence
 from pysteps import motion, nowcasts
 
 PRAGUE_TZ = ZoneInfo("Europe/Prague")
-SCALE     = 1          # nativní rozlišení (~598×378)
-N_PAST    = 6          # počet historických snímků (skutečné MAX_Z, 10-min kroky)
+SCALE     = 1
+N_PAST    = 6
 OUT_DIR   = DATA_DIR / "radar_frames"
 
-# ── Kalibrace odrazivosti → intenzita ─────────────────────────────────────────
-DBZ_CAP   = 55.0   # strop dBZ PŘED Z→R — odřízne kroupová/ledová jádra, co přepalují
-RR_MIN    = 0.10   # pod tímto prahem = plně průhledné
-RR_MAX    = 30.0   # saturace stupnice (mm/h) — výsledek se sem tvrdě ořízne
-SANITY_MAX = 50.0  # nad touto hodnotou = podezření na chybu (nesmí nikdy nastat)
+# ── Standardní radarová dBZ škála ─────────────────────────────────────────────
+# Rozsah 5–65 dBZ, plynulý gradient, průhlednost klesá se slabší ozvěnou.
+# Hodnoty mimo rozsah: < 5 → plně průhledné; > 65 → saturace (tmavě fialová).
+DBZ_MIN = 5.0
+DBZ_MAX = 65.0
 
-# ── Pevná SPOLEČNÁ barevná škála mm/h → RGBA (všech 18 snímků) ────────────────
-CMAP: list[tuple[float, tuple[int, int, int, int]]] = [
-    (0.00, (  0,   0,   0,   0)),
-    (0.08, (  0,   0,   0,   0)),
-    (0.10, (160, 210, 255, 150)),
-    (0.50, ( 60, 140, 255, 190)),
-    (1.00, (  0, 200, 120, 210)),
-    (2.00, (  0, 200,   0, 220)),
-    (4.00, (180, 220,   0, 228)),
-    (7.00, (255, 210,   0, 236)),
-    (10.0, (255, 140,   0, 244)),
-    (15.0, (255,  60,   0, 250)),
-    (20.0, (220,   0,   0, 255)),
-    (30.0, (150,   0,  80, 255)),
+# (dBZ, (R, G, B, A))
+CMAP_DBZ: list[tuple[float, tuple[int, int, int, int]]] = [
+    ( 0.0, (  0,   0,   0,   0)),   # pod prahem = průhledné
+    ( 5.0, (  0,   0,   0,   0)),   # stále průhledné
+    (10.0, (160, 210, 255, 100)),   # velmi slabé — bledě modrá, poloprůhledná
+    (15.0, ( 80, 160, 255, 140)),
+    (20.0, ( 30, 120, 230, 170)),   # slabé — modrá
+    (25.0, (  0, 200, 160, 190)),   # modrozelená
+    (30.0, (  0, 200,  50, 210)),   # zelená
+    (35.0, ( 80, 210,   0, 220)),   # žlutozelená
+    (40.0, (200, 220,   0, 230)),   # žlutá
+    (45.0, (255, 180,   0, 238)),   # žlutooranžová
+    (48.0, (255, 120,   0, 244)),   # oranžová (silné)
+    (52.0, (255,  50,   0, 250)),   # červenooranžová
+    (55.0, (220,   0,   0, 255)),   # červená (velmi silné)
+    (60.0, (160,   0,  60, 255)),   # tmavě červená
+    (65.0, (100,   0, 120, 255)),   # fialová (extrém/kroupy)
 ]
 
 _LUT_SIZE = 2048
 
 
 def _build_lut() -> np.ndarray:
-    rr_pts   = np.array([c[0] for c in CMAP], dtype=float)
-    rgba_pts = np.array([c[1] for c in CMAP], dtype=float)
-    xs  = np.linspace(0, RR_MAX, _LUT_SIZE)
-    lut = np.stack([np.interp(xs, rr_pts, rgba_pts[:, ch]) for ch in range(4)], axis=-1)
+    dbz_pts  = np.array([c[0] for c in CMAP_DBZ], dtype=float)
+    rgba_pts = np.array([c[1] for c in CMAP_DBZ], dtype=float)
+    xs  = np.linspace(DBZ_MIN, DBZ_MAX, _LUT_SIZE)
+    lut = np.stack([np.interp(xs, dbz_pts, rgba_pts[:, ch]) for ch in range(4)], axis=-1)
     return np.clip(lut, 0, 255).astype(np.uint8)
 
 
 _LUT = _build_lut()
+# Průhledná barva pro hodnoty pod DBZ_MIN
+_TRANSPARENT = np.array([0, 0, 0, 0], dtype=np.uint8)
 
 
-def dbz_to_rr_calibrated(dbz: np.ndarray) -> np.ndarray:
+def dbz_to_img(dbz: np.ndarray) -> Image.Image:
     """
-    Kalibrovaný převod dBZ → mm/h pro VIZUÁL.
-    1. Ořež dBZ na DBZ_CAP (55) — odřízne kroupová/ledová jádra, která přepalují.
-    2. Marshall–Palmer Z→R: R = (10^(dBZ/10) / 200)^(1/1.6).
-    3. Výsledek tvrdě ořež na RR_MAX (30 mm/h) — saturace škály.
-    NaN → 0. Pod 0.1 mm/h → 0 (šum).
+    2D pole dBZ (float32, NaN povoleno) → kvantizovaný PIL Image (paleta + alfa).
+    Hodnoty < DBZ_MIN nebo NaN → průhledné.
     """
-    d = np.nan_to_num(dbz, nan=-100.0).clip(max=DBZ_CAP)
-    with np.errstate(invalid="ignore"):
-        Z  = 10.0 ** (d / 10.0)
-        rr = (Z / 200.0) ** (1.0 / 1.6)
-    rr = np.where(rr < RR_MIN, 0.0, rr)
-    return rr.clip(0, RR_MAX).astype(np.float32)
+    d = np.nan_to_num(dbz, nan=-999.0)
+    mask_vis = d >= DBZ_MIN   # pixely s detekovatelnou ozvěnou
+    d_clamped = np.clip(d, DBZ_MIN, DBZ_MAX)
+    idx = ((d_clamped - DBZ_MIN) / (DBZ_MAX - DBZ_MIN) * (_LUT_SIZE - 1)).astype(np.int32)
 
+    # RGBA array: začni jako průhledné, pak nastav viditelné pixely z LUT
+    rgba = np.zeros((*dbz.shape, 4), dtype=np.uint8)
+    rgba[mask_vis] = _LUT[idx[mask_vis]]
 
-def rr_to_img(rr: np.ndarray) -> Image.Image:
-    """2D pole mm/h (float32) → kvantizovaný PIL Image (paleta + alfa)."""
-    rr_c = np.nan_to_num(rr, nan=0.0, posinf=0.0).clip(0, RR_MAX)
-    idx  = ((rr_c / RR_MAX) * (_LUT_SIZE - 1)).astype(np.int32)
-    img  = Image.fromarray(_LUT[idx], mode="RGBA")
+    img = Image.fromarray(rgba, mode="RGBA")
     if SCALE != 1:
-        h, w = rr.shape
+        h, w = dbz.shape
         img = img.resize((w * SCALE, h * SCALE), Image.Resampling.BILINEAR)
     return img.quantize(colors=256, method=Image.Quantize.FASTOCTREE)
 
 
-def _centroid(rr: np.ndarray) -> tuple[float, float]:
-    """Těžiště srážkového pole (row, col) vážené intenzitou; (nan,nan) když sucho."""
-    m = rr > RR_MIN
+def _centroid(dbz: np.ndarray) -> tuple[float, float]:
+    """Těžiště (row, col) vážené dBZ intenzitou; (nan,nan) když sucho."""
+    m = dbz >= DBZ_MIN
     if not m.any():
         return float("nan"), float("nan")
     rows, cols = np.nonzero(m)
-    w = rr[rows, cols]
+    w = dbz[rows, cols]
     return float((rows * w).sum() / w.sum()), float((cols * w).sum() / w.sum())
 
 
@@ -126,7 +118,7 @@ def main():
     radar_dir = DATA_DIR / "radar"
     OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-    # ── 1. MAX_Z sekvence: pohybové pole + historické i nowcast snímky ──────────
+    # ── 1. MAX_Z sekvence ────────────────────────────────────────────────────────
     maxz_paths = [radar_dir / "maxz" / n for n in radar_meta.get("maxz_files", [])]
     maxz_paths = [p for p in maxz_paths if p.exists()]
     if len(maxz_paths) < 2:
@@ -134,78 +126,71 @@ def main():
         sys.exit(1)
 
     maxz_stack, maxz_times = load_sequence(maxz_paths)   # dBZ, nejstarší→nejnovější
-    t0 = maxz_times[-1]
+    t0     = maxz_times[-1]
     n_maxz = len(maxz_paths)
 
     print(f"\n=== Render radarových PNG (scale {SCALE}×, {N_PAST} hist + {N_LEADTIMES} nowcast) ===")
-    print(f"  JEDEN zdroj pro všech 18 snímků: MAX_Z odrazivost (orientační intenzita)")
-    print(f"  Kalibrace: dBZ ořez ≤ {DBZ_CAP}, Z→R, výsledek ořez ≤ {RR_MAX} mm/h")
-    print(f"  Pevná škála: {RR_MIN}–{RR_MAX} mm/h")
+    print(f"  Zdroj: MAX_Z odrazivost, barveno přímo v dBZ (bez Z→R)")
+    print(f"  Škála: {DBZ_MIN}–{DBZ_MAX} dBZ  (průhledné < {DBZ_MIN})")
     print(f"  t0 = {t0.isoformat()}  ({n_maxz} MAX_Z souborů)")
 
     motion_field = motion.get_method("lucaskanade")(np.nan_to_num(maxz_stack, nan=0.0))
 
-    # Kalibrovaná rain-rate pole pro celý stack
-    maxz_rr = dbz_to_rr_calibrated(maxz_stack)   # (N, r, c) mm/h
-
-    # ── 2. Nowcast: advekce posledního MAX_Z rain-rate pole ─────────────────────
+    # ── 2. Nowcast: advekce posledního dBZ pole ──────────────────────────────────
     extrap = nowcasts.get_method("extrapolation")
-    rr0 = maxz_rr[-1].copy()   # t0 pole
-    fwd = extrap(rr0, motion_field, N_LEADTIMES,
-                 extrap_kwargs={"allow_nonfinite_values": True})
+    dbz0   = np.nan_to_num(maxz_stack[-1], nan=0.0)
+    fwd    = extrap(dbz0, motion_field, N_LEADTIMES,
+                    extrap_kwargs={"allow_nonfinite_values": True})
 
     # ── 3. Render ────────────────────────────────────────────────────────────────
     frames_meta: list[dict] = []
     total_bytes = 0
-    sanity_hits = []
 
-    def _render(rr: np.ndarray, fname: str, t: datetime, ftype: str, tag: str, src: str) -> tuple:
+    def _render(dbz: np.ndarray, fname: str, t: datetime,
+                ftype: str, tag: str, src: str) -> tuple[float, float]:
         nonlocal total_bytes
-        img   = rr_to_img(rr)
+        img   = dbz_to_img(dbz)
         fpath = OUT_DIR / fname
         img.save(fpath, format="PNG", optimize=True)
         sz    = fpath.stat().st_size
         total_bytes += sz
-        valid = rr[~np.isnan(rr)]
+        valid = dbz[~np.isnan(dbz) & (dbz >= DBZ_MIN)]
+        mn    = float(valid.min()) if valid.size else 0.0
         mx    = float(valid.max()) if valid.size else 0.0
-        flag  = "  ⚠ EXTRÉM" if mx > SANITY_MAX else ""
-        if mx > SANITY_MAX:
-            sanity_hits.append((fname, mx))
-        cr, cc = _centroid(rr)
         print(f"  {fname}  {t.strftime('%H:%M')} UTC  {tag:>9s}  "
-              f"max={mx:5.1f} mm/h  {sz//1024:3d} kB  [{src}]{flag}")
+              f"dBZ {mn:4.0f}–{mx:4.0f}  {sz//1024:3d} kB  [{src}]")
         frames_meta.append({
             "file":       fname,
             "time_utc":   t.isoformat(),
             "time_local": t.astimezone(PRAGUE_TZ).strftime("%H:%M"),
             "type":       ftype,
             "source":     src,
-            "max_mm_h":   round(mx, 1),
+            "dbz_min":    round(mn, 1),
+            "dbz_max":    round(mx, 1),
         })
-        return cr, cc
+        return _centroid(dbz)
 
-    print("\n  Snímek         čas    typ         maximum       velikost  zdroj")
+    print("\n  Snímek         čas    typ         rozsah dBZ    vel.  zdroj")
 
-    # Historické: posledních N_PAST MAX_Z snímků (nebo méně + padding na začátek)
+    # Historické: posledních N_PAST MAX_Z snímků (nebo méně + padding)
     n_hist = min(N_PAST, n_maxz)
-    hist_indices = list(range(n_maxz - n_hist, n_maxz))   # včetně posledního = t0
-    n_pad = N_PAST - n_hist
+    hist_indices = list(range(n_maxz - n_hist, n_maxz))
+    n_pad  = N_PAST - n_hist
     for k in range(n_pad):
-        frame_idx = k
         t = t0 - timedelta(minutes=(N_PAST - 1 - k) * TIMESTEP_MIN)
-        empty = np.zeros_like(maxz_rr[-1])
-        _render(empty, f"frame_{frame_idx:02d}.png", t, "past",
+        empty = np.full_like(maxz_stack[-1], np.nan)
+        _render(empty, f"frame_{k:02d}.png", t, "past",
                 f"-{(N_PAST-1-k)*TIMESTEP_MIN} min", "empty")
     for rank, si in enumerate(hist_indices):
         frame_idx = n_pad + rank
-        t   = maxz_times[si]
-        lag = int((t0 - t).total_seconds() / 60)
+        t     = maxz_times[si]
+        lag   = int((t0 - t).total_seconds() / 60)
         ftype = "t0" if si == n_maxz - 1 else "past"
         tag   = "● TEĎ" if si == n_maxz - 1 else f"-{lag} min"
-        _render(maxz_rr[si].copy(), f"frame_{frame_idx:02d}.png", t, ftype, tag, "maxz")
+        _render(maxz_stack[si].copy(), f"frame_{frame_idx:02d}.png", t, ftype, tag, "maxz")
 
-    # Nowcast: advekce + sledování těžiště pro důkaz pohybu
-    centroids: list[tuple[int, tuple]] = []
+    # Nowcast + sledování těžiště
+    centroids: list[tuple[int, tuple[float, float]]] = []
     for i in range(N_LEADTIMES):
         t = t0 + timedelta(minutes=(i + 1) * TIMESTEP_MIN)
         cr, cc = _render(fwd[i].copy(), f"frame_{N_PAST + i:02d}.png", t,
@@ -218,9 +203,9 @@ def main():
         "t0_utc":           t0.isoformat(),
         "t0_index":         N_PAST - 1,
         "step_min":         TIMESTEP_MIN,
-        "source":           "maxz_reflectivity",
-        "source_label":     "Radarová odrazivost (orientační intenzita)",
-        "scale_mm_h":       {"min": RR_MIN, "max": RR_MAX},
+        "source":           "maxz_reflectivity_dbz",
+        "source_label":     "Radarová odrazivost (dBZ) — orientační intenzita srážek",
+        "scale_dbz":        {"min": DBZ_MIN, "max": DBZ_MAX},
         "bounds": [
             [meta["LL_lat"], meta["LL_lon"]],
             [meta["UR_lat"], meta["UR_lon"]],
@@ -235,20 +220,14 @@ def main():
     print(f"\n✓ Fáze 4c — Render OK")
     print(f"  {n_frames} snímků  |  CELKEM {total_bytes/1024:.0f} kB "
           f"({total_bytes/1024/1024:.2f} MB)  |  průměr {total_bytes//n_frames//1024} kB/snímek")
-    print(f"  Maxima mm/h (všech {n_frames} snímků): "
-          + " ".join(f"{fm['max_mm_h']:.1f}" for fm in frames_meta))
-    # Důkaz pohybu: těžiště srážek napříč nowcast kroky
+    print(f"  dBZ maxima (všech {n_frames} snímků): "
+          + " ".join(str(fm["dbz_max"]) for fm in frames_meta))
     print(f"  Těžiště srážek (row,col) v nowcastu — důkaz pohybu:")
-    for lead, (cr, cc) in centroids[::3]:   # každý 3. krok (+30, +60, +90, +120 min)
-        if cr == cr:   # not NaN
-            print(f"    +{lead:3d} min: ({cr:6.1f}, {cc:6.1f})")
+    for lead, (cr, cc) in centroids[::3]:
+        if cr == cr:
+            print(f"    +{lead:3d} min: row={cr:6.1f}  col={cc:6.1f}")
         else:
             print(f"    +{lead:3d} min: (sucho)")
-    if sanity_hits:
-        print(f"  ⚠  SANITY: {len(sanity_hits)} snímků > {SANITY_MAX} mm/h "
-              f"(podezření na chybu): {sanity_hits}")
-    else:
-        print(f"  ✓ SANITY OK: žádný snímek nepřekročil {SANITY_MAX} mm/h")
     print(f"  Manifest → {mpath}")
 
 
