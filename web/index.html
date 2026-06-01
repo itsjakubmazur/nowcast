@@ -131,6 +131,53 @@
       padding: 1rem 1rem 2rem; font-size: 0.72rem; color: var(--muted);
     }
     .updated { color: var(--muted); font-size: 0.75rem; margin-top: 0.5rem; }
+
+    /* ── 24h forecast timeline ───────────────────────────────────────────── */
+    .fc24 {
+      margin: 0 1rem 0.75rem; padding: 0.85rem 1rem 0.75rem;
+      background: var(--panel); border: 1px solid var(--border);
+      border-radius: 10px; display: none;
+    }
+    .fc24-title {
+      font-size: 0.72rem; font-weight: 600; color: var(--muted);
+      text-transform: uppercase; letter-spacing: .04em;
+      margin-bottom: 0.6rem;
+    }
+    .fc24-scroll {
+      display: flex; gap: 0; overflow-x: auto; scrollbar-width: thin;
+      padding-bottom: 2px;
+    }
+    .fc24-scroll::-webkit-scrollbar { height: 4px; }
+    .fc24-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+    .fc24-col {
+      flex: 0 0 auto; min-width: 58px; max-width: 70px;
+      text-align: center; padding: 0.3rem 0.2rem;
+      border-right: 1px solid var(--border);
+    }
+    .fc24-col:last-child { border-right: none; }
+    .fc24-col.fc24-block { min-width: 80px; max-width: 96px; }
+
+    .fc24-time  { font-size: 0.7rem; color: var(--muted); margin-bottom: 0.18rem; }
+    .fc24-icon  { font-size: 1.45rem; line-height: 1.2; }
+    .fc24-temp  { font-size: 0.82rem; font-weight: 600; margin-top: 0.15rem; }
+    .fc24-range { font-size: 0.76rem; color: var(--muted); }
+    .fc24-sub   {
+      font-size: 0.68rem; color: var(--muted); margin-top: 0.1rem;
+      white-space: nowrap;
+    }
+    .fc24-prec  { color: #2563eb; }
+    .fc24-wind  { color: #64748b; }
+
+    .fc24-sep {
+      flex: 0 0 1px; align-self: stretch;
+      background: var(--border); margin: 0 2px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .fc24-sep-label {
+      writing-mode: vertical-rl; font-size: 0.6rem; color: var(--border);
+      white-space: nowrap;
+    }
   </style>
 </head>
 <body>
@@ -187,12 +234,18 @@
   <div class="updated" id="updated"></div>
 </div>
 
-<footer>Data: ČHMÚ (CC BY) · Open-Meteo (CC BY) · Předpověď generovaná v prohlížeči</footer>
+<!-- 24h forecast timeline -->
+<div class="fc24" id="fc24">
+  <div class="fc24-title">Předpověď na 24 hodin — <span id="fc24-place">—</span></div>
+  <div class="fc24-scroll" id="fc24-scroll"></div>
+</div>
+
+<footer>Data: ČHMÚ (CC BY) · Open-Meteo (CC BY) · Předpověď generovaná v prohlížeči · Radarová odrazivost (dBZ, orientační)</footer>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 // ── Globální stav ──────────────────────────────────────────────────────────────
-let MANIFEST = null, GRID = null;
+let MANIFEST = null, GRID = null, FORECAST24 = null;
 let currentFrame = 0, playing = false, playTimer = null;
 let radarOpacity = 0.70;
 
@@ -204,12 +257,14 @@ const END_PAUSE_MS      = 1800;  // pauza na konci před zacyklením
 
 // ── Fetch dat ──────────────────────────────────────────────────────────────────
 async function loadData() {
-  const [m, g] = await Promise.all([
+  const [m, g, f24] = await Promise.all([
     fetch("data/radar_manifest.json", { cache: "no-store" }).then(r => r.json()),
     fetch("data/forecast_grid.json",  { cache: "no-store" }).then(r => r.json()),
+    fetch("data/forecast24.json",     { cache: "no-store" }).then(r => r.json()).catch(() => null),
   ]);
-  MANIFEST = m;
-  GRID     = g;
+  MANIFEST   = m;
+  GRID       = g;
+  FORECAST24 = f24;
 }
 
 // ── Preload PNG do cache prohlížeče ───────────────────────────────────────────
@@ -409,6 +464,100 @@ function templateVerdict(ptId) {
   return { text: sentences.join(" "), chips: chips.join("") };
 }
 
+// ── WMO weather_code → emoji ikona ────────────────────────────────────────────
+const WC_ICON = (() => {
+  const m = {};
+  const set = (codes, icon) => codes.forEach(c => m[c] = icon);
+  set([0],                   "☀️");
+  set([1],                   "🌤️");
+  set([2],                   "⛅");
+  set([3],                   "☁️");
+  set([45, 48],              "🌫️");
+  set([51, 53, 55],          "🌦️");   // mrholení
+  set([56, 57],              "🌧️");   // mrznoucí mrholení
+  set([61, 63, 65],          "🌧️");   // déšť
+  set([66, 67],              "🌧️");   // mrznoucí déšť
+  set([71, 73, 75, 77],      "🌨️");   // sněžení
+  set([80, 81, 82],          "🌦️");   // přeháňky
+  set([85, 86],              "🌨️");   // sněhové přeháňky
+  set([95],                  "⛈️");
+  set([96, 99],              "⛈️");   // bouřky s kroupami
+  return m;
+})();
+
+function wcIcon(wc) {
+  return wc != null ? (WC_ICON[wc] ?? "🌡️") : "—";
+}
+
+// ── 24h forecast timeline ─────────────────────────────────────────────────────
+function nearestPlace(lat, lon) {
+  if (!FORECAST24) return null;
+  let best = null, bd = Infinity;
+  for (const p of FORECAST24.places) {
+    const d = Math.hypot(p.lat - lat, p.lon - lon);
+    if (d < bd) { bd = d; best = p; }
+  }
+  return best;
+}
+
+function showFc24(lat, lon, label) {
+  const el = document.getElementById("fc24");
+  const scroll = document.getElementById("fc24-scroll");
+  if (!FORECAST24) { el.style.display = "none"; return; }
+
+  const place = nearestPlace(lat, lon);
+  if (!place || (!place.hourly?.length && !place.blocks?.length)) {
+    el.style.display = "none";
+    return;
+  }
+
+  document.getElementById("fc24-place").textContent = label || place.id;
+  scroll.innerHTML = "";
+
+  // Hodinové sloupce
+  for (const h of place.hourly) {
+    const col = document.createElement("div");
+    col.className = "fc24-col";
+    const probStr = h.prob > 0 ? `<span class="fc24-prec">${h.prob}%</span>` : "";
+    const mmStr   = h.precip > 0 ? ` <span class="fc24-prec">${h.precip}mm</span>` : "";
+    const windStr = h.wind > 0 ? `<span class="fc24-wind">${h.wind}km/h</span>` : "";
+    col.innerHTML = `
+      <div class="fc24-time">${h.t}</div>
+      <div class="fc24-icon">${wcIcon(h.wc)}</div>
+      <div class="fc24-temp">${h.temp != null ? h.temp + "°" : "—"}</div>
+      <div class="fc24-sub fc24-prec">${probStr}${mmStr}</div>
+      <div class="fc24-sub fc24-wind">${windStr}</div>`;
+    scroll.appendChild(col);
+  }
+
+  // Oddělovač
+  if (place.hourly?.length && place.blocks?.length) {
+    const sep = document.createElement("div");
+    sep.className = "fc24-sep";
+    scroll.appendChild(sep);
+  }
+
+  // 3h bloky
+  for (const b of place.blocks) {
+    const col = document.createElement("div");
+    col.className = "fc24-col fc24-block";
+    const tRange = b.tmin != null && b.tmax != null
+      ? `${b.tmin}–${b.tmax}°` : "—";
+    const probStr = b.prob > 0 ? `<span class="fc24-prec">${b.prob}%</span>` : "";
+    const mmStr   = b.precip > 0 ? ` <span class="fc24-prec">${b.precip}mm</span>` : "";
+    const gustStr = b.gust > 0 ? `<span class="fc24-wind">${b.gust}km/h</span>` : "";
+    col.innerHTML = `
+      <div class="fc24-time">${b.t}</div>
+      <div class="fc24-icon">${wcIcon(b.wc)}</div>
+      <div class="fc24-range">${tRange}</div>
+      <div class="fc24-sub">${probStr}${mmStr}</div>
+      <div class="fc24-sub fc24-wind">${gustStr}</div>`;
+    scroll.appendChild(col);
+  }
+
+  el.style.display = "block";
+}
+
 function showForecast(lat, lon, label) {
   const { id, dist } = nearestPt(lat, lon);
   const { text, chips } = templateVerdict(id);
@@ -426,6 +575,9 @@ function showForecast(lat, lon, label) {
   if (locationMarker) locationMarker.remove();
   locationMarker = L.marker([pt[0], pt[1]], { zIndexOffset: 500 }).addTo(map);
   map.setView([lat, lon], Math.max(map.getZoom(), 9));
+
+  // 24h forecast timeline
+  showFc24(lat, lon, label);
 
   // URL stav
   const u = new URL(window.location);
