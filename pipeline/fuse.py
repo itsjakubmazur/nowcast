@@ -323,11 +323,22 @@ def fuse(nowcast_path: Path, om_path: Path, lat: float, lon: float) -> dict:
     h_times    = hourly.get("time", [])
     h_cape     = hourly.get("cape", [])
     h_precip   = hourly.get("precipitation", [])
+    h_temp     = hourly.get("temperature_2m", [])
+    h_feels    = hourly.get("apparent_temperature", [])
+    h_wc       = hourly.get("weather_code", [])
+    h_prob     = hourly.get("precipitation_probability", [])
     print("\n  CAPE + srážky po hodinách (z hourly NWP):")
     cape_by_hour: dict[str, float] = {}
-    for ht, hc, hp in zip(h_times, h_cape, h_precip):
+    temp_by_hour: dict[str, dict] = {}
+    for i, (ht, hc, hp) in enumerate(zip(h_times, h_cape, h_precip)):
         ht_z = ht if "+" in ht or ht.endswith("Z") else ht + "+00:00"
         cape_by_hour[ht_z] = float(hc) if hc is not None else 0.0
+        temp_by_hour[ht_z] = {
+            "temp_c":     h_temp[i]  if i < len(h_temp)  else None,
+            "feels_c":    h_feels[i] if i < len(h_feels) else None,
+            "weather_code": h_wc[i] if i < len(h_wc)    else None,
+            "precip_prob":  h_prob[i] if i < len(h_prob) else None,
+        }
         hc_s = f"{hc:5.0f} J/kg" if hc is not None else "  N/A     "
         hp_s = f"{hp:.2f} mm/h" if hp is not None else "N/A    "
         print(f"    {ht}  CAPE={hc_s}  precip={hp_s}")
@@ -367,6 +378,8 @@ def fuse(nowcast_path: Path, om_path: Path, lat: float, lon: float) -> dict:
             t_hour = t.replace(minute=0, second=0, microsecond=0).isoformat()
             cape_val = cape_by_hour.get(t_hour)
 
+        t_hour_key = t.replace(minute=0, second=0, microsecond=0).isoformat()
+        td = temp_by_hour.get(t_hour_key, {})
         timeseries.append({
             "time_utc":        t.isoformat(),
             "source":          "nwp",
@@ -376,6 +389,10 @@ def fuse(nowcast_path: Path, om_path: Path, lat: float, lon: float) -> dict:
             "wind_gusts_ms":   _ms(gusts_m15[i]),
             "wind_dir":        wdir_m15[i] if i < len(wdir_m15) else None,
             "cape":            float(cape_val) if cape_val is not None else None,
+            "temp_c":          td.get("temp_c"),
+            "feels_c":         td.get("feels_c"),
+            "weather_code":    td.get("weather_code"),
+            "precip_prob":     td.get("precip_prob"),
         })
         nwp_added += 1
 

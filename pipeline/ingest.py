@@ -168,10 +168,10 @@ def fetch_open_meteo(lat: float, lon: float) -> dict:
             "cape",
         ]),
         "hourly": ",".join([
-            "precipitation", "rain", "showers",
+            "temperature_2m", "apparent_temperature", "weather_code",
+            "precipitation", "precipitation_probability",
             "windspeed_10m", "windgusts_10m",
             "cape", "lifted_index",
-            "precipitation_probability",
         ]),
         "daily": ",".join([
             "precipitation_sum", "precipitation_hours",
