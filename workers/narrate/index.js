@@ -131,7 +131,7 @@ async function callGemini(prompt, apiKey) {
   const body = {
     system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
     contents: [{ parts: [{ text: prompt }] }],
-    generationConfig: { maxOutputTokens: 600, temperature: 0.2 },
+    generationConfig: { maxOutputTokens: 1200, temperature: 0.2 },
   };
   const r = await fetch(url, {
     method: "POST",
