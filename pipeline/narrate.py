@@ -21,24 +21,28 @@ GEMINI_MODEL_PRIMARY = "gemini-2.5-flash"
 GEMINI_MODEL_FALLBACK = "gemini-2.5-flash-lite"
 
 SYSTEM_PROMPT = """\
-Jsi meteorologický asistent, který píše stručnou předpověď pro běžného člověka.
-Dostaneš JSON s daty o počasí. Napiš 2–4 věty česky, přirozeně a srozumitelně.
+Jsi zkušený meteorolog, který píše profesionální předpověď pro běžné lidi.
+Dostaneš JSON s hodinovými daty o počasí. Napiš předpověď ve dvou odstavcích:
 
-POVINNÁ PRAVIDLA — nikdy neporušuj:
-- Uváděj POUZE jevy a hodnoty, které jsou ve vstupním JSON. Nic nevymýšlej, neodhaduj ani nedoplňuj.
-- Časy jsou v místním čase (Europe/Prague) — použij je přímo, nepřepočítávej.
-- Pokud ve vstupu nejsou srážky ani výstrahy, napiš to krátce a pozitivně (1–2 věty stačí).
+ODSTAVEC 1 — Nejbližších 6 hodin (podrobně):
+Uveď konkrétní teploty (min–max ve °C), srážky (kdy začnou/skončí, jak vydatné, kolik mm),
+nárazy větru v km/h, a zda hrozí nebo nehrozí bouřky. Buď konkrétní a přesný.
 
-STYL — dodržuj vždy:
-- Piš pro běžného člověka, ne technika. NIKDY nezmiňuj: ICON-D2, Open-Meteo, CAPE, radarová extrapolace,
-  průměrná rychlost větru, mm/h jako technická jednotka.
-- Vítr popisuj přes NÁRAZY (ne průměr): převeď m/s na km/h (×3,6), zaokrouhli na desítky.
-  Příklad: "vítr v nárazech kolem 50 km/h". Průměrnou rychlost větru nezmiňuj vůbec.
-- Srážky: intenzitu popiš slovně (slabý déšť / mírný déšť / vydatný déšť / přeháňky),
-  úhrn zaokrouhli na celé mm ("kolem 3 mm", "do 1 mm"). Neuváděj mm/h jako číslo.
-- Vysoké riziko bouřek (výstraha + silné nárazy) zmiň jako "riziko bouřek" nebo "bouřkové riziko" — nikdy ne "CAPE".
-- Když platí výstraha ČHMÚ, zmiň ji NA PRVNÍM MÍSTĚ: barvu + jev + časy platnosti.
-  Příklad: "ČHMÚ vydalo oranžovou výstrahu před bouřkami, platnou od 14:00 do 20:00."\
+ODSTAVEC 2 — Výhled do konce dne (stručně, 1–2 věty):
+Obecný vývoj počasí, trend teplot, jestli se situace zlepší nebo zhorší.
+
+POVINNÁ PRAVIDLA:
+- Uváděj POUZE hodnoty a jevy, které jsou ve vstupním JSON. Nic nevymýšlej.
+- Časy jsou v místním čase (Europe/Prague) — použij přímo, nepřepočítávej.
+- Platná výstraha ČHMÚ musí být VŽDY první věta: barva + jev + platnost.
+- Pokud nejsou žádné srážky: v 1. odstavci to jasně řekni a zaměř se na teploty a vítr.
+
+STYL:
+- Piš přirozenou češtinou, jako meteorolog v rádiu. Ne jako technik.
+- NIKDY nezmiňuj: ICON-D2, Open-Meteo, CAPE (říkej "bouřkový potenciál"), radarová extrapolace.
+- Vítr: vždy jen NÁRAZY v km/h (m/s × 3,6, zaokrouhli na 10). Průměr nezmiňuj.
+- Srážky: intenzitu slovně (slabý/mírný/vydatný déšť, přeháňky), úhrn na celé mm.
+- Teploty: zaokrouhli na celé °C, uveď pocitovou jen pokud se liší o ≥ 3°C.\
 """
 
 
@@ -56,67 +60,137 @@ def to_prague_time(utc_str: str) -> str:
 
 def build_prompt(forecast: dict) -> str:
     """
-    Sestaví vstupní JSON pro Gemini — přehledný, bez zbytečných dat.
-    Časy jsou převedeny do Europe/Prague.
+    Sestaví vstupní JSON pro Gemini.
+    - Prvních 6 h: hodinové kroky s teplotou, srážkami, větrem, wc
+    - Zbytek dne: 3h bloky (aggregate)
     """
-    ts = forecast.get("timeseries", [])
+    from datetime import timedelta
+
+    ts       = forecast.get("timeseries", [])
     warnings = forecast.get("warnings", [])
-    t0 = forecast.get("t0_utc", "")
+    t0_str   = forecast.get("t0_utc", "")
 
-    nc_points  = [p for p in ts if p["source"] == "nowcast"]
-    nwp_points = [p for p in ts if p["source"] == "nwp"]
+    try:
+        t0 = datetime.fromisoformat(t0_str)
+        if t0.tzinfo is None:
+            t0 = t0.replace(tzinfo=timezone.utc)
+    except Exception:
+        t0 = datetime.now(timezone.utc)
 
-    precips_nc = [p["precip_mm_h"] for p in nc_points if p["precip_mm_h"] is not None]
-    peak_nc    = max(precips_nc, default=0.0)
+    cutoff_6h = t0 + timedelta(hours=6)
 
-    rain_nc  = [(p["time_utc"], p["precip_mm_h"]) for p in nc_points
-                if (p["precip_mm_h"] or 0) >= 0.1]
-    arrival  = to_prague_time(rain_nc[0][0])  if rain_nc else None
-    end_rain = to_prague_time(rain_nc[-1][0]) if rain_nc else None
-    total_nc = round(sum(v for _, v in rain_nc) * (10 / 60), 2)
+    # ── Hodinové kroky pro prvních 6 h ────────────────────────────────────────
+    # Seskup 15min body do hodin — vezmi poslední hodnoty v dané hodině
+    hourly_map: dict[str, dict] = {}
+    for p in ts:
+        try:
+            t = datetime.fromisoformat(p["time_utc"])
+            if t.tzinfo is None:
+                t = t.replace(tzinfo=timezone.utc)
+        except Exception:
+            continue
+        if t > cutoff_6h:
+            continue
+        h_key = t.replace(minute=0, second=0, microsecond=0).isoformat()
+        if h_key not in hourly_map:
+            hourly_map[h_key] = {"time_utc": h_key, "precip_mm_h": 0.0,
+                                 "gust_kmh": None, "temp_c": None,
+                                 "feels_c": None, "weather_code": None,
+                                 "precip_prob": None, "cape": None}
+        e = hourly_map[h_key]
+        if p.get("precip_mm_h") is not None:
+            e["precip_mm_h"] = round(max(e["precip_mm_h"] or 0, p["precip_mm_h"]), 2)
+        if p.get("wind_gusts_ms") is not None:
+            g = round(p["wind_gusts_ms"] * 3.6)
+            e["gust_kmh"] = max(e["gust_kmh"] or 0, g)
+        for field in ("temp_c", "feels_c", "weather_code", "precip_prob", "cape"):
+            if p.get(field) is not None:
+                e[field] = p[field]
 
-    rain_nwp = [(p["time_utc"], p["precip_mm_h"]) for p in nwp_points
-                if (p["precip_mm_h"] or 0) >= 0.1]
-    nwp_summary = []
-    for t_str, v in rain_nwp[:8]:
-        nwp_summary.append({"time_local": to_prague_time(t_str), "precip_mm_per_15min": v})
+    detailed = []
+    for k in sorted(hourly_map):
+        e = hourly_map[k]
+        row = {"cas_local": to_prague_time(e["time_utc"])}
+        if e["temp_c"] is not None:
+            row["teplota_C"] = round(e["temp_c"], 1)
+        if e["feels_c"] is not None and e["temp_c"] is not None and abs(e["feels_c"] - e["temp_c"]) >= 3:
+            row["pocitova_C"] = round(e["feels_c"], 1)
+        if e["precip_mm_h"] and e["precip_mm_h"] >= 0.1:
+            row["srazky_mm_h"] = e["precip_mm_h"]
+        if e["precip_prob"] is not None:
+            row["pravdepodobnost_srazek_pct"] = e["precip_prob"]
+        if e["gust_kmh"] and e["gust_kmh"] >= 20:
+            row["narazy_km_h"] = e["gust_kmh"]
+        if e["weather_code"] is not None:
+            row["weather_code"] = e["weather_code"]
+        if e["cape"] and e["cape"] >= 200:
+            row["bou_potencial_J_kg"] = round(e["cape"])
+        detailed.append(row)
 
-    wind_vals  = [p["wind_ms"]           for p in nwp_points if p.get("wind_ms")]
-    gusts_vals = [p.get("wind_gusts_ms") for p in nwp_points if p.get("wind_gusts_ms")]
-    peak_wind  = max(wind_vals,  default=None)
-    peak_gusts = max(gusts_vals, default=None)
+    # ── 3h bloky pro zbytek dne ───────────────────────────────────────────────
+    block_map: dict[str, dict] = {}
+    for p in ts:
+        try:
+            t = datetime.fromisoformat(p["time_utc"])
+            if t.tzinfo is None:
+                t = t.replace(tzinfo=timezone.utc)
+        except Exception:
+            continue
+        if t <= cutoff_6h:
+            continue
+        # Zaokrouhli na 3h blok
+        block_h = (t.hour // 3) * 3
+        bkey = t.replace(hour=block_h, minute=0, second=0, microsecond=0).isoformat()
+        if bkey not in block_map:
+            block_map[bkey] = {"time_utc": bkey, "precip_mm": 0.0,
+                               "max_gust_kmh": None, "temps": [],
+                               "max_cape": None, "precip_prob": None}
+        b = block_map[bkey]
+        if p.get("precip_mm_h") is not None:
+            b["precip_mm"] = round(b["precip_mm"] + p["precip_mm_h"] * 0.25, 2)
+        if p.get("wind_gusts_ms") is not None:
+            g = round(p["wind_gusts_ms"] * 3.6)
+            b["max_gust_kmh"] = max(b["max_gust_kmh"] or 0, g)
+        if p.get("temp_c") is not None:
+            b["temps"].append(p["temp_c"])
+        if p.get("cape") is not None and p["cape"] >= 200:
+            b["max_cape"] = max(b["max_cape"] or 0, p["cape"])
+        if p.get("precip_prob") is not None:
+            b["precip_prob"] = max(b["precip_prob"] or 0, p["precip_prob"])
 
-    cape_vals = [p["cape"] for p in nwp_points if p.get("cape")]
-    max_cape  = max(cape_vals, default=None)
+    outlook = []
+    for k in sorted(block_map):
+        b = block_map[k]
+        row = {"cas_local": to_prague_time(b["time_utc"])}
+        if b["temps"]:
+            row["teplota_min_C"] = round(min(b["temps"]), 1)
+            row["teplota_max_C"] = round(max(b["temps"]), 1)
+        if b["precip_mm"] >= 0.1:
+            row["srazky_mm"] = b["precip_mm"]
+        if b["precip_prob"] is not None:
+            row["pravdepodobnost_srazek_pct"] = b["precip_prob"]
+        if b["max_gust_kmh"] and b["max_gust_kmh"] >= 20:
+            row["max_narazy_km_h"] = b["max_gust_kmh"]
+        if b["max_cape"]:
+            row["bou_potencial_J_kg"] = round(b["max_cape"])
+        outlook.append(row)
 
-    warnings_fmt = []
-    for w in warnings:
-        warnings_fmt.append({
+    warnings_fmt = [
+        {
             "jev":    w.get("event", ""),
-            "stupen": w.get("severity", ""),
             "barva":  w.get("color", ""),
             "od":     to_prague_time(w.get("onset_utc", "")),
             "do":     to_prague_time(w.get("expires_utc", "")),
-        })
+        }
+        for w in warnings
+    ]
 
     prompt_data = {
         "lokace":               forecast.get("location"),
-        "referencni_cas_local": to_prague_time(t0),
-        "nowcast_0_2h": {
-            "zdroj":                   "radarová extrapolace",
-            "peak_mm_h":               round(peak_nc, 2),
-            "prichod_srazek_local":    arrival,
-            "konec_srazek_local":      end_rain,
-            "odhad_uhrnu_mm":          total_nc,
-        },
-        "nwp_2h_plus": {
-            "zdroj":                  "Open-Meteo ICON-D2",
-            "hodiny_se_srazkami":     nwp_summary,
-            "peak_vitr_prumer_ms":    round(peak_wind,  1) if peak_wind  else None,
-            "peak_narazy_ms":         round(peak_gusts, 1) if peak_gusts else None,
-            "max_cape":               round(max_cape,   0) if max_cape   else None,
-        },
-        "vystrahy_CHMU": warnings_fmt,
+        "referencni_cas_local": to_prague_time(t0_str),
+        "vystrahy_CHMU":        warnings_fmt,
+        "detail_0_6h":          detailed,
+        "vyhled_zbytek_dne":    outlook,
     }
 
     return json.dumps(prompt_data, ensure_ascii=False, indent=2)
@@ -157,44 +231,41 @@ def template_verdict(forecast: dict) -> str:
     gusts_vals = [p.get("wind_gusts_ms") for p in nwp_points if p.get("wind_gusts_ms")]
     peak_gusts = max(gusts_vals, default=None)
 
-    sentences = []
+    p1 = []  # odstavec 1 — detail 0–6h
+    p2 = []  # odstavec 2 — výhled
 
-    # Věta 0: výstraha ČHMÚ — vždy první, pokud existuje
+    # Výstraha
     if warnings:
-        w      = warnings[0]
-        jev    = w.get("event", "")
-        barva  = w.get("color", "")
-        od     = to_prague_time(w.get("onset_utc", ""))
-        do_cas = to_prague_time(w.get("expires_utc", ""))
+        w = warnings[0]
+        barva = w.get("color", "")
         color_cz = {"yellow": "žlutou", "orange": "oranžovou", "red": "červenou"}.get(barva, barva)
-        # jev je např. "Bouřky" → instrumentál by musel být ručně, takže použijeme "výstraha: <jev>"
-        sentences.append(f"ČHMÚ vydalo {color_cz} výstrahu ({jev}), platnou od {od} do {do_cas}.")
+        od = to_prague_time(w.get("onset_utc", ""))
+        do_cas = to_prague_time(w.get("expires_utc", ""))
+        p1.append(f"ČHMÚ vydalo {color_cz} výstrahu ({w.get('event','')}), platnou od {od} do {do_cas}.")
 
-    # Věta 1: srážky v nejbližších 2 hodinách
+    # Srážky v nejbližších hodinách
     if rain_nc:
         arrival  = to_prague_time(rain_nc[0][0])
         end_rain = to_prague_time(rain_nc[-1][0])
         total_nc = round(sum(v for _, v in rain_nc) * (10 / 60))
         intenzita = _rain_intensity(peak_nc)
-        total_str = f"do 1 mm" if total_nc < 1 else f"kolem {total_nc} mm"
-        sentences.append(
-            f"V nejbližších hodinách se očekává {intenzita} od {arrival} do {end_rain}, "
-            f"úhrn {total_str}."
-        )
-    elif not warnings:
-        sentences.append("Srážky se v nejbližších hodinách neočekávají.")
+        total_str = "do 1 mm" if total_nc < 1 else f"kolem {total_nc} mm"
+        p1.append(f"V nejbližších hodinách se očekává {intenzita} od {arrival} do {end_rain}, úhrn {total_str}.")
+    else:
+        p1.append("Srážky se v nejbližší době neočekávají.")
 
-    # Věta 2: srážky v dalším výhledu (NWP)
+    # Vítr
+    if peak_gusts and peak_gusts >= 8:
+        p1.append(f"Vítr může v nárazech dosahovat kolem {_gusts_kmh(peak_gusts)} km/h.")
+
+    # Výhled
     if rain_nwp:
         first_nwp = to_prague_time(rain_nwp[0][0])
-        sentences.append(f"Srážky jsou možné i v dalším výhledu, přibližně od {first_nwp}.")
+        p2.append(f"V dalším výhledu jsou srážky možné přibližně od {first_nwp}.")
+    else:
+        p2.append("Do konce dne by srážky neměly výrazněji přibývat.")
 
-    # Věta 3: nárazy větru (≥ 30 km/h = ~8 m/s)
-    if peak_gusts and peak_gusts >= 8:
-        kmh = _gusts_kmh(peak_gusts)
-        sentences.append(f"Vítr může v nárazech dosahovat kolem {kmh} km/h.")
-
-    return " ".join(sentences)
+    return " ".join(p1) + "\n\n" + " ".join(p2)
 
 
 def looks_truncated(text: str) -> bool:
@@ -226,7 +297,7 @@ def call_gemini(prompt_str: str, api_key: str) -> str:
     def _call(model: str) -> str:
         config = types.GenerateContentConfig(
             system_instruction=SYSTEM_PROMPT,
-            max_output_tokens=800,
+            max_output_tokens=1200,
             temperature=0.2,
             thinking_config=types.ThinkingConfig(thinking_budget=0),
         )
