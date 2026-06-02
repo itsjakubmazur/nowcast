@@ -24,27 +24,27 @@ OWN_STATIONS = ["IBRNO445", "IVENDR18"]
 
 
 def fetch_obs(station_ids: list[str]) -> list[dict]:
-    """Stáhne aktuální pozorování pro seznam stanic."""
+    """Stáhne aktuální pozorování pro seznam stanic (každou zvlášť)."""
     if not API_KEY:
         print("  WU_API_KEY není nastaven — přeskakuji", file=sys.stderr)
         return []
 
-    ids_str = ",".join(station_ids)
-    url = (f"{BASE_URL}/v2/pws/observations/current"
-           f"?stationId={ids_str}&format=json&units=m&apiKey={API_KEY}&numericPrecision=decimal")
-    try:
-        r = requests.get(url, timeout=TIMEOUT, allow_redirects=True)
-        print(f"  WU HTTP {r.status_code} url={r.url[:80]} len={len(r.text)} history={[x.status_code for x in r.history]}", file=sys.stderr)
-        if not r.ok:
-            print(f"  WU fetch HTTP {r.status_code} ({ids_str}): {r.text[:200]}", file=sys.stderr)
-            return []
-        if not r.text.strip():
-            print(f"  WU fetch prázdná odpověď ({ids_str})", file=sys.stderr)
-            return []
-        return r.json().get("observations", [])
-    except Exception as e:
-        print(f"  WU fetch chyba ({ids_str}): {e}", file=sys.stderr)
-        return []
+    results = []
+    for sid in station_ids:
+        url = (f"{BASE_URL}/v2/pws/observations/current"
+               f"?stationId={sid}&format=json&units=m&apiKey={API_KEY}&numericPrecision=decimal")
+        try:
+            r = requests.get(url, timeout=TIMEOUT)
+            if not r.ok:
+                print(f"  WU fetch HTTP {r.status_code} ({sid}): {r.text[:200]}", file=sys.stderr)
+                continue
+            if not r.text.strip():
+                print(f"  WU fetch prázdná odpověď ({sid})", file=sys.stderr)
+                continue
+            results.extend(r.json().get("observations", []))
+        except Exception as e:
+            print(f"  WU fetch chyba ({sid}): {e}", file=sys.stderr)
+    return results
 
 
 def fetch_nearby(lat: float, lon: float, limit: int = 20) -> list[dict]:
