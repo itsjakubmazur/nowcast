@@ -1308,7 +1308,7 @@ async function showFc24(lat, lon, label) {
     const fc = parseFc24(data);
     renderFc24(fc, label);
     renderFc7(data, label);
-    await renderLocationVerdict(fc, label);
+    renderLocationVerdict(fc, label);
   } catch (e) {
     clearTimeout(timer);
     scroll.innerHTML = `<div style="padding:.6rem 1rem;color:var(--muted);font-size:.85rem">Předpověď se nepodařilo načíst (${e.message}).</div>`;
@@ -1316,10 +1316,56 @@ async function showFc24(lat, lon, label) {
   }
 }
 
-async function renderLocationVerdict(fc, label) {
-  const verdictEl = document.getElementById("verdict");
+function renderLocationVerdict(fc, label) {
+  const h = fc.hourly;
+  const b = fc.blocks;
 
-  // Výstrahové chips z GRID
+  const sentences = [];
+
+  const temps = h.map(x => x.temp).filter(v => v != null);
+  if (temps.length) {
+    const tmin = Math.min(...temps), tmax = Math.max(...temps);
+    if (tmin === tmax) sentences.push(`Teplota kolem ${tmax} °C.`);
+    else sentences.push(`Teploty ${tmin}–${tmax} °C.`);
+  }
+
+  const feelsDiffs = h.map(x => x.feelsDiff).filter(v => v != null && Math.abs(v) >= 3);
+  if (feelsDiffs.length) {
+    const d = feelsDiffs.reduce((a, b) => Math.abs(b) > Math.abs(a) ? b : a);
+    sentences.push(`Pocitově ${d > 0 ? "tepleji" : "chladněji"} (${d > 0 ? "+" : ""}${d} °C).`);
+  }
+
+  const rainH = h.filter(x => x.precip > 0);
+  if (rainH.length) {
+    const totalMm = Math.round(rainH.reduce((s, x) => s + x.precip, 0) * 10) / 10;
+    const maxProb = Math.max(...rainH.map(x => x.prob));
+    const from = rainH[0].t, to = rainH[rainH.length - 1].t;
+    const mmStr = totalMm < 1 ? "do 1 mm" : `kolem ${totalMm} mm`;
+    sentences.push(`Srážky od ${from} do ${to}, úhrn ${mmStr} (pravděpodobnost ${maxProb} %).`);
+  } else {
+    sentences.push("Srážky se v nejbližší době neočekávají.");
+  }
+
+  const maxGust = Math.max(...h.map(x => x.wind || 0));
+  if (maxGust >= 30) sentences.push(`Vítr v nárazech až ${maxGust} km/h.`);
+
+  const maxUv = Math.max(...h.map(x => x.uv || 0));
+  if (maxUv >= 6) sentences.push(`Silné UV záření (index ${Math.round(maxUv)}) — doporučena ochrana.`);
+
+  const p2 = [];
+  const allTemps = b.flatMap(x => [x.tmin, x.tmax]).filter(v => v != null);
+  if (allTemps.length) {
+    p2.push(`Denní teplotní rozsah ${Math.min(...allTemps)}–${Math.max(...allTemps)} °C.`);
+  }
+  const rainBlocks = b.filter(x => x.precip > 0);
+  if (rainBlocks.length) {
+    p2.push(`Srážky možné od ${rainBlocks[0].t.split("–")[0]}.`);
+  } else {
+    p2.push("Do konce dne bez výraznějších srážek.");
+  }
+
+  const text = sentences.join(" ") + (p2.length ? "\n\n" + p2.join(" ") : "");
+
   const { chips } = (() => {
     try {
       const ptId = nearestPt(parseFloat(_currentLat ?? lat), parseFloat(_currentLon ?? lon)).id;
@@ -1327,26 +1373,9 @@ async function renderLocationVerdict(fc, label) {
     } catch { return { chips: "" }; }
   })();
 
-  const chipsHtml = chips ? `<div style="margin-bottom:.4rem">${chips}</div>` : "";
-  verdictEl.innerHTML = chipsHtml +
-    `<div class="verdict-text" style="color:var(--muted)">Generuji předpověď…</div>`;
-
-  try {
-    const res = await fetch("https://nowcast-narrate.kubajzek.workers.dev", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ lat: _currentLat ?? lat, lon: _currentLon ?? lon, label }),
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const { text } = await res.json();
-    if (!text) throw new Error("empty");
-    verdictEl.innerHTML = chipsHtml +
-      `<div class="verdict-text">${text.replace(/\n\n/g, "<br><br>")}</div>`;
-  } catch (e) {
-    console.warn("Worker forecast failed:", e);
-    verdictEl.innerHTML = chipsHtml +
-      `<div class="verdict-text" style="color:var(--muted)">Předpověď není dostupná.</div>`;
-  }
+  document.getElementById("verdict").innerHTML =
+    (chips ? `<div style="margin-bottom:.4rem">${chips}</div>` : "") +
+    `<div class="verdict-text">${text.replace(/\n\n/g, "<br><br>")}</div>`;
 }
 
 // ── Manifest UI: radar timestamps + stáří dat ────────────────────────────────
