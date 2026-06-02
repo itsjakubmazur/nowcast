@@ -443,7 +443,7 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 // ── Globální stav ──────────────────────────────────────────────────────────────
-let MANIFEST = null, GRID = null;
+let MANIFEST = null, GRID = null, FORECAST = null;
 let currentFrame = 0, playing = false, playTimer = null;
 let radarOpacity = 0.70;
 
@@ -473,14 +473,16 @@ const AUTO_REFRESH_MS   = 5 * 60 * 1000;
 async function loadData() {
   const v    = `?v=${Date.now()}`;
   const opts = { cache: "no-store" };
-  const [m, g, wu] = await Promise.all([
+  const [m, g, wu, fc] = await Promise.all([
     fetch(`data/radar_manifest.json${v}`, opts).then(r => r.json()),
     fetch(`data/forecast_grid.json${v}`,  opts).then(r => r.json()),
     fetch(`data/wu_stations.json${v}`,    opts).then(r => r.json()).catch(() => null),
+    fetch(`data/forecast.json${v}`,       opts).then(r => r.json()).catch(() => null),
   ]);
   MANIFEST = m;
   GRID     = g;
   WU       = wu;
+  FORECAST = fc;
 }
 
 // ── Preload PNG do cache prohlížeče ───────────────────────────────────────────
@@ -1003,15 +1005,26 @@ const COLOR_CZ = { yellow: "žlutou", orange: "oranžovou", red: "červenou" };
 function templateVerdict(ptId) {
   const sentences = [], chips = [];
 
+  // Pokud máme Gemini verdikt z forecast.json, použij ho (jen text, chips z GRID)
+  const geminiText = FORECAST?.verdict?.text;
+
+  // Výstrahy (chips vždy z GRID — jsou per-location)
+
   // Výstrahy: polygon match + celostátní
   const matchIdx = new Set(GRID.wmatch[String(ptId)] || []);
   const warns = GRID.warnings.filter((w, wi) => w.global || matchIdx.has(wi));
 
-  // 0) Výstraha první
+  // 0) Výstraha (chips)
   for (const w of warns) {
     const cls  = ["yellow","orange","red"].includes(w.color) ? w.color : "unknown";
     chips.push(`<span class="warn-chip c-${cls}">${w.event}</span>`);
   }
+  // Pokud máme Gemini text, vrátíme ho (chips jsou lokální výstrahy)
+  if (geminiText) {
+    return { text: geminiText.replace(/\n\n/g, "<br><br>"), chips: chips.join("") };
+  }
+
+  // Fallback: JS šablona
   if (warns.length) {
     const w = warns[0];
     const barva = COLOR_CZ[w.color] || w.color;
@@ -1020,7 +1033,6 @@ function templateVerdict(ptId) {
     );
   }
 
-  // 1) Nowcast srážky (0–2 h)
   const a = GRID.act[String(ptId)];
   if (a) {
     const intenzita = rainIntensity(a[2]);
@@ -1032,7 +1044,6 @@ function templateVerdict(ptId) {
     sentences.push("Srážky se v nejbližších hodinách neočekávají.");
   }
 
-  // 2) NWP výhled + vítr
   const nwp = nearestNwp(GRID.pts[ptId][0], GRID.pts[ptId][1]);
   if (nwp && nwp[2]) {
     sentences.push(`Srážky jsou možné i v dalším výhledu, přibližně od ${localHM(nwp[2])}.`);
