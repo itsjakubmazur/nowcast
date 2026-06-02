@@ -33,7 +33,8 @@ def fetch_obs(station_ids: list[str]) -> list[dict]:
     url = (f"{BASE_URL}/v2/pws/observations/current"
            f"?stationId={ids_str}&format=json&units=m&apiKey={API_KEY}&numericPrecision=decimal")
     try:
-        r = requests.get(url, timeout=TIMEOUT)
+        r = requests.get(url, timeout=TIMEOUT, allow_redirects=True)
+        print(f"  WU HTTP {r.status_code} url={r.url[:80]} len={len(r.text)} history={[x.status_code for x in r.history]}", file=sys.stderr)
         if not r.ok:
             print(f"  WU fetch HTTP {r.status_code} ({ids_str}): {r.text[:200]}", file=sys.stderr)
             return []
