@@ -1,6 +1,7 @@
 name = "nowcast-narrate"
 main = "index.js"
 compatibility_date = "2024-01-01"
+account_id = "c9455070490a8890016fb336fdce2021"
 
 [vars]
 # GEMINI_API_KEY se nastaví jako secret přes wrangler secret put
