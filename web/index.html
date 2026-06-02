@@ -1308,7 +1308,7 @@ async function showFc24(lat, lon, label) {
     const fc = parseFc24(data);
     renderFc24(fc, label);
     renderFc7(data, label);
-    renderLocationVerdict(fc, label);
+    await renderLocationVerdict(fc, label);
   } catch (e) {
     clearTimeout(timer);
     scroll.innerHTML = `<div style="padding:.6rem 1rem;color:var(--muted);font-size:.85rem">Předpověď se nepodařilo načíst (${e.message}).</div>`;
