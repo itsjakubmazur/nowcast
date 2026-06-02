@@ -34,7 +34,12 @@ def fetch_obs(station_ids: list[str]) -> list[dict]:
            f"?stationId={ids_str}&format=json&units=m&apiKey={API_KEY}&numericPrecision=decimal")
     try:
         r = requests.get(url, timeout=TIMEOUT)
-        r.raise_for_status()
+        if not r.ok:
+            print(f"  WU fetch HTTP {r.status_code} ({ids_str}): {r.text[:200]}", file=sys.stderr)
+            return []
+        if not r.text.strip():
+            print(f"  WU fetch prázdná odpověď ({ids_str})", file=sys.stderr)
+            return []
         return r.json().get("observations", [])
     except Exception as e:
         print(f"  WU fetch chyba ({ids_str}): {e}", file=sys.stderr)
