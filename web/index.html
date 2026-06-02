@@ -137,6 +137,18 @@
     }
     .updated { color: var(--muted); font-size: 0.75rem; margin-top: 0.5rem; }
 
+    /* WU vlastní stanice — panel nahoře */
+    .wu-panel { display:flex; gap:.5rem; flex-wrap:wrap; padding:.4rem .5rem; }
+    .wu-card {
+      flex:1; min-width:140px; background:var(--card); border-radius:10px;
+      padding:.55rem .75rem; display:flex; flex-direction:column; gap:.15rem;
+      border-left:3px solid #f59e0b;
+    }
+    .wu-card-name { font-size:.7rem; font-weight:700; color:#f59e0b; text-transform:uppercase; letter-spacing:.03em; }
+    .wu-card-temp { font-size:1.5rem; font-weight:700; line-height:1; }
+    .wu-card-row  { font-size:.75rem; color:var(--muted); }
+    .wu-card-age  { font-size:.68rem; color:var(--muted); margin-top:.1rem; }
+
     /* WU stanice markery */
     .wu-marker-own   { background:#f59e0b; border:2px solid #fff; border-radius:50%; width:14px; height:14px; box-shadow:0 0 0 2px #f59e0b; }
     .wu-marker-other { background:#6366f1; border:2px solid #fff; border-radius:50%; width:10px; height:10px; }
@@ -340,6 +352,9 @@
   </div>
 </div>
 
+<!-- WU vlastní stanice panel -->
+<div class="wu-panel" id="wu-own-panel" style="display:none"></div>
+
 <!-- Oblíbená místa -->
 <div class="fav-row" id="fav-row"></div>
 
@@ -480,6 +495,29 @@ function preloadFrames() {
 
 // ── Inicializace mapy ─────────────────────────────────────────────────────────
 // ── WU stanice na mapě ────────────────────────────────────────────────────────
+function renderWuOwnPanel() {
+  const panel = document.getElementById("wu-own-panel");
+  if (!WU || !WU.stations) { panel.style.display = "none"; return; }
+  const own = WU.stations.filter(s => s.own);
+  if (!own.length) { panel.style.display = "none"; return; }
+  panel.style.display = "flex";
+  panel.innerHTML = own.map(s => {
+    const age = s.time_utc ? Math.round((Date.now() - new Date(s.time_utc).getTime()) / 60000) : null;
+    const ageStr = age != null ? `před ${age} min` : "";
+    const wind = s.wind_kmh != null ? `💨 ${Math.round(s.wind_kmh)} km/h` : "";
+    const hum  = s.humidity  != null ? `💧 ${s.humidity}%` : "";
+    const pres = s.pressure  != null ? `🌡 ${Math.round(s.pressure)} hPa` : "";
+    const prec = s.precip_rate != null && s.precip_rate > 0 ? `🌧 ${s.precip_rate} mm/h` : "";
+    return `<div class="wu-card">
+      <div class="wu-card-name">★ ${s.name || s.id}</div>
+      <div class="wu-card-temp">${s.temp != null ? s.temp + "°C" : "—"}</div>
+      <div class="wu-card-row">${[hum, wind].filter(Boolean).join("  ")}</div>
+      <div class="wu-card-row">${[pres, prec].filter(Boolean).join("  ")}</div>
+      <div class="wu-card-age">${ageStr}</div>
+    </div>`;
+  }).join("");
+}
+
 function renderWuMarkers() {
   // Odstraň staré markery
   wuMarkers.forEach(m => m.remove());
@@ -1446,7 +1484,7 @@ async function refreshAll() {
     await loadData();
     preloadFrames();
     applyManifestUI();
-    renderWuMarkers();
+    renderWuOwnPanel(); renderWuMarkers();
     // Pokud je vybrané místo, obnov verdikt + 24h
     if (_currentLat !== null) {
       // Verdikt z grid (synchronní)
