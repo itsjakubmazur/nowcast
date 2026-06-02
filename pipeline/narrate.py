@@ -234,6 +234,19 @@ def template_verdict(forecast: dict) -> str:
     p1 = []  # odstavec 1 — detail 0–6h
     p2 = []  # odstavec 2 — výhled
 
+    # Teploty z NWP (prvních 6h)
+    from datetime import timedelta
+    try:
+        t0_dt = datetime.fromisoformat(forecast.get("t0_utc", "")).replace(tzinfo=timezone.utc)
+    except Exception:
+        t0_dt = datetime.now(timezone.utc)
+    cutoff_6h = t0_dt + timedelta(hours=6)
+    nwp_6h = [p for p in nwp_points if datetime.fromisoformat(
+        p["time_utc"] if "+" in p["time_utc"] else p["time_utc"] + "+00:00"
+    ) <= cutoff_6h]
+    temps_6h = [p["temp_c"] for p in nwp_6h if p.get("temp_c") is not None]
+    temps_all = [p["temp_c"] for p in nwp_points if p.get("temp_c") is not None]
+
     # Výstraha
     if warnings:
         w = warnings[0]
@@ -243,6 +256,14 @@ def template_verdict(forecast: dict) -> str:
         do_cas = to_prague_time(w.get("expires_utc", ""))
         p1.append(f"ČHMÚ vydalo {color_cz} výstrahu ({w.get('event','')}), platnou od {od} do {do_cas}.")
 
+    # Teploty v nejbližších 6 hodinách
+    if temps_6h:
+        tmin, tmax = round(min(temps_6h)), round(max(temps_6h))
+        if tmin == tmax:
+            p1.append(f"Teploty se pohybují kolem {tmax} °C.")
+        else:
+            p1.append(f"Teploty se pohybují mezi {tmin} a {tmax} °C.")
+
     # Srážky v nejbližších hodinách
     if rain_nc:
         arrival  = to_prague_time(rain_nc[0][0])
@@ -250,7 +271,7 @@ def template_verdict(forecast: dict) -> str:
         total_nc = round(sum(v for _, v in rain_nc) * (10 / 60))
         intenzita = _rain_intensity(peak_nc)
         total_str = "do 1 mm" if total_nc < 1 else f"kolem {total_nc} mm"
-        p1.append(f"V nejbližších hodinách se očekává {intenzita} od {arrival} do {end_rain}, úhrn {total_str}.")
+        p1.append(f"Srážky se očekávají od {arrival} do {end_rain} ({intenzita}, úhrn {total_str}).")
     else:
         p1.append("Srážky se v nejbližší době neočekávají.")
 
@@ -264,6 +285,10 @@ def template_verdict(forecast: dict) -> str:
         p2.append(f"V dalším výhledu jsou srážky možné přibližně od {first_nwp}.")
     else:
         p2.append("Do konce dne by srážky neměly výrazněji přibývat.")
+
+    if temps_all:
+        tmin_day, tmax_day = round(min(temps_all)), round(max(temps_all))
+        p2.append(f"Denní teplotní rozsah {tmin_day}–{tmax_day} °C.")
 
     return " ".join(p1) + "\n\n" + " ".join(p2)
 
