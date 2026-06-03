@@ -294,6 +294,27 @@ def parse_station(sid: str,
     def ms_to_kmh(v):
         return round(v * 3.6, 1) if v is not None else None
 
+    # Fallback precip_1h: pokud chybí hodinová hodnota, sečti posledních 6 × 10min záznamů
+    precip_1h = latest.get("precip_1h")
+    if precip_1h is None:
+        recent_10m = [
+            by_dt[dt].get("precip_10m")
+            for dt in sorted(by_dt.keys(), reverse=True)[:6]
+            if by_dt[dt].get("precip_10m") is not None
+        ]
+        if len(recent_10m) >= 3:  # alespoň 30 minut dat
+            precip_1h = round(sum(recent_10m), 2)
+
+    # precip_24h: součet hodinových srážek za posledních 24h
+    from datetime import datetime as _dt, timezone as _tz, timedelta as _td
+    cutoff_24h = (_dt.now(_tz.utc) - _td(hours=24)).isoformat(timespec="minutes")
+    precip_24h_vals = [
+        by_dt[dt].get("precip_1h")
+        for dt in by_dt
+        if dt >= cutoff_24h and by_dt[dt].get("precip_1h") is not None
+    ]
+    precip_24h = round(sum(precip_24h_vals), 1) if precip_24h_vals else None
+
     obs = {
         "id":           f"0-20000-0-{sid}",
         "time_utc":     latest_dt,
@@ -303,8 +324,9 @@ def parse_station(sid: str,
         "wind_kmh":     ms_to_kmh(latest.get("wind_ms")),
         "gust_kmh":     ms_to_kmh(latest.get("gust_ms")),
         "wind_dir":     latest.get("wind_dir"),
-        "precip_1h":    latest.get("precip_1h"),
+        "precip_1h":    precip_1h,
         "precip_10m":   latest.get("precip_10m"),
+        "precip_24h":   precip_24h,
         "snow_cm":      latest.get("snow_cm"),
         "solar":        latest.get("solar"),
         "dewpoint":     latest.get("dewpoint"),

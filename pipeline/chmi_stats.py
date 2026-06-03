@@ -184,11 +184,24 @@ def load_station_ids_from_chmi_stations() -> list[str]:
         return []
 
 
+CACHE_MAX_AGE_H = 6  # přegenerovat pokud je soubor starší než 6 hodin
+
+
 def main():
     print("\n=== ČHMÚ statistiky — historická data ===")
 
     now_utc = datetime.now(timezone.utc)
     yyyymm  = now_utc.strftime("%Y%m")
+
+    # Cache check — přeskočit pokud je soubor čerstvý
+    stats_path = DATA_DIR / "chmi_stats.json"
+    if stats_path.exists():
+        age_s = (now_utc.timestamp() - stats_path.stat().st_mtime)
+        if age_s < CACHE_MAX_AGE_H * 3600:
+            print(f"  chmi_stats.json je {age_s/3600:.1f}h starý — přeskočeno "
+                  f"(cache {CACHE_MAX_AGE_H}h)", file=sys.stderr)
+            return
+        print(f"  chmi_stats.json je {age_s/3600:.1f}h starý — regeneruji", file=sys.stderr)
 
     # Zjisti seznam stanic z aktuálního výstupu chmi.py
     station_ids = load_station_ids_from_chmi_stations()
