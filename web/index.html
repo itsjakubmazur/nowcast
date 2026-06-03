@@ -1013,7 +1013,10 @@ function renderChmiMarkers() {
   CHMI.stations.forEach(s => {
     if (s.lat == null || s.lon == null) return;
 
-    const val   = s[chmiLayer];
+    const val = s[chmiLayer];
+    // Pro ostatní vrstvy než teplota skryj stanice bez dat
+    if (chmiLayer !== "temp" && val == null) return;
+
     const color = chmiMarkerColor(chmiLayer, val);
     const text  = chmiMarkerText(chmiLayer, s);
     const w     = Math.max(36, text.length * 8 + 10);
@@ -1041,7 +1044,7 @@ function renderChmiMarkers() {
         🌬️ ${s.wind_kmh != null ? s.wind_kmh + " km/h " + windDir : "—"}
         ${s.gust_kmh != null ? `<small>(nárazy ${s.gust_kmh})</small>` : ""}<br>
         🔵 ${s.pressure != null ? s.pressure + " hPa" : "—"} &nbsp;
-        🌧️ ${s.precip_1h != null ? s.precip_1h.toFixed(1) + " mm/hod" : s.precip_10m != null ? s.precip_10m.toFixed(1) + " mm/10min" : "—"}<br>
+        🌧️ ${s.precip_1h != null ? s.precip_1h.toFixed(1) + " mm/hod" : s.precip_10m != null ? s.precip_10m.toFixed(1) + " mm/10min" : "—"}${s.precip_24h != null ? " &nbsp;<small>(24h: " + s.precip_24h.toFixed(1) + " mm)</small>" : ""}<br>
         ${s.snow_cm != null && s.snow_cm > 0 ? "❄️ Sníh: " + Math.round(s.snow_cm) + " cm &nbsp;" : ""}
         ${s.visibility_m != null ? "👁️ " + (s.visibility_m >= 1000 ? (s.visibility_m/1000).toFixed(1) + " km" : Math.round(s.visibility_m) + " m") : ""}
         <br><small style="color:var(--muted)">${s.id}</small>
@@ -1108,6 +1111,23 @@ function _renderTabDnes(body, stationId) {
     return;
   }
   const series = station.series;
+
+  // Souhrnný řádek z aktuálního pozorování (CHMI stations)
+  const obs = CHMI?.stations?.find(x => x.id === stationId);
+  if (obs) {
+    const items = [
+      obs.precip_1h  != null ? `🌧️ ${obs.precip_1h.toFixed(1)} mm/hod` : null,
+      obs.precip_24h != null ? `📅 ${obs.precip_24h.toFixed(1)} mm/24h` : null,
+      obs.snow_cm    != null && obs.snow_cm > 0 ? `❄️ sníh ${Math.round(obs.snow_cm)} cm` : null,
+      obs.visibility_m != null ? `👁️ ${obs.visibility_m >= 1000 ? (obs.visibility_m/1000).toFixed(1) + " km" : Math.round(obs.visibility_m) + " m"}` : null,
+    ].filter(Boolean);
+    if (items.length) {
+      const div = document.createElement("div");
+      div.style.cssText = "display:flex;flex-wrap:wrap;gap:.4rem;margin-bottom:.75rem;font-size:.8rem";
+      div.innerHTML = items.map(i => `<span style="padding:.2rem .5rem;background:var(--bg);border:1px solid var(--border);border-radius:5px">${i}</span>`).join("");
+      body.appendChild(div);
+    }
+  }
   const labels = series.map(r => {
     const d = new Date(r.dt);
     return d.toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Prague" });
@@ -1140,7 +1160,7 @@ function _renderTabDnes(body, stationId) {
 function _renderTabRekordy(body, stationId) {
   const stats = CHMI_STATS?.stations?.[stationId];
   if (!stats?.records || Object.keys(stats.records).length === 0) {
-    body.innerHTML = `<div style="color:var(--muted);padding:1rem">Historická data zatím nejsou k dispozici.<br><small>Spustí se automaticky při příštím denním běhu pipeline.</small></div>`;
+    body.innerHTML = `<div style="color:var(--muted);padding:1rem">Historická data pro tuto stanici nejsou k dispozici.<br><small>Stanice nemusí mít historická data v archivu ČHMÚ.</small></div>`;
     return;
   }
   const LABELS = {
@@ -1281,9 +1301,9 @@ function _renderChmiTabs(body, stationId, activeTab) {
   const hasStats = !!(CHMI_STATS?.stations?.[stationId]);
   const tabs = [
     { id: "dnes",  label: "Dnes (24h)" },
-    { id: "rekordy", label: "Rekordy" + (hasStats ? "" : " ⏳") },
-    { id: "klima",   label: "Klimatologie" + (hasStats ? "" : " ⏳") },
-    { id: "rocni",   label: "Roční trend" + (hasStats ? "" : " ⏳") },
+    { id: "rekordy", label: "Rekordy" },
+    { id: "klima",   label: "Klimatologie" },
+    { id: "rocni",   label: "Roční trend" },
   ];
 
   let tabsHtml = `<div style="display:flex;gap:.3rem;padding:.5rem 0 .75rem;border-bottom:1px solid var(--border);flex-wrap:wrap">`;
