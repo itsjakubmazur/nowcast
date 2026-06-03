@@ -286,13 +286,20 @@
       margin-bottom: 0.6rem;
     }
     .fc7-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+      display: flex;
       gap: 0.5rem;
+      overflow-x: auto;
+      scroll-snap-type: x mandatory;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: thin;
+      padding-bottom: 0.25rem;
     }
+    .fc7-grid::-webkit-scrollbar { height: 4px; }
+    .fc7-grid::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
     .fc7-day {
       background: var(--bg); border-radius: 8px;
       padding: 0.55rem 0.6rem; display: flex; flex-direction: column; gap: 0.15rem;
+      min-width: 110px; flex-shrink: 0; scroll-snap-align: start;
     }
     .fc7-day-name { font-size: 0.75rem; font-weight: 700; }
     .fc7-day-date { font-size: 0.68rem; color: var(--muted); }

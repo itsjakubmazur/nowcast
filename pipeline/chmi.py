@@ -19,23 +19,39 @@ TIMEOUT  = 15
 # ── Kandidátní URL patterny ────────────────────────────────────────────────────
 # ČHMÚ open data — hodinová pozorování (recent = posledních 24h, now = aktuální)
 CANDIDATE_URLS = [
-    # Nový portál opendata.chmi.cz
-    "https://opendata.chmi.cz/meteorology/climate/observation/1hour/recent/data/",
-    "https://opendata.chmi.cz/meteorology/climate/observation/10min/recent/data/",
-    "https://opendata.chmi.cz/meteorology/climate/observation/1hour/now/data/",
-    # Alternativní endpointy
-    "https://opendata.chmi.cz/meteorology/synop/latest/",
+    # opendata.chmi.cz — různé path varianty
+    "https://opendata.chmi.cz/meteorology/",
+    "https://opendata.chmi.cz/",
+    "https://opendata.chmi.cz/meteorology/climate/",
+    "https://opendata.chmi.cz/meteorology/observation/",
     "https://opendata.chmi.cz/meteorology/synop/",
+    "https://opendata.chmi.cz/meteorology/weather/",
 ]
 
-# Souhrnné soubory (celá ČR v jednom souboru)
+# Souhrnné soubory — více variant názvů a cest
+from datetime import datetime as _dt, timezone as _tz
+_today = _dt.now(_tz.utc).strftime("%Y%m%d")
+_hour  = _dt.now(_tz.utc).strftime("%H")
+
 COMBINED_CANDIDATES = [
-    "https://opendata.chmi.cz/meteorology/climate/observation/1hour/recent/data/data.csv",
-    "https://opendata.chmi.cz/meteorology/climate/observation/1hour/recent/data/all.csv",
-    "https://opendata.chmi.cz/meteorology/climate/observation/1hour/recent/data/observations.csv",
-    "https://opendata.chmi.cz/meteorology/climate/observation/1hour/recent/data/observations.json",
-    "https://opendata.chmi.cz/meteorology/synop/latest/data.json",
-    "https://opendata.chmi.cz/meteorology/synop/latest/data.csv",
+    # Aktuální data
+    "https://opendata.chmi.cz/meteorology/climate/observation/hourly/latest/data.csv",
+    "https://opendata.chmi.cz/meteorology/climate/observation/hourly/recent/data.csv",
+    "https://opendata.chmi.cz/meteorology/climate/observation/1hour/latest/data.csv",
+    f"https://opendata.chmi.cz/meteorology/climate/observation/1hour/{_today}/data.csv",
+    f"https://opendata.chmi.cz/meteorology/climate/observation/1hour/{_today}{_hour}00.csv",
+    # JSON varianty
+    "https://opendata.chmi.cz/meteorology/climate/observation/hourly/latest/data.json",
+    "https://opendata.chmi.cz/meteorology/climate/observation/hourly/latest.json",
+    # SYNOP
+    "https://opendata.chmi.cz/meteorology/synop/latest.json",
+    "https://opendata.chmi.cz/meteorology/synop/latest.csv",
+    f"https://opendata.chmi.cz/meteorology/synop/{_today}{_hour}00.json",
+    # Alternativní portál
+    "https://www.chmi.cz/files/portal/docs/meteo/opss/pocasi_data_public_CZ.json",
+    "https://www.chmi.cz/files/portal/docs/meteo/opss/pocasi_data_public_CZ.xml",
+    # OGIMET SYNOP jako záloha (WMO standard data)
+    f"https://www.ogimet.com/cgi-bin/getsynop?begin={_today}0000&end={_today}2359&lang=en&lugar=11&state=CZ&tipo=SA&ord=REV&nil=SI&fmt=txt",
 ]
 
 HEADERS = {
@@ -196,13 +212,15 @@ def main():
             print(f"  ✓ Načteno {len(stations)} stanic z {url}", file=sys.stderr)
             break
 
-    # 2. Zkus directory listing
+    # 2. Zkus directory listing — zjisti co server vrací
     if not stations:
+        print("  Zkouším directory listing:", file=sys.stderr)
         for url in CANDIDATE_URLS:
             r = try_fetch(url)
             if r:
-                print(f"  Directory listing ({len(r.text)} znaků):", file=sys.stderr)
-                print(r.text[:500], file=sys.stderr)
+                ct = r.headers.get("content-type", "")
+                print(f"  Directory listing ({len(r.text)} znaků, {ct}):", file=sys.stderr)
+                print(r.text[:800], file=sys.stderr)
                 break
 
     if not stations:
