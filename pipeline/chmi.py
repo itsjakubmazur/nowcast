@@ -64,97 +64,68 @@ def list_station_ids(today: str) -> list[str]:
     return unique
 
 
-def load_metadata() -> dict[str, dict]:
+def parse_meta1(values: list) -> dict[str, dict]:
     """
-    Stáhne metadata stanic (jméno, lat, lon) z metadata/ adresáře.
-    Vrátí dict: station_numeric_id → {name, lat, lon}.
+    Parsuje meta1-*.json: flat tabulka stanic.
+    Header: WSI, GH_ID, FULL_NAME, GEOGR1 (lon), GEOGR2 (lat), ELEVATION, BEGIN_DATE
+    Sloupce jsou pevně dané — indexujeme pozičně.
     """
     meta = {}
+    for row in values:
+        if len(row) < 5:
+            continue
+        wsi = str(row[0])   # "0-20000-0-11406"
+        name = str(row[2]) if row[2] else None
+        try:
+            lon = float(row[3])
+            lat = float(row[4])
+        except (TypeError, ValueError):
+            continue
+        num = re.search(r'(\d+)$', wsi)
+        if not num:
+            continue
+        sid = num.group(1)
+        meta[sid] = {
+            "name": name or f"Stanice {sid}",
+            "lat":  lat,
+            "lon":  lon,
+        }
+    return meta
 
-    # Zkus JSON index
-    for url in [
-        f"{METADATA_URL}stations.json",
-        f"{METADATA_URL}metadata.json",
-        f"{METADATA_URL}station_metadata.json",
-    ]:
+
+def load_metadata() -> dict[str, dict]:
+    """
+    Stáhne meta1-{datum}.json a vrátí dict: numeric_station_id → {name, lat, lon}.
+    """
+    today = datetime.now(timezone.utc).strftime("%Y%m%d")
+    yesterday = (datetime.now(timezone.utc)
+                 .__class__.fromtimestamp(
+                     datetime.now(timezone.utc).timestamp() - 86400, tz=timezone.utc
+                 ).strftime("%Y%m%d"))
+
+    for date in (today, yesterday):
+        url = f"{METADATA_URL}meta1-{date}.json"
         r = fetch(url)
         if not r:
             continue
         try:
             data = r.json()
-            # Může být list nebo dict
-            items = data if isinstance(data, list) else data.get("stations", data.get("data", []))
-            for s in items:
-                sid = str(s.get("station_id") or s.get("id") or s.get("ID") or "").strip()
-                # Extrahuj numerickou část (posledních N číslic)
-                num = re.search(r'(\d+)$', sid)
-                if num:
-                    meta[num.group(1)] = {
-                        "name": s.get("station_name") or s.get("name") or s.get("NAME") or sid,
-                        "lat":  float(s["lat"]) if s.get("lat") is not None else None,
-                        "lon":  float(s["lon"]) if s.get("lon") is not None else None,
-                    }
+            values = data["data"]["data"]["values"]
+            meta = parse_meta1(values)
             if meta:
                 print(f"  Metadata: {len(meta)} stanic z {url}", file=sys.stderr)
                 return meta
         except Exception as e:
             print(f"  Metadata parse error ({url}): {e}", file=sys.stderr)
 
-    # Zkus directory listing → hledej CSV/JSON soubory
-    r = fetch(METADATA_URL)
-    if r:
-        # Zkus najít konkrétní soubory
-        files = re.findall(r'href="([^"]+\.(json|csv))"', r.text)
-        for fname, _ in files[:5]:
-            url = METADATA_URL + fname if not fname.startswith("http") else fname
-            r2 = fetch(url)
-            if not r2:
-                continue
-            try:
-                if fname.endswith(".json"):
-                    items = r2.json()
-                    if isinstance(items, dict):
-                        items = items.get("stations", items.get("data", [items]))
-                    for s in items:
-                        sid = str(s.get("station_id") or s.get("id") or "").strip()
-                        num = re.search(r'(\d+)$', sid)
-                        if num:
-                            meta[num.group(1)] = {
-                                "name": s.get("station_name") or s.get("name") or sid,
-                                "lat":  float(s["lat"]) if s.get("lat") is not None else None,
-                                "lon":  float(s["lon"]) if s.get("lon") is not None else None,
-                            }
-                elif fname.endswith(".csv"):
-                    import io, csv
-                    reader = csv.DictReader(io.StringIO(r2.text))
-                    for row in reader:
-                        sid = (row.get("station_id") or row.get("ID") or "").strip()
-                        num = re.search(r'(\d+)$', sid)
-                        if num:
-                            try:
-                                meta[num.group(1)] = {
-                                    "name": row.get("station_name") or row.get("name") or sid,
-                                    "lat":  float(row["lat"]) if row.get("lat") else None,
-                                    "lon":  float(row["lon"]) if row.get("lon") else None,
-                                }
-                            except Exception:
-                                pass
-                if meta:
-                    print(f"  Metadata: {len(meta)} stanic z {url}", file=sys.stderr)
-                    return meta
-            except Exception as e:
-                print(f"  Metadata parse error ({url}): {e}", file=sys.stderr)
-
     print("  Metadata nedostupná — stanice budou bez jmen/souřadnic", file=sys.stderr)
-    return meta
+    return {}
 
 
 def parse_station_file(station_id: str, data: dict) -> tuple[dict | None, list[dict]]:
     """
     Parsuje JSON soubor jedné stanice.
     Vrátí (current_obs, time_series).
-    current_obs: nejnovější hodnoty všech elementů
-    time_series: seznam {dt, element, value} pro grafy
     """
     try:
         values = data["data"]["data"]["values"]
@@ -214,7 +185,7 @@ def parse_station_file(station_id: str, data: dict) -> tuple[dict | None, list[d
         "own":         False,
     }
 
-    # Časová řada pro grafy — všechny timestampy, všechny elementy
+    # Časová řada pro grafy — všechny timestampy
     series = []
     for dt in sorted(by_dt.keys()):
         elems = by_dt[dt]
@@ -290,7 +261,7 @@ def main():
 
     print(f"  Načteno: {ok} stanic, chyba: {err}", file=sys.stderr)
 
-    # Vyřaď stanice bez souřadnic (nešly by zobrazit na mapě)
+    # Vyřaď stanice bez souřadnic
     with_coords    = [s for s in stations if s["lat"] is not None and s["lon"] is not None]
     without_coords = [s for s in stations if s["lat"] is None or s["lon"] is None]
     if without_coords:
@@ -309,7 +280,7 @@ def main():
         json.dump(out, f, indent=2, ensure_ascii=False)
     print(f"  ✓ chmi_stations.json — {len(with_coords)} stanic se souřadnicemi", file=sys.stderr)
 
-    # Výstup: časové řady (jen stanice se souřadnicemi)
+    # Výstup: časové řady
     series_out = {
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
         "stations": {k: v for k, v in all_series.items()
