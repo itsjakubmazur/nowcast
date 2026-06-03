@@ -210,6 +210,31 @@
     .wu-marker-other { background:#6366f1; border:2px solid #fff; border-radius:50%; width:10px; height:10px; }
     .chmi-marker     { background:#10b981; border:2px solid #fff; border-radius:3px; width:10px; height:10px; }
 
+    /* Teplotní štítek marker */
+    .temp-label-marker {
+      font-size: .72rem; font-weight: 700; color: #fff;
+      padding: 1px 5px; border-radius: 3px; white-space: nowrap;
+      border: 1.5px solid rgba(255,255,255,.6);
+      box-shadow: 0 1px 4px rgba(0,0,0,.35);
+      cursor: pointer; text-align: center; line-height: 1.4;
+    }
+
+    /* ── Vrstvový selektor ──────────────────────────────────────────────── */
+    #layer-selector {
+      display: flex; align-items: center; gap: .4rem;
+      padding: .5rem .75rem; background: var(--panel);
+      border: 1px solid var(--border); border-radius: 8px;
+      margin: .5rem 1rem .4rem; flex-wrap: wrap;
+      font-size: .78rem;
+    }
+    #layer-selector span { color: var(--muted); font-size: .7rem; font-weight: 700; text-transform: uppercase; }
+    .layer-btn {
+      padding: .25rem .65rem; border-radius: 5px; border: 1px solid var(--border);
+      background: transparent; color: var(--text); cursor: pointer; font-size: .75rem;
+      transition: background .15s, color .15s;
+    }
+    .layer-btn.active { background: #10b981; color: #fff; border-color: #10b981; }
+
     /* ── ČHMÚ detail panel ──────────────────────────────────────────────── */
     #chmi-detail {
       display: none; position: fixed; top: 0; right: 0; bottom: 0;
@@ -231,8 +256,11 @@
       background: none; border: none; padding: .2rem .4rem;
     }
     #chmi-detail-body {
-      flex: 1; overflow-y: auto; padding: .75rem 1rem;
-      display: flex; flex-direction: column; gap: 1rem;
+      flex: 1; overflow: hidden; padding: .5rem 1rem;
+      display: flex; flex-direction: column; gap: 0;
+    }
+    #chmi-tab-content {
+      flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 1rem;
     }
     .chmi-chart-block h4 {
       margin: 0 0 .3rem; font-size: .8rem; color: var(--muted);
@@ -496,6 +524,17 @@
   <div class="fc7-grid" id="fc7-grid"></div>
 </div>
 
+<!-- Vrstvový selektor ČHMÚ markerů -->
+<div id="layer-selector">
+  <span>Zobrazit:</span>
+  <button class="layer-btn active" data-layer="temp">🌡️ Teplota</button>
+  <button class="layer-btn" data-layer="humidity">💧 Vlhkost</button>
+  <button class="layer-btn" data-layer="wind_kmh">🌬️ Vítr</button>
+  <button class="layer-btn" data-layer="precip_rate">🌧️ Srážky</button>
+  <button class="layer-btn" data-layer="pressure">🔵 Tlak</button>
+  <button class="layer-btn" data-layer="solar">☀️ Sluneční záření</button>
+</div>
+
 <div id="map"></div>
 
 <!-- Radar controls -->
@@ -566,6 +605,8 @@ let wuMarkers = [];
 // ČHMÚ stanice
 let CHMI = null;
 let chmiMarkers = [];
+let chmiLayer = "temp"; // aktuálně vybraná vrstva
+let CHMI_STATS = null;  // historická data
 
 // Globální radar (RainViewer)
 let globalMode = false;
@@ -584,18 +625,20 @@ const AUTO_REFRESH_MS   = 5 * 60 * 1000;
 async function loadData() {
   const v    = `?v=${Date.now()}`;
   const opts = { cache: "no-store" };
-  const [m, g, wu, fc, chmi] = await Promise.all([
+  const [m, g, wu, fc, chmi, stats] = await Promise.all([
     fetch(`data/radar_manifest.json${v}`, opts).then(r => r.json()),
     fetch(`data/forecast_grid.json${v}`,  opts).then(r => r.json()),
     fetch(`data/wu_stations.json${v}`,    opts).then(r => r.json()).catch(() => null),
     fetch(`data/forecast.json${v}`,       opts).then(r => r.json()).catch(() => null),
     fetch(`data/chmi_stations.json${v}`,  opts).then(r => r.json()).catch(() => null),
+    fetch(`data/chmi_stats.json${v}`,     opts).then(r => r.json()).catch(() => null),
   ]);
-  MANIFEST = m;
-  GRID     = g;
-  WU       = wu;
-  FORECAST = fc;
-  CHMI     = chmi;
+  MANIFEST    = m;
+  GRID        = g;
+  WU          = wu;
+  FORECAST    = fc;
+  CHMI        = chmi;
+  CHMI_STATS  = stats;
 }
 
 // ── Preload PNG do cache prohlížeče ───────────────────────────────────────────
@@ -738,6 +781,66 @@ function renderWuMarkers() {
   console.log(`WU: ${wuMarkers.length} markerů na mapě`);
 }
 
+// Vrátí barvu markeru dle hodnoty a typu vrstvy
+function chmiMarkerColor(layer, value) {
+  if (value == null) return "#94a3b8";
+  if (layer === "temp") {
+    if (value <= -10) return "#7dd3fc"; // ledová modrá
+    if (value <= 0)   return "#38bdf8";
+    if (value <= 5)   return "#34d399";
+    if (value <= 10)  return "#86efac";
+    if (value <= 15)  return "#fde68a";
+    if (value <= 20)  return "#fbbf24";
+    if (value <= 25)  return "#f97316";
+    if (value <= 30)  return "#ef4444";
+    return "#b91c1c";
+  }
+  if (layer === "humidity") {
+    if (value < 40) return "#f97316";
+    if (value < 60) return "#fbbf24";
+    if (value < 80) return "#34d399";
+    return "#38bdf8";
+  }
+  if (layer === "wind_kmh") {
+    if (value < 10) return "#34d399";
+    if (value < 30) return "#fbbf24";
+    if (value < 60) return "#f97316";
+    return "#ef4444";
+  }
+  if (layer === "precip_rate") {
+    if (value === 0) return "#94a3b8";
+    if (value < 0.5) return "#7dd3fc";
+    if (value < 2)   return "#3b82f6";
+    return "#1d4ed8";
+  }
+  if (layer === "pressure") {
+    if (value < 990) return "#f97316";
+    if (value < 1005) return "#fbbf24";
+    if (value < 1020) return "#34d399";
+    return "#38bdf8";
+  }
+  if (layer === "solar") {
+    if (value < 50)  return "#94a3b8";
+    if (value < 200) return "#fde68a";
+    if (value < 500) return "#fbbf24";
+    return "#f59e0b";
+  }
+  return "#10b981";
+}
+
+// Vrátí text markeru dle vrstvy
+function chmiMarkerText(layer, s) {
+  const v = s[layer];
+  if (v == null) return "—";
+  if (layer === "temp")       return v.toFixed(1) + "°";
+  if (layer === "humidity")   return Math.round(v) + "%";
+  if (layer === "wind_kmh")   return Math.round(v) + "km";
+  if (layer === "precip_rate") return v.toFixed(1) + "mm";
+  if (layer === "pressure")   return Math.round(v) + "";
+  if (layer === "solar")      return Math.round(v) + "W";
+  return String(v);
+}
+
 function renderChmiMarkers() {
   chmiMarkers.forEach(m => m.remove());
   chmiMarkers = [];
@@ -745,18 +848,24 @@ function renderChmiMarkers() {
 
   CHMI.stations.forEach(s => {
     if (s.lat == null || s.lon == null) return;
+
+    const val   = s[chmiLayer];
+    const color = chmiMarkerColor(chmiLayer, val);
+    const text  = chmiMarkerText(chmiLayer, s);
+    const w     = Math.max(36, text.length * 8 + 10);
+
     const icon = L.divIcon({
       className: "",
-      html: `<div class="chmi-marker"></div>`,
-      iconSize: [10, 10],
-      iconAnchor: [5, 5],
+      html: `<div class="temp-label-marker" style="background:${color};width:${w}px">${text}</div>`,
+      iconSize: [w, 20],
+      iconAnchor: [w / 2, 10],
     });
 
-    const windDir = s.wind_dir != null ? degToCompass(s.wind_dir) : "—";
-    const age     = s.time_utc ? ageMinutes(s.time_utc) : null;
-    const ageStr  = age != null ? `<span style="color:var(--muted);font-size:.7rem"> před ${age} min</span>` : "";
-
+    const windDir  = s.wind_dir != null ? degToCompass(s.wind_dir) : "—";
+    const age      = s.time_utc ? ageMinutes(s.time_utc) : null;
+    const ageStr   = age != null ? `<span style="color:var(--muted);font-size:.7rem"> · před ${age} min</span>` : "";
     const stationId = s.id;
+
     const popup = `
       <div class="wu-popup">
         <strong>${s.name || s.id}</strong>
@@ -780,113 +889,249 @@ function renderChmiMarkers() {
       .addTo(map);
     chmiMarkers.push(marker);
   });
-
-  console.log(`ČHMÚ: ${chmiMarkers.length} markerů na mapě`);
 }
 
 // ── ČHMÚ detail panel ─────────────────────────────────────────────────────────
 let _chmiSeriesCache = null;
 let _chmiCharts = [];
+let _chmiActiveTab = "dnes";
+let _chmiActiveStation = null;
 
-async function openChmiDetail(stationId) {
-  const panel = document.getElementById("chmi-detail");
-  const body  = document.getElementById("chmi-detail-body");
+function _makeChart(canvas, type, labels, vals, color, fill, unit) {
+  const isDark = document.documentElement.getAttribute("data-theme") === "dark";
+  const gridColor = isDark ? "rgba(255,255,255,.08)" : "rgba(0,0,0,.07)";
+  const textColor = isDark ? "#8b909a" : "#6b7280";
+  const isBar = type === "bar";
+  const chart = new Chart(canvas, {
+    type,
+    data: {
+      labels,
+      datasets: [{
+        data: vals,
+        borderColor: color,
+        backgroundColor: isBar ? color + "cc" : fill ? color + "22" : "transparent",
+        borderWidth: isBar ? 0 : 1.5,
+        pointRadius: 0,
+        fill: fill && !isBar,
+        tension: 0.3,
+        spanGaps: true,
+      }],
+    },
+    options: {
+      animation: false, responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: {
+        callbacks: { label: ctx => ` ${ctx.parsed.y} ${unit}` },
+      }},
+      scales: {
+        x: { ticks: { maxTicksLimit: 8, color: textColor, font: { size: 10 } }, grid: { color: gridColor } },
+        y: { ticks: { color: textColor, font: { size: 10 } }, grid: { color: gridColor } },
+      },
+    },
+  });
+  _chmiCharts.push(chart);
+  return chart;
+}
 
-  // Najdi stanici v CHMI
-  const s = CHMI?.stations?.find(x => x.id === stationId);
-  document.getElementById("chmi-detail-name").textContent = s?.name || stationId;
-  panel.classList.add("open");
-  body.innerHTML = `<div style="color:var(--muted);font-size:.85rem">Načítám data…</div>`;
-
-  // Zruš staré grafy
-  _chmiCharts.forEach(c => c.destroy());
-  _chmiCharts = [];
-
-  // Načti series (cached)
-  if (!_chmiSeriesCache) {
-    try {
-      const r = await fetch(`data/chmi_series.json?v=${Date.now()}`, { cache: "no-store" });
-      _chmiSeriesCache = await r.json();
-    } catch (e) {
-      body.innerHTML = `<div style="color:var(--muted)">Data není dostupná.</div>`;
-      return;
-    }
-  }
-
+function _renderTabDnes(body, stationId) {
   const station = _chmiSeriesCache?.stations?.[stationId];
   if (!station || !station.series?.length) {
-    body.innerHTML = `<div style="color:var(--muted)">Časové řady pro tuto stanici nejsou k dispozici.</div>`;
+    body.innerHTML = `<div style="color:var(--muted);padding:1rem">Časové řady nejsou k dispozici.</div>`;
     return;
   }
-
   const series = station.series;
   const labels = series.map(r => {
     const d = new Date(r.dt);
     return d.toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Prague" });
   });
-
   body.innerHTML = "";
-
-  const charts = [
-    { key: "temp",     label: "Teplota (°C)",         color: "#f59e0b", fill: true  },
-    { key: "humidity", label: "Vlhkost (%)",           color: "#3b82f6", fill: false },
-    { key: "pressure", label: "Tlak (hPa)",            color: "#8b5cf6", fill: false },
-    { key: "wind_kmh", label: "Rychlost větru (km/h)", color: "#10b981", fill: true  },
-    { key: "gust_kmh", label: "Nárazy větru (km/h)",   color: "#ef4444", fill: false },
-    { key: "precip",   label: "Srážky (mm/10min)",     color: "#06b6d4", fill: true, bar: true },
+  const chartCfgs = [
+    { key: "temp",     label: "Teplota (°C)",         color: "#f59e0b", fill: true,  unit: "°C" },
+    { key: "humidity", label: "Vlhkost (%)",           color: "#3b82f6", fill: false, unit: "%" },
+    { key: "pressure", label: "Tlak (hPa)",            color: "#8b5cf6", fill: false, unit: "hPa" },
+    { key: "wind_kmh", label: "Rychlost větru (km/h)", color: "#10b981", fill: true,  unit: "km/h" },
+    { key: "gust_kmh", label: "Nárazy větru (km/h)",   color: "#ef4444", fill: false, unit: "km/h" },
+    { key: "precip",   label: "Srážky (mm/10min)",     color: "#06b6d4", fill: true,  unit: "mm", bar: true },
+    { key: "solar",    label: "Záření (W/m²)",         color: "#fbbf24", fill: true,  unit: "W/m²" },
   ];
-
-  for (const cfg of charts) {
+  for (const cfg of chartCfgs) {
     const vals = series.map(r => r[cfg.key] ?? null);
-    if (vals.every(v => v === null)) continue;  // vynech prázdné
-
+    if (vals.every(v => v === null)) continue;
     const block = document.createElement("div");
     block.className = "chmi-chart-block";
     block.innerHTML = `<h4>${cfg.label}</h4><canvas></canvas>`;
     body.appendChild(block);
+    _makeChart(block.querySelector("canvas"), cfg.bar ? "bar" : "line", labels, vals, cfg.color, cfg.fill ?? false, cfg.unit);
+  }
+}
 
-    const canvas = block.querySelector("canvas");
+function _renderTabRekordy(body, stationId) {
+  const stats = CHMI_STATS?.stations?.[stationId];
+  if (!stats?.records || Object.keys(stats.records).length === 0) {
+    body.innerHTML = `<div style="color:var(--muted);padding:1rem">Historická data zatím nejsou k dispozici.<br><small>Spustí se automaticky při příštím denním běhu pipeline.</small></div>`;
+    return;
+  }
+  const LABELS = {
+    temp_max: ["Max. teplota", "°C", "🌡️"],
+    temp_min: ["Min. teplota", "°C", "❄️"],
+    temp_avg: ["Průměrná teplota", "°C", "📊"],
+    precip:   ["Max. srážky za den", "mm", "🌧️"],
+    gust_kmh: ["Max. nárazy větru", "km/h", "💨"],
+    snow_cm:  ["Max. výška sněhu", "cm", "❄️"],
+    sunshine_h: ["Max. sluneční svit", "h", "☀️"],
+  };
+  let html = `<div style="display:grid;gap:.6rem;padding:.5rem 0">`;
+  for (const [key, rec] of Object.entries(stats.records)) {
+    const [label, unit, icon] = LABELS[key] || [key, "", ""];
+    const date = rec.date ? `<span style="color:var(--muted);font-size:.7rem">${rec.date.slice(0,10)}</span>` : "";
+    html += `<div style="display:flex;justify-content:space-between;align-items:baseline;
+               padding:.4rem .5rem;background:var(--bg);border-radius:6px;border:1px solid var(--border)">
+      <span>${icon} ${label}</span>
+      <span style="font-weight:700">${rec.value} ${unit} ${date}</span>
+    </div>`;
+  }
+  html += `</div>`;
+  body.innerHTML = html;
+}
+
+function _renderTabKlima(body, stationId) {
+  const stats = CHMI_STATS?.stations?.[stationId];
+  const normals = stats?.monthly_normals;
+  if (!normals || Object.keys(normals).length === 0) {
+    body.innerHTML = `<div style="color:var(--muted);padding:1rem">Klimatologické normály zatím nejsou k dispozici.</div>`;
+    return;
+  }
+  const months = ["Led","Úno","Bře","Dub","Kvě","Čer","Čvc","Srp","Zář","Říj","Lis","Pro"];
+  const avgTemps = months.map((_, i) => normals[String(i + 1)]?.temp_avg ?? null);
+  const precips  = months.map((_, i) => normals[String(i + 1)]?.precip ?? null);
+
+  body.innerHTML = "";
+  if (avgTemps.some(v => v !== null)) {
+    const block = document.createElement("div");
+    block.className = "chmi-chart-block";
+    block.innerHTML = `<h4>Průměrná teplota (°C) — měsíční normál</h4><canvas></canvas>`;
+    body.appendChild(block);
+    _makeChart(block.querySelector("canvas"), "bar", months, avgTemps, "#f59e0b", false, "°C");
+  }
+  if (precips.some(v => v !== null)) {
+    const block = document.createElement("div");
+    block.className = "chmi-chart-block";
+    block.innerHTML = `<h4>Průměrné srážky (mm) — měsíční normál</h4><canvas></canvas>`;
+    body.appendChild(block);
+    _makeChart(block.querySelector("canvas"), "bar", months, precips, "#06b6d4", false, "mm");
+  }
+}
+
+function _renderTabRocni(body, stationId) {
+  const stats = CHMI_STATS?.stations?.[stationId];
+  const trend = stats?.yearly_trend;
+  if (!trend || Object.keys(trend).length === 0) {
+    body.innerHTML = `<div style="color:var(--muted);padding:1rem">Roční přehled zatím není k dispozici.</div>`;
+    return;
+  }
+  const years = Object.keys(trend).sort();
+  const avgTemps  = years.map(y => trend[y].temp_avg ?? null);
+  const maxTemps  = years.map(y => trend[y].temp_max ?? null);
+  const minTemps  = years.map(y => trend[y].temp_min ?? null);
+  const precipTot = years.map(y => trend[y].precip_total ?? null);
+
+  body.innerHTML = "";
+  if (avgTemps.some(v => v !== null)) {
+    const block = document.createElement("div");
+    block.className = "chmi-chart-block";
+    block.innerHTML = `<h4>Průměrná roční teplota (°C)</h4><canvas></canvas>`;
+    body.appendChild(block);
+    _makeChart(block.querySelector("canvas"), "line", years, avgTemps, "#f59e0b", true, "°C");
+  }
+  if (precipTot.some(v => v !== null)) {
+    const block = document.createElement("div");
+    block.className = "chmi-chart-block";
+    block.innerHTML = `<h4>Roční úhrn srážek (mm)</h4><canvas></canvas>`;
+    body.appendChild(block);
+    _makeChart(block.querySelector("canvas"), "bar", years, precipTot, "#06b6d4", false, "mm");
+  }
+  if (maxTemps.some(v => v !== null) && minTemps.some(v => v !== null)) {
+    const block = document.createElement("div");
+    block.className = "chmi-chart-block";
+    block.innerHTML = `<h4>Roční teplotní extrémy (°C)</h4><canvas></canvas>`;
+    body.appendChild(block);
     const isDark = document.documentElement.getAttribute("data-theme") === "dark";
-    const gridColor = isDark ? "rgba(255,255,255,.08)" : "rgba(0,0,0,.07)";
-    const textColor = isDark ? "#8b909a" : "#6b7280";
-
-    const chart = new Chart(canvas, {
-      type: cfg.bar ? "bar" : "line",
-      data: {
-        labels,
-        datasets: [{
-          data: vals,
-          borderColor: cfg.color,
-          backgroundColor: cfg.bar ? cfg.color + "cc"
-            : cfg.fill ? cfg.color + "22" : "transparent",
-          borderWidth: cfg.bar ? 0 : 1.5,
-          pointRadius: 0,
-          fill: cfg.fill && !cfg.bar,
-          tension: 0.3,
-          spanGaps: true,
-        }],
-      },
+    const gc = isDark ? "rgba(255,255,255,.08)" : "rgba(0,0,0,.07)";
+    const tc = isDark ? "#8b909a" : "#6b7280";
+    const chart = new Chart(block.querySelector("canvas"), {
+      type: "line",
+      data: { labels: years, datasets: [
+        { label: "Max", data: maxTemps, borderColor: "#ef4444", backgroundColor: "transparent", borderWidth: 1.5, pointRadius: 2, tension: 0.3, spanGaps: true },
+        { label: "Min", data: minTemps, borderColor: "#38bdf8", backgroundColor: "transparent", borderWidth: 1.5, pointRadius: 2, tension: 0.3, spanGaps: true },
+      ]},
       options: {
-        animation: false,
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: { legend: { display: false }, tooltip: {
-          callbacks: { label: ctx => ` ${ctx.parsed.y} ${cfg.label.match(/\(([^)]+)\)/)?.[1] || ""}` },
-        }},
+        animation: false, responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: true, labels: { color: tc, font: { size: 10 } } } },
         scales: {
-          x: {
-            ticks: { maxTicksLimit: 8, color: textColor, font: { size: 10 } },
-            grid: { color: gridColor },
-          },
-          y: {
-            ticks: { color: textColor, font: { size: 10 } },
-            grid: { color: gridColor },
-          },
+          x: { ticks: { maxTicksLimit: 8, color: tc, font: { size: 10 } }, grid: { color: gc } },
+          y: { ticks: { color: tc, font: { size: 10 } }, grid: { color: gc } },
         },
       },
     });
     _chmiCharts.push(chart);
   }
+}
+
+async function openChmiDetail(stationId) {
+  const panel = document.getElementById("chmi-detail");
+  const body  = document.getElementById("chmi-detail-body");
+  const s = CHMI?.stations?.find(x => x.id === stationId);
+  document.getElementById("chmi-detail-name").textContent = s?.name || stationId;
+  panel.classList.add("open");
+  _chmiActiveStation = stationId;
+
+  // Načti series (cached)
+  if (!_chmiSeriesCache) {
+    body.innerHTML = `<div style="color:var(--muted);font-size:.85rem;padding:1rem">Načítám data…</div>`;
+    try {
+      const r = await fetch(`data/chmi_series.json?v=${Date.now()}`, { cache: "no-store" });
+      _chmiSeriesCache = await r.json();
+    } catch (e) {
+      body.innerHTML = `<div style="color:var(--muted);padding:1rem">Data nejsou dostupná.</div>`;
+      return;
+    }
+  }
+
+  _renderChmiTabs(body, stationId, _chmiActiveTab);
+}
+
+function _renderChmiTabs(body, stationId, activeTab) {
+  _chmiCharts.forEach(c => c.destroy());
+  _chmiCharts = [];
+  _chmiActiveTab = activeTab;
+
+  const hasStats = !!(CHMI_STATS?.stations?.[stationId]);
+  const tabs = [
+    { id: "dnes",  label: "Dnes (24h)" },
+    { id: "rekordy", label: "Rekordy" + (hasStats ? "" : " ⏳") },
+    { id: "klima",   label: "Klimatologie" + (hasStats ? "" : " ⏳") },
+    { id: "rocni",   label: "Roční trend" + (hasStats ? "" : " ⏳") },
+  ];
+
+  let tabsHtml = `<div style="display:flex;gap:.3rem;padding:.5rem 0 .75rem;border-bottom:1px solid var(--border);flex-wrap:wrap">`;
+  for (const t of tabs) {
+    const active = t.id === activeTab ? "background:#10b981;color:#fff;border-color:#10b981" : "";
+    tabsHtml += `<button onclick="switchChmiTab('${stationId}','${t.id}')"
+      style="padding:.25rem .65rem;border-radius:5px;border:1px solid var(--border);
+             background:transparent;color:var(--text);cursor:pointer;font-size:.75rem;${active}">
+      ${t.label}</button>`;
+  }
+  tabsHtml += `</div><div id="chmi-tab-content" style="flex:1;overflow-y:auto;padding:.5rem 0"></div>`;
+  body.innerHTML = tabsHtml;
+
+  const content = document.getElementById("chmi-tab-content");
+  if (activeTab === "dnes")    _renderTabDnes(content, stationId);
+  if (activeTab === "rekordy") _renderTabRekordy(content, stationId);
+  if (activeTab === "klima")   _renderTabKlima(content, stationId);
+  if (activeTab === "rocni")   _renderTabRocni(content, stationId);
+}
+
+function switchChmiTab(stationId, tabId) {
+  _renderChmiTabs(document.getElementById("chmi-detail-body"), stationId, tabId);
 }
 
 function degToCompass(deg) {
@@ -2164,6 +2409,16 @@ window.addEventListener("DOMContentLoaded", async () => {
     document.getElementById("chmi-detail").classList.remove("open");
     _chmiCharts.forEach(c => c.destroy());
     _chmiCharts = [];
+  });
+
+  // Vrstvový selektor ČHMÚ markerů
+  document.querySelectorAll(".layer-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".layer-btn").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      chmiLayer = btn.dataset.layer;
+      renderChmiMarkers();
+    });
   });
 
   // Zavření notif pruhu — smaže snooze srážek (výstrahy mají vlastní snooze)

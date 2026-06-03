@@ -51,17 +51,23 @@ def fetch(url: str) -> requests.Response | None:
     return None
 
 
-def list_station_ids(today: str) -> list[str]:
-    """Parsuje HTML directory listing a vrátí numerické ID stanic pro dnešek."""
+def list_station_ids(today: str, yesterday: str) -> tuple[list[str], list[str]]:
+    """
+    Parsuje HTML directory listing.
+    Vrátí (ids_10m, ids_1h) — odlišné prefixové soubory pro dnešek i včerejšek.
+    """
     r = fetch(DATA_URL)
     if not r:
-        return []
-    # Hledá soubory tvaru 10m-0-20000-0-{ID}-{YYYYMMDD}.json
-    pattern = re.compile(rf'10m-0-20000-0-(\d+)-{today}\.json')
-    ids = pattern.findall(r.text)
-    unique = list(dict.fromkeys(ids))  # zachová pořadí, odstraní duplicity
-    print(f"  Nalezeno {len(unique)} souborů pro {today}", file=sys.stderr)
-    return unique
+        return [], []
+    text = r.text
+    # 10-minutové soubory (dnešek + včerejšek pro pozdní noc UTC)
+    p10 = re.compile(r'10m-0-20000-0-(\d+)-(?:' + today + r'|' + yesterday + r')\.json')
+    ids_10m = list(dict.fromkeys(p10.findall(text)))
+    # 1-hodinové SYNOP soubory — obsahují aktuálnější SYNOP záznamy
+    p1h = re.compile(r'1h-0-20000-0-(\d+)-(?:' + today + r'|' + yesterday + r')\.json')
+    ids_1h = list(dict.fromkeys(p1h.findall(text)))
+    print(f"  Nalezeno {len(ids_10m)} ×10m, {len(ids_1h)} ×1h souborů", file=sys.stderr)
+    return ids_10m, ids_1h
 
 
 def parse_meta1(values: list) -> dict[str, dict]:
@@ -122,23 +128,18 @@ def load_metadata() -> dict[str, dict]:
     return {}
 
 
-def parse_station_file(station_id: str, data: dict) -> tuple[dict | None, list[dict]]:
-    """
-    Parsuje JSON soubor jedné stanice.
-    Vrátí (current_obs, time_series).
-    """
+def _extract_by_dt(data: dict) -> dict[str, dict[str, float]]:
+    """Extrahuje data z JSON souboru do struktury {dt: {element: value}}."""
+    by_dt: dict[str, dict[str, float]] = {}
     try:
         values = data["data"]["data"]["values"]
     except (KeyError, TypeError):
-        return None, []
-
-    # Seskup hodnoty podle timestampu a elementu
-    by_dt: dict[str, dict[str, float]] = {}
+        return by_dt
     for row in values:
         if len(row) < 4:
             continue
         _sid, element, dt, val = row[0], row[1], row[2], row[3]
-        if val is None or val == "" or val != val:  # nan check
+        if val is None or val == "" or val != val:
             continue
         if element not in ELEMENT_MAP:
             continue
@@ -149,6 +150,24 @@ def parse_station_file(station_id: str, data: dict) -> tuple[dict | None, list[d
         if dt not in by_dt:
             by_dt[dt] = {}
         by_dt[dt][element] = fval
+    return by_dt
+
+
+def parse_station_file(station_id: str, data_10m: dict,
+                       data_1h: dict | None = None) -> tuple[dict | None, list[dict]]:
+    """
+    Parsuje JSON soubory jedné stanice (10m + volitelně 1h).
+    Data z 1h souboru doplní chybějící hodnoty v 10m (zejm. aktuálnější T).
+    Vrátí (current_obs, time_series).
+    """
+    by_dt = _extract_by_dt(data_10m)
+    if data_1h:
+        for dt, elems in _extract_by_dt(data_1h).items():
+            if dt not in by_dt:
+                by_dt[dt] = {}
+            # 1h data doplní jen chybějící elementy pro daný timestamp
+            for k, v in elems.items():
+                by_dt[dt].setdefault(k, v)
 
     if not by_dt:
         return None, []
@@ -203,15 +222,30 @@ def parse_station_file(station_id: str, data: dict) -> tuple[dict | None, list[d
     return obs, series
 
 
-def main():
-    print("\n=== ČHMÚ stanice — stažení 10minutových pozorování ===")
+def fetch_json(url: str) -> dict | None:
+    r = fetch(url)
+    if not r:
+        return None
+    try:
+        return r.json()
+    except Exception as e:
+        print(f"  JSON parse error ({url}): {e}", file=sys.stderr)
+        return None
 
-    today = datetime.now(timezone.utc).strftime("%Y%m%d")
+
+def main():
+    print("\n=== ČHMÚ stanice — stažení 10m+1h pozorování ===")
+
+    now_utc   = datetime.now(timezone.utc)
+    today     = now_utc.strftime("%Y%m%d")
+    yesterday = (now_utc.__class__.fromtimestamp(now_utc.timestamp() - 86400, tz=timezone.utc)
+                 .strftime("%Y%m%d"))
     print(f"  Datum (UTC): {today}", file=sys.stderr)
 
-    # 1. Zjisti seznam souborů
-    station_ids = list_station_ids(today)
-    if not station_ids:
+    # 1. Zjisti seznam souborů (10m + 1h)
+    ids_10m, ids_1h = list_station_ids(today, yesterday)
+    all_ids = list(dict.fromkeys(ids_10m + ids_1h))
+    if not all_ids:
         print("  Žádné soubory nenalezeny — ukládám prázdný výstup", file=sys.stderr)
         _save_empty("Žádné soubory v data/ adresáři")
         return
@@ -225,20 +259,25 @@ def main():
     ok = 0
     err = 0
 
-    for sid in station_ids:
-        url = f"{DATA_URL}10m-0-20000-0-{sid}-{today}.json"
-        r = fetch(url)
-        if not r:
-            err += 1
-            continue
-        try:
-            data = r.json()
-        except Exception as e:
-            print(f"  JSON parse error ({sid}): {e}", file=sys.stderr)
+    for sid in all_ids:
+        # Zkus nejprve dnešní datum, pak včerejší
+        data_10m = None
+        for date in (today, yesterday):
+            data_10m = fetch_json(f"{DATA_URL}10m-0-20000-0-{sid}-{date}.json")
+            if data_10m:
+                break
+
+        data_1h = None
+        for date in (today, yesterday):
+            data_1h = fetch_json(f"{DATA_URL}1h-0-20000-0-{sid}-{date}.json")
+            if data_1h:
+                break
+
+        if not data_10m and not data_1h:
             err += 1
             continue
 
-        obs, series = parse_station_file(sid, data)
+        obs, series = parse_station_file(sid, data_10m or {}, data_1h)
         if obs is None:
             err += 1
             continue

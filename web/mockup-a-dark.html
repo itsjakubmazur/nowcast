@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Mockup A — Dark Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #080b12;
+  --surface: rgba(255,255,255,.05);
+  --surface2: rgba(255,255,255,.08);
+  --border: rgba(255,255,255,.1);
+  --text: #e8ecf4;
+  --muted: #6b7a99;
+  --accent: #3d8ef8;
+  --green: #22d3a0;
+}
+
+body {
+  font-family: 'Inter', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Topbar ── */
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0 1.25rem;
+  height: 52px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(8,11,18,.9);
+  backdrop-filter: blur(12px);
+  z-index: 10;
+  flex-shrink: 0;
+}
+
+.logo {
+  display: flex; align-items: center; gap: .5rem;
+  font-size: .95rem; font-weight: 700; letter-spacing: -.01em;
+}
+.logo-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent);
+  animation: pulse 2s infinite;
+}
+@keyframes pulse {
+  0%,100% { opacity: 1; } 50% { opacity: .4; }
+}
+
+.search-box {
+  flex: 1; max-width: 320px;
+  display: flex; align-items: center; gap: .5rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px; padding: .35rem .75rem;
+  font-size: .85rem; color: var(--muted);
+}
+.search-box input {
+  background: none; border: none; outline: none;
+  color: var(--text); font-size: .85rem; flex: 1;
+  font-family: inherit;
+}
+.search-box input::placeholder { color: var(--muted); }
+
+.topbar-right { margin-left: auto; display: flex; gap: .5rem; align-items: center; }
+.icon-btn {
+  width: 34px; height: 34px; border-radius: 8px;
+  background: var(--surface); border: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; font-size: .95rem;
+  transition: background .15s;
+}
+.icon-btn:hover { background: var(--surface2); }
+
+.time-chip {
+  font-size: .72rem; color: var(--muted);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  padding: .2rem .6rem; border-radius: 20px;
+}
+
+/* ── Main layout ── */
+.main {
+  display: grid;
+  grid-template-columns: 1fr 380px;
+  flex: 1;
+  min-height: 0;
+}
+
+/* ── Map area ── */
+.map-area {
+  position: relative;
+  overflow: hidden;
+  background: #0d1526;
+}
+
+.map-fake {
+  width: 100%; height: 100%;
+  background:
+    radial-gradient(ellipse at 30% 40%, rgba(61,142,248,.12) 0%, transparent 50%),
+    radial-gradient(ellipse at 70% 60%, rgba(34,211,160,.08) 0%, transparent 50%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='800' height='600' viewBox='0 0 800 600'%3E%3Crect fill='%230d1526' width='800' height='600'/%3E%3Cpath d='M100,200 Q200,150 300,180 Q400,200 450,160 Q520,120 600,150 Q680,170 720,200 L740,280 Q680,300 620,320 Q540,350 460,330 Q380,310 300,340 Q220,360 160,320 Q120,300 100,280Z' fill='%23162240' stroke='%231e3a6a' stroke-width='1.5'/%3E%3Cpath d='M200,280 Q280,260 340,290 Q400,310 440,280 Q500,250 560,270 Q620,290 660,310 L670,380 Q610,400 550,390 Q490,375 440,400 Q380,420 320,400 Q260,380 210,360Z' fill='%231a2d50' stroke='%231e3a6a' stroke-width='1'/%3E%3C/svg%3E");
+  background-size: cover;
+  position: relative;
+}
+
+/* Fake radar blob */
+.radar-blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(30px);
+  pointer-events: none;
+}
+.blob1 { width:200px; height:150px; top:28%; left:35%; background:rgba(59,130,246,.25); }
+.blob2 { width:120px; height:100px; top:40%; left:55%; background:rgba(99,102,241,.2); }
+.blob3 { width:80px; height:70px; top:35%; left:48%; background:rgba(147,197,253,.3); }
+
+/* Fake temp markers */
+.tmarker {
+  position: absolute;
+  font-size: .72rem; font-weight: 700; color: #fff;
+  padding: 2px 7px; border-radius: 4px;
+  border: 1.5px solid rgba(255,255,255,.3);
+  box-shadow: 0 2px 8px rgba(0,0,0,.5);
+  cursor: pointer;
+  transition: transform .15s;
+}
+.tmarker:hover { transform: scale(1.1); }
+.t-cold { background: #38bdf8; }
+.t-mild { background: #34d399; }
+.t-warm { background: #fbbf24; }
+.t-hot  { background: #f97316; }
+
+/* Layer selector overlay */
+.layer-overlay {
+  position: absolute;
+  top: 14px; right: 14px;
+  background: rgba(8,11,18,.85);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: .5rem;
+  display: flex; flex-direction: column; gap: .3rem;
+  z-index: 5;
+}
+.layer-title {
+  font-size: .62rem; color: var(--muted); text-transform: uppercase;
+  letter-spacing: .06em; padding: 0 .25rem .2rem;
+  border-bottom: 1px solid var(--border); margin-bottom: .1rem;
+}
+.layer-opt {
+  display: flex; align-items: center; gap: .5rem;
+  padding: .3rem .5rem; border-radius: 7px; cursor: pointer;
+  font-size: .78rem; transition: background .1s;
+  white-space: nowrap;
+}
+.layer-opt:hover { background: var(--surface2); }
+.layer-opt.active { background: rgba(61,142,248,.2); color: var(--accent); }
+.layer-dot {
+  width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+}
+
+/* Radar timeline */
+.radar-bar {
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  background: rgba(8,11,18,.85);
+  backdrop-filter: blur(12px);
+  border-top: 1px solid var(--border);
+  padding: .6rem 1rem;
+  display: flex; align-items: center; gap: .75rem;
+  z-index: 5;
+}
+.play-btn {
+  width: 32px; height: 32px; border-radius: 8px;
+  background: var(--accent); border: none; color: #fff;
+  font-size: 1rem; display: flex; align-items: center; justify-content: center;
+  cursor: pointer; flex-shrink: 0;
+}
+.timeline-track {
+  flex: 1; height: 4px; background: rgba(255,255,255,.12);
+  border-radius: 2px; position: relative; cursor: pointer;
+}
+.timeline-fill {
+  width: 60%; height: 100%; background: var(--accent);
+  border-radius: 2px; position: relative;
+}
+.timeline-fill::after {
+  content: ''; position: absolute; right: -6px; top: -4px;
+  width: 12px; height: 12px; border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px rgba(61,142,248,.3);
+}
+.t0-mark {
+  position: absolute; top: -12px; left: 60%;
+  font-size: .6rem; color: #f59e0b; font-weight: 700;
+  transform: translateX(-50%);
+}
+.frame-time {
+  font-size: .85rem; font-weight: 600; min-width: 52px; text-align: center;
+}
+.now-badge {
+  font-size: .68rem; background: rgba(245,158,11,.15);
+  color: #f59e0b; padding: .15rem .5rem; border-radius: 20px;
+  border: 1px solid rgba(245,158,11,.3);
+}
+.step-btns { display: flex; gap: .25rem; }
+.step-btn {
+  width: 28px; height: 28px; border-radius: 6px;
+  background: var(--surface); border: 1px solid var(--border);
+  color: var(--text); font-size: .8rem; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+
+/* ── Right panel ── */
+.right-panel {
+  border-left: 1px solid var(--border);
+  display: flex; flex-direction: column;
+  overflow: hidden;
+  background: rgba(8,11,18,.6);
+  backdrop-filter: blur(8px);
+}
+
+.location-header {
+  padding: 1.25rem 1.25rem .75rem;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.loc-name {
+  font-size: 1.1rem; font-weight: 700; display: flex; align-items: center; gap: .4rem;
+}
+.loc-pin { font-size: .85rem; }
+.loc-sub { font-size: .75rem; color: var(--muted); margin-top: .15rem; }
+
+.current-weather {
+  padding: 1rem 1.25rem;
+  display: flex; align-items: center; gap: 1rem;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.temp-hero {
+  font-size: 3.5rem; font-weight: 800; line-height: 1;
+  background: linear-gradient(135deg, #fbbf24, #f97316);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+}
+.temp-meta { display: flex; flex-direction: column; gap: .3rem; }
+.weather-desc { font-size: .9rem; font-weight: 500; }
+.feels-like { font-size: .75rem; color: var(--muted); }
+.precip-badge {
+  margin-left: auto;
+  display: flex; flex-direction: column; align-items: center;
+  background: rgba(61,142,248,.1); border: 1px solid rgba(61,142,248,.2);
+  border-radius: 10px; padding: .5rem .75rem; gap: .1rem;
+}
+.precip-pct { font-size: 1.4rem; font-weight: 700; color: var(--accent); line-height: 1; }
+.precip-label { font-size: .62rem; color: var(--muted); text-transform: uppercase; }
+
+.stats-grid {
+  display: grid; grid-template-columns: 1fr 1fr;
+  gap: 1px; background: var(--border);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.stat-cell {
+  background: rgba(8,11,18,.4);
+  padding: .65rem 1rem;
+  display: flex; flex-direction: column; gap: .15rem;
+}
+.stat-label { font-size: .65rem; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.stat-val { font-size: 1rem; font-weight: 600; }
+.stat-unit { font-size: .65rem; color: var(--muted); }
+
+.panel-scroll {
+  flex: 1; overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+/* 24h timeline */
+.section { padding: .9rem 1.25rem; border-bottom: 1px solid var(--border); }
+.section-title {
+  font-size: .65rem; font-weight: 700; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .06em; margin-bottom: .65rem;
+}
+
+.hourly-scroll { display: flex; gap: .4rem; overflow-x: auto; padding-bottom: 4px; }
+.hourly-scroll::-webkit-scrollbar { height: 3px; }
+.hourly-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+.hour-item {
+  flex: 0 0 auto; width: 54px; text-align: center;
+  display: flex; flex-direction: column; align-items: center; gap: .3rem;
+  padding: .5rem .2rem; border-radius: 8px;
+  cursor: pointer; transition: background .1s;
+}
+.hour-item:hover, .hour-item.active { background: var(--surface2); }
+.hour-time { font-size: .68rem; color: var(--muted); }
+.hour-icon { font-size: 1.1rem; }
+.hour-temp { font-size: .85rem; font-weight: 600; }
+.hour-rain { font-size: .65rem; color: var(--accent); }
+
+/* 7day forecast */
+.day-row {
+  display: flex; align-items: center; gap: .5rem;
+  padding: .5rem 0;
+  border-bottom: 1px solid rgba(255,255,255,.04);
+  font-size: .82rem;
+}
+.day-row:last-child { border-bottom: none; }
+.day-name { width: 36px; font-weight: 500; }
+.day-icon { font-size: 1.1rem; }
+.day-desc { flex: 1; color: var(--muted); font-size: .78rem; }
+.day-range { display: flex; gap: .4rem; align-items: center; }
+.day-min { color: var(--muted); }
+.day-max { font-weight: 600; }
+.day-bar-wrap { flex: 0 0 60px; height: 4px; background: rgba(255,255,255,.08); border-radius: 2px; position: relative; }
+.day-bar { height: 100%; border-radius: 2px; position: absolute; background: linear-gradient(90deg, #38bdf8, #f97316); }
+
+/* Alerts */
+.alert-strip {
+  margin: .75rem 1.25rem;
+  padding: .6rem .85rem;
+  border-radius: 8px;
+  background: rgba(251,191,36,.1);
+  border: 1px solid rgba(251,191,36,.25);
+  display: flex; align-items: center; gap: .6rem;
+  font-size: .8rem;
+}
+.alert-icon { font-size: 1rem; }
+.alert-text { flex: 1; }
+.alert-badge {
+  font-size: .65rem; font-weight: 700; padding: .15rem .4rem;
+  border-radius: 4px; background: #fbbf24; color: #000;
+}
+
+.fav-section { padding: .75rem 1.25rem; border-bottom: 1px solid var(--border); }
+.fav-item {
+  display: flex; align-items: center; gap: .75rem;
+  padding: .5rem .6rem; border-radius: 8px; cursor: pointer;
+  transition: background .1s;
+}
+.fav-item:hover { background: var(--surface2); }
+.fav-name { font-size: .85rem; font-weight: 500; flex: 1; }
+.fav-temp { font-size: .85rem; font-weight: 600; }
+.fav-desc { font-size: .72rem; color: var(--muted); }
+
+.label-note {
+  text-align: center; padding: 2rem 1rem;
+  font-size: .75rem; color: var(--muted);
+  font-style: italic;
+}
+</style>
+</head>
+<body>
+
+<!-- Topbar -->
+<div class="topbar">
+  <div class="logo">
+    <div class="logo-dot"></div>
+    nowcast.cz
+  </div>
+  <div class="search-box">
+    <span style="color:var(--muted)">🔍</span>
+    <input type="text" placeholder="Hledat obec…" />
+  </div>
+  <div class="topbar-right">
+    <div class="time-chip">Aktualizováno 14:40</div>
+    <div class="icon-btn">📍</div>
+    <div class="icon-btn">🌙</div>
+    <div class="icon-btn" style="font-size:.75rem;color:var(--muted)">↺</div>
+  </div>
+</div>
+
+<!-- Main -->
+<div class="main">
+
+  <!-- Map -->
+  <div class="map-area">
+    <div class="map-fake">
+      <div class="radar-blob blob1"></div>
+      <div class="radar-blob blob2"></div>
+      <div class="radar-blob blob3"></div>
+
+      <!-- Temp markers -->
+      <div class="tmarker t-mild" style="top:32%;left:42%">13.4°</div>
+      <div class="tmarker t-mild" style="top:28%;left:58%">12.1°</div>
+      <div class="tmarker t-cold" style="top:22%;left:30%">8.7°</div>
+      <div class="tmarker t-warm" style="top:50%;left:38%">16.2°</div>
+      <div class="tmarker t-warm" style="top:45%;left:62%">15.8°</div>
+      <div class="tmarker t-mild" style="top:38%;left:70%">11.9°</div>
+      <div class="tmarker t-cold" style="top:18%;left:50%">7.3°</div>
+      <div class="tmarker t-hot" style="top:58%;left:52%">19.1°</div>
+      <div class="tmarker t-mild" style="top:55%;left:28%">14.5°</div>
+      <div class="tmarker t-warm" style="top:63%;left:72%">17.4°</div>
+
+      <!-- Layer overlay -->
+      <div class="layer-overlay">
+        <div class="layer-title">Zobrazit</div>
+        <div class="layer-opt active">
+          <div class="layer-dot" style="background:linear-gradient(135deg,#38bdf8,#f97316)"></div>
+          🌡️ Teplota
+        </div>
+        <div class="layer-opt">
+          <div class="layer-dot" style="background:#3b82f6"></div>
+          💧 Vlhkost
+        </div>
+        <div class="layer-opt">
+          <div class="layer-dot" style="background:#10b981"></div>
+          🌬️ Vítr
+        </div>
+        <div class="layer-opt">
+          <div class="layer-dot" style="background:#06b6d4"></div>
+          🌧️ Srážky
+        </div>
+        <div class="layer-opt">
+          <div class="layer-dot" style="background:#8b5cf6"></div>
+          🔵 Tlak
+        </div>
+        <div class="layer-opt">
+          <div class="layer-dot" style="background:#fbbf24"></div>
+          ☀️ Záření
+        </div>
+      </div>
+
+      <!-- Radar bar -->
+      <div class="radar-bar">
+        <div class="step-btns">
+          <div class="step-btn">⏮</div>
+          <div class="step-btn">⏭</div>
+        </div>
+        <button class="play-btn">▶</button>
+        <div style="position:relative;flex:1">
+          <div class="timeline-track">
+            <div class="timeline-fill"></div>
+          </div>
+          <div class="t0-mark">▲ teď</div>
+        </div>
+        <div class="frame-time" style="color:var(--accent)">+45 min</div>
+        <div class="now-badge">předpověď</div>
+        <div style="font-size:.72rem;color:var(--muted);display:flex;align-items:center;gap:.3rem">
+          <span>rychlost</span>
+          <select style="background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:5px;padding:.1rem .3rem;font-size:.72rem">
+            <option>1×</option><option>2×</option>
+          </select>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Right panel -->
+  <div class="right-panel">
+    <div class="location-header">
+      <div class="loc-name">
+        <span class="loc-pin">📍</span>
+        Praha — Smíchov
+      </div>
+      <div class="loc-sub">50.074°N 14.403°E · 200 m n.m.</div>
+    </div>
+
+    <div class="current-weather">
+      <div class="temp-hero">13.4°</div>
+      <div class="temp-meta">
+        <div class="weather-desc">🌥️ Částečná oblačnost</div>
+        <div class="feels-like">Pocitová teplota 11°C</div>
+        <div class="feels-like" style="margin-top:.2rem;color:var(--green)">↗ max 16° / ↘ min 9°</div>
+      </div>
+      <div class="precip-badge">
+        <div class="precip-pct">38%</div>
+        <div class="precip-label">Déšť dnes</div>
+      </div>
+    </div>
+
+    <div class="alert-strip">
+      <span class="alert-icon">⚠️</span>
+      <span class="alert-text">Výstraha před silným větrem</span>
+      <span class="alert-badge">ŽLUTÁ</span>
+    </div>
+
+    <div class="stats-grid">
+      <div class="stat-cell">
+        <div class="stat-label">Vítr</div>
+        <div class="stat-val">28 <span class="stat-unit">km/h SZ</span></div>
+      </div>
+      <div class="stat-cell">
+        <div class="stat-label">Vlhkost</div>
+        <div class="stat-val">72 <span class="stat-unit">%</span></div>
+      </div>
+      <div class="stat-cell">
+        <div class="stat-label">Tlak</div>
+        <div class="stat-val">1014 <span class="stat-unit">hPa ↘</span></div>
+      </div>
+      <div class="stat-cell">
+        <div class="stat-label">Záření</div>
+        <div class="stat-val">312 <span class="stat-unit">W/m²</span></div>
+      </div>
+    </div>
+
+    <div class="panel-scroll">
+      <!-- Hourly -->
+      <div class="section">
+        <div class="section-title">Průběh dne · 24h</div>
+        <div class="hourly-scroll">
+          <div class="hour-item"><div class="hour-time">12:00</div><div class="hour-icon">🌤️</div><div class="hour-temp">13°</div><div class="hour-rain">10%</div></div>
+          <div class="hour-item"><div class="hour-time">13:00</div><div class="hour-icon">🌥️</div><div class="hour-temp">14°</div><div class="hour-rain">15%</div></div>
+          <div class="hour-item active"><div class="hour-time">14:00</div><div class="hour-icon">🌧️</div><div class="hour-temp">13°</div><div class="hour-rain">65%</div></div>
+          <div class="hour-item"><div class="hour-time">15:00</div><div class="hour-icon">🌧️</div><div class="hour-temp">12°</div><div class="hour-rain">80%</div></div>
+          <div class="hour-item"><div class="hour-time">16:00</div><div class="hour-icon">🌦️</div><div class="hour-temp">12°</div><div class="hour-rain">45%</div></div>
+          <div class="hour-item"><div class="hour-time">17:00</div><div class="hour-icon">⛅</div><div class="hour-temp">11°</div><div class="hour-rain">20%</div></div>
+          <div class="hour-item"><div class="hour-time">18:00</div><div class="hour-icon">🌤️</div><div class="hour-temp">11°</div><div class="hour-rain">5%</div></div>
+          <div class="hour-item"><div class="hour-time">19:00</div><div class="hour-icon">🌙</div><div class="hour-temp">10°</div><div class="hour-rain">0%</div></div>
+          <div class="hour-item"><div class="hour-time">20:00</div><div class="hour-icon">🌙</div><div class="hour-temp">9°</div><div class="hour-rain">0%</div></div>
+        </div>
+      </div>
+
+      <!-- 7day -->
+      <div class="section">
+        <div class="section-title">7 dní</div>
+        <div class="day-row">
+          <div class="day-name" style="color:var(--accent);font-weight:700">Dnes</div>
+          <div class="day-icon">🌧️</div>
+          <div class="day-desc">Přeháňky</div>
+          <div class="day-range"><span class="day-min">9°</span><span class="day-max">16°</span></div>
+          <div class="day-bar-wrap"><div class="day-bar" style="left:20%;width:50%"></div></div>
+        </div>
+        <div class="day-row">
+          <div class="day-name">Út</div>
+          <div class="day-icon">⛅</div>
+          <div class="day-desc">Oblačno</div>
+          <div class="day-range"><span class="day-min">7°</span><span class="day-max">14°</span></div>
+          <div class="day-bar-wrap"><div class="day-bar" style="left:10%;width:40%"></div></div>
+        </div>
+        <div class="day-row">
+          <div class="day-name">St</div>
+          <div class="day-icon">🌤️</div>
+          <div class="day-desc">Polojasno</div>
+          <div class="day-range"><span class="day-min">8°</span><span class="day-max">18°</span></div>
+          <div class="day-bar-wrap"><div class="day-bar" style="left:15%;width:60%"></div></div>
+        </div>
+        <div class="day-row">
+          <div class="day-name">Čt</div>
+          <div class="day-icon">☀️</div>
+          <div class="day-desc">Slunečno</div>
+          <div class="day-range"><span class="day-min">10°</span><span class="day-max">22°</span></div>
+          <div class="day-bar-wrap"><div class="day-bar" style="left:20%;width:75%"></div></div>
+        </div>
+        <div class="day-row">
+          <div class="day-name">Pá</div>
+          <div class="day-icon">🌤️</div>
+          <div class="day-desc">Převážně jasno</div>
+          <div class="day-range"><span class="day-min">11°</span><span class="day-max">21°</span></div>
+          <div class="day-bar-wrap"><div class="day-bar" style="left:25%;width:70%"></div></div>
+        </div>
+      </div>
+
+      <!-- Fav places -->
+      <div class="fav-section">
+        <div class="section-title" style="margin-bottom:.5rem">Oblíbená místa</div>
+        <div class="fav-item">
+          <span>🏠</span>
+          <div style="flex:1">
+            <div class="fav-name">Brno — Žabovřesky</div>
+            <div class="fav-desc">Oblačno · vítr 22 km/h</div>
+          </div>
+          <div class="fav-temp">11.2°</div>
+        </div>
+        <div class="fav-item">
+          <span>📌</span>
+          <div style="flex:1">
+            <div class="fav-name">Ostrava</div>
+            <div class="fav-desc">Déšť · 18 km/h</div>
+          </div>
+          <div class="fav-temp">9.8°</div>
+        </div>
+        <div class="fav-item">
+          <span>📌</span>
+          <div style="flex:1">
+            <div class="fav-name">Liberec</div>
+            <div class="fav-desc">Mlha</div>
+          </div>
+          <div class="fav-temp">6.4°</div>
+        </div>
+      </div>
+
+      <div class="label-note">— Mockup A: Dark Dashboard —</div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
