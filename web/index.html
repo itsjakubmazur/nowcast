@@ -4,256 +4,459 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Meteo Nowcast CZ</title>
-  <meta name="theme-color" content="#2563eb" />
+  <meta name="theme-color" content="#4f8ef7" />
   <link rel="manifest" href="manifest.json" />
   <link rel="apple-touch-icon" href="icon.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
+    /* ── Design tokens — dark first ──────────────────────────────────── */
     :root {
-      --bg: #f4f6f8; --panel: #fff; --border: #dde1e7;
-      --muted: #6b7280; --fg: #1a1d23; --accent: #2563eb;
+      --bg: #080c18;
+      --panel: rgba(12,16,28,.85);
+      --border: rgba(255,255,255,.1);
+      --text: #edf0f8;
+      --fg: #edf0f8;
+      --muted: #5a6480;
+      --accent: #4f8ef7;
       --t0-color: #f59e0b;
-      --card: #fff;
+      --card: rgba(12,16,28,.85);
     }
-    [data-theme="dark"] {
-      --bg: #0f1117; --panel: #1a1d23; --border: #2a2d35;
-      --muted: #8b909a; --fg: #e8eaf0; --accent: #3b82f6;
-      --t0-color: #f59e0b; --card: #1e2128;
+    [data-theme="light"] {
+      --bg: #e8ecf4;
+      --panel: rgba(255,255,255,.88);
+      --border: rgba(0,0,0,.1);
+      --text: #111827;
+      --fg: #111827;
+      --muted: #6b7280;
+      --accent: #2563eb;
+      --t0-color: #d97706;
+      --card: rgba(255,255,255,.88);
     }
-    [data-theme="dark"] button.ctrl:hover { background: #2a2d35; }
-    [data-theme="dark"] #map { filter: brightness(0.85) saturate(0.9); }
-    [data-theme="dark"] input[type=range] { background: #2a2d35; }
+    [data-theme="light"] #map { filter: none; }
+    [data-theme="light"] button.ctrl:hover { background: rgba(0,0,0,.05); }
+    [data-theme="light"] input[type=range] { background: #d1d5db; }
+    [data-theme="light"] #topbar {
+      background: linear-gradient(to bottom, rgba(232,236,244,.95) 0%, transparent 100%);
+    }
+    [data-theme="light"] #radar-bar {
+      background: linear-gradient(to top, rgba(232,236,244,.95) 60%, transparent 100%);
+    }
+    [data-theme="light"] .fc7-today { background: rgba(37,99,235,.08); }
+
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--fg); }
-
-    /* ── Header ─────────────────────────────────────────────────────── */
-    header {
-      padding: 0.75rem 1rem 0.5rem;
-      display: flex; align-items: baseline; gap: 0.75rem;
-      border-bottom: 1px solid var(--border); background: var(--panel);
-    }
-    h1 { font-size: 1.2rem; }
-    .subtitle { color: var(--muted); font-size: 0.8rem; }
-
-    /* ── Map ─────────────────────────────────────────────────────────── */
-    #map { height: 420px; width: 100%; }
-
-    /* ── Radar controls ─────────────────────────────────────────────── */
-    .radar-bar {
-      background: var(--panel); border-bottom: 1px solid var(--border);
-      padding: 0.6rem 1rem; display: flex; flex-direction: column; gap: 0.5rem;
-      overflow-x: hidden;
-    }
-    .radar-row { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
-    .radar-row label { font-size: 0.78rem; color: var(--muted); white-space: nowrap; }
-
-    /* Timeline slider */
-    .timeline-wrap { position: relative; flex: 1; }
-    #timeline {
-      width: 100%; height: 6px; cursor: pointer;
-      -webkit-appearance: none; appearance: none;
-      background: #d1d5db; border-radius: 3px; outline: none;
-    }
-    #timeline::-webkit-slider-thumb {
-      -webkit-appearance: none; width: 16px; height: 16px;
-      border-radius: 50%; background: var(--accent); cursor: pointer;
-    }
-    /* t0 marker underneath the slider */
-    #t0-marker {
-      position: absolute; bottom: -14px;
-      transform: translateX(-50%);
-      font-size: 0.68rem; color: var(--t0-color); font-weight: 700;
-      pointer-events: none; white-space: nowrap;
-    }
-    #t0-tick {
-      position: absolute; top: 50%; transform: translateX(-50%) translateY(-50%);
-      width: 3px; height: 12px; background: var(--t0-color);
-      border-radius: 2px; pointer-events: none;
+    html, body {
+      height: 100%; overflow: hidden;
+      font-family: 'Inter', system-ui, sans-serif;
+      background: var(--bg); color: var(--fg);
     }
 
-    #frame-time {
-      font-size: 0.85rem; font-weight: 600; min-width: 60px; text-align: right;
+    /* ── Fullscreen map ───────────────────────────────────────────────── */
+    #map {
+      position: fixed; inset: 0; z-index: 0;
+      filter: brightness(0.88) saturate(0.85);
     }
-    .nowcast-label { color: var(--accent); }
-    .t0-label { color: var(--t0-color); }
+    [data-theme="light"] #map { filter: none; }
 
-    button.ctrl {
-      padding: 0.3rem 0.65rem; border-radius: 6px; cursor: pointer;
-      border: 1px solid var(--border); background: var(--panel); color: var(--fg);
-      font-size: 0.9rem; line-height: 1;
-    }
-    button.ctrl:hover { background: #f0f2f5; }
-    button.ctrl.active { background: var(--accent); color: #fff; border-color: var(--accent); }
-    .speed-group { display: flex; gap: 2px; }
-    .speed-group button.ctrl { padding: 0.3rem 0.45rem; font-size: 0.78rem; }
-
-    #opacity-slider {
-      width: 80px; -webkit-appearance: none; appearance: none;
-      height: 4px; background: #d1d5db; border-radius: 2px; outline: none;
-    }
-    #opacity-slider::-webkit-slider-thumb {
-      -webkit-appearance: none; width: 14px; height: 14px;
-      border-radius: 50%; background: var(--muted); cursor: pointer;
+    /* ── Topbar ───────────────────────────────────────────────────────── */
+    #topbar {
+      position: fixed; top: 0; left: 0; right: 0; height: 52px;
+      z-index: 100;
+      display: flex; align-items: center; gap: .75rem; padding: 0 1rem;
+      background: linear-gradient(to bottom, rgba(8,12,24,.92) 0%, transparent 100%);
     }
 
-    /* ── Location panel ──────────────────────────────────────────────── */
-    .loc-panel {
-      padding: 0.75rem 1rem; background: var(--panel);
+    .logo {
+      font-size: .95rem; font-weight: 900; letter-spacing: -.02em;
+      color: var(--text);
+      display: flex; align-items: center; gap: .45rem;
+      white-space: nowrap; flex-shrink: 0;
+    }
+    .logo-icon {
+      width: 26px; height: 26px; border-radius: 7px;
+      background: linear-gradient(135deg, #4f8ef7, #38bdf8);
+      display: flex; align-items: center; justify-content: center;
+      font-size: .85rem;
+    }
+
+    .search-wrap {
+      flex: 1; max-width: 300px; position: relative;
+      display: flex; align-items: center;
+      background: var(--panel);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border);
+      border-radius: 999px; padding: .35rem .9rem;
+    }
+    .search-wrap input[type=text] {
+      background: none; border: none; outline: none;
+      color: var(--text); font-size: .83rem; width: 100%;
+      font-family: inherit; padding: 0;
+    }
+    .search-wrap input[type=text]::placeholder { color: var(--muted); }
+
+    #suggestions {
+      list-style: none; position: absolute; z-index: 1000;
+      top: calc(100% + 6px); left: 0; right: 0;
+      border: 1px solid var(--border); border-radius: 12px;
+      background: var(--panel); backdrop-filter: blur(16px);
+      max-height: 210px; overflow-y: auto;
+      display: none; box-shadow: 0 8px 24px rgba(0,0,0,.4);
+    }
+    #suggestions li { padding: .5rem .9rem; cursor: pointer; font-size: .88rem; }
+    #suggestions li:hover { background: rgba(255,255,255,.08); }
+
+    .topbar-right {
+      margin-left: auto; display: flex; gap: .4rem; align-items: center;
+    }
+
+    /* Glass buttons (topbar) */
+    button.glass-btn {
+      height: 32px; border-radius: 8px;
+      background: var(--panel);
+      backdrop-filter: blur(10px);
+      border: 1px solid var(--border);
+      display: inline-flex; align-items: center; gap: .35rem;
+      padding: 0 .65rem;
+      cursor: pointer; font-size: .82rem; color: var(--text);
+      font-family: inherit; white-space: nowrap;
+      transition: background .15s;
+    }
+    button.glass-btn:hover { background: rgba(255,255,255,.12); }
+    button.glass-btn.icon-only { padding: 0; width: 32px; justify-content: center; }
+    #btn-refresh.spinning { opacity: .5; pointer-events: none; }
+    #refresh-time { color: var(--muted); font-size: .75rem; white-space: nowrap; }
+    #data-age-warn { font-size: .72rem; color: #f59e0b; display: none; }
+
+    /* ── Left floating card ───────────────────────────────────────────── */
+    #left-card {
+      position: fixed; left: 1rem; top: 64px; bottom: 100px;
+      width: 268px; z-index: 50;
+      background: var(--panel);
+      backdrop-filter: blur(16px) saturate(1.4);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      overflow-y: auto; overflow-x: hidden;
+      display: flex; flex-direction: column;
+      box-shadow: 0 8px 32px rgba(0,0,0,.4);
+      scrollbar-width: none;
+    }
+    #left-card::-webkit-scrollbar { display: none; }
+
+    /* forecast panel inside left card */
+    #forecast-panel {
+      padding: .85rem 1rem .6rem;
+      display: flex; flex-direction: column; gap: .15rem;
       border-bottom: 1px solid var(--border);
     }
-    .loc-row { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: flex-start; }
-    .suggest { position: relative; flex: 1 1 200px; }
-    input[type=text] {
-      width: 100%; padding: 0.55rem 0.8rem;
-      border-radius: 7px; border: 1px solid var(--border);
-      background: var(--bg); color: var(--fg); font-size: 0.95rem;
-    }
-    #suggestions {
-      list-style: none; position: absolute; z-index: 1000; width: 100%;
-      border: 1px solid var(--border); border-radius: 7px; background: var(--panel);
-      max-height: 210px; overflow-y: auto; display: none; box-shadow: 0 4px 12px #0002;
-    }
-    #suggestions li { padding: 0.5rem 0.8rem; cursor: pointer; font-size: 0.9rem; }
-    #suggestions li:hover { background: var(--bg); }
-    button.loc-btn {
-      padding: 0.55rem 0.85rem; border-radius: 7px; cursor: pointer;
-      border: 1px solid var(--border); background: var(--bg); color: var(--fg);
-      font-size: 0.9rem; white-space: nowrap;
-    }
-    button.loc-btn:hover { background: #e8eaf0; }
-
-    /* ── Forecast card ───────────────────────────────────────────────── */
-    .forecast-card {
-      margin: 0.75rem 1rem; padding: 1rem;
-      background: var(--panel); border: 1px solid var(--border);
-      border-radius: 10px;
-    }
-    .place { font-size: 1rem; font-weight: 600; }
-    .dist  { color: var(--muted); font-size: 0.8rem; margin: 0.2rem 0 0.75rem; }
-    .verdict-text { line-height: 1.65; font-size: 0.98rem; }
+    .place { font-size: 1rem; font-weight: 700; color: var(--text); }
+    .dist  { color: var(--muted); font-size: .75rem; margin-top: .1rem; }
+    .verdict-text { line-height: 1.6; font-size: .85rem; margin-top: .5rem; color: var(--text); }
     .hint { color: var(--muted); }
+    .updated { color: var(--muted); font-size: .72rem; margin-top: .35rem; }
 
-    .warn-chip {
-      display: inline-block; padding: 0.15rem 0.6rem; border-radius: 999px;
-      font-size: 0.78rem; font-weight: 600; margin: 0 0.3rem 0.4rem 0;
+    /* fav row inside left card */
+    #fav-row {
+      display: flex; flex-direction: column; gap: 0;
+      padding: .4rem 0;
     }
-    .c-yellow  { background: #fbbf24; color: #1a1d23; }
-    .c-orange  { background: #f97316; color: #fff; }
-    .c-red     { background: #ef4444; color: #fff; }
-    .c-unknown { background: #9ca3af; color: #fff; }
-
-    footer {
-      padding: 1rem 1rem 2rem; font-size: 0.72rem; color: var(--muted);
+    #fav-row:empty { display: none; }
+    .fav-chip {
+      display: flex; align-items: center; gap: .4rem;
+      padding: .45rem 1rem;
+      font-size: .82rem; cursor: pointer;
+      transition: background .12s; border-bottom: 1px solid var(--border);
+      color: var(--text);
     }
-    .updated { color: var(--muted); font-size: 0.75rem; margin-top: 0.5rem; }
+    .fav-chip:last-child { border-bottom: none; }
+    .fav-chip:hover { background: rgba(255,255,255,.06); }
+    .fav-chip .fav-remove {
+      font-size: .7rem; color: var(--muted); line-height: 1;
+      margin-left: auto; cursor: pointer; padding: 0 .1rem;
+    }
+    .fav-chip .fav-remove:hover { color: #ef4444; }
+    #btn-fav {
+      margin: .5rem 1rem .75rem;
+      padding: .4rem .7rem; border-radius: 8px; cursor: pointer;
+      border: 1px solid var(--border); background: transparent;
+      font-size: .8rem; color: var(--muted); font-family: inherit;
+      text-align: left; transition: background .12s;
+    }
+    #btn-fav:hover { background: rgba(255,255,255,.06); }
+    #btn-fav.saved { color: #f59e0b; border-color: #f59e0b; }
 
-    /* WU vlastní stanice — panel nahoře */
-    .wu-panel { padding:.5rem .75rem; display:flex; flex-direction:column; gap:.5rem; }
+    /* wu-own-panel inside left card */
+    #wu-own-panel { display: none; }
+    .wu-panel { padding:.6rem .85rem .4rem; display:flex; flex-direction:column; gap:.5rem; border-bottom:1px solid var(--border); }
     .wu-station-card {
-      background:var(--panel); border:1px solid var(--border); border-radius:12px;
-      padding:.75rem 1rem; display:flex; flex-direction:column; gap:.5rem;
+      background: rgba(255,255,255,.04); border:1px solid var(--border); border-radius:12px;
+      padding:.65rem .85rem; display:flex; flex-direction:column; gap:.5rem;
       overflow:hidden; max-width:100%;
     }
     .wu-station-header { display:flex; align-items:center; gap:.5rem; flex-wrap:wrap; }
-    .wu-station-name { font-size:.75rem; font-weight:700; color:#f59e0b; text-transform:uppercase; letter-spacing:.04em; }
-    .wu-station-age  { font-size:.68rem; color:var(--muted); margin-left:auto; }
-    .wu-station-body { display:flex; gap:.75rem; flex-wrap:wrap; align-items:flex-start; width:100%; }
-    /* Hero teplota */
-    .wu-hero { display:flex; flex-direction:column; min-width:80px; }
-    .wu-hero-temp { font-size:2.2rem; font-weight:700; line-height:1; }
-    .wu-hero-feels { font-size:.78rem; color:var(--muted); }
-    /* Kompas */
-    .wu-compass-wrap { display:flex; flex-direction:column; align-items:center; gap:.25rem; }
+    .wu-station-name { font-size:.72rem; font-weight:700; color:#f59e0b; text-transform:uppercase; letter-spacing:.04em; }
+    .wu-station-age  { font-size:.65rem; color:var(--muted); margin-left:auto; }
+    .wu-station-body { display:flex; gap:.65rem; flex-wrap:wrap; align-items:flex-start; width:100%; }
+    .wu-hero { display:flex; flex-direction:column; min-width:72px; }
+    .wu-hero-temp { font-size:2rem; font-weight:800; line-height:1; color: var(--text); }
+    .wu-hero-feels { font-size:.72rem; color:var(--muted); }
+    .wu-compass-wrap { display:flex; flex-direction:column; align-items:center; gap:.2rem; }
     .wu-compass {
-      width:72px; height:72px; border-radius:50%; border:2px solid var(--border);
-      background:var(--bg); position:relative; flex-shrink:0;
+      width:64px; height:64px; border-radius:50%; border:2px solid var(--border);
+      background: rgba(255,255,255,.04); position:relative; flex-shrink:0;
     }
-    .wu-compass-label { position:absolute; font-size:.55rem; color:var(--muted); font-weight:700; }
+    .wu-compass-label { position:absolute; font-size:.52rem; color:var(--muted); font-weight:700; }
     .wu-compass-label.n { top:3px; left:50%; transform:translateX(-50%); }
     .wu-compass-label.s { bottom:3px; left:50%; transform:translateX(-50%); }
     .wu-compass-label.e { right:4px; top:50%; transform:translateY(-50%); }
     .wu-compass-label.w { left:4px; top:50%; transform:translateY(-50%); }
-    .wu-compass-arrow {
-      position:absolute; top:50%; left:50%;
-      width:0; height:0;
-    }
-    .wu-compass-arrow svg {
-      position:absolute; transform:translate(-50%,-50%);
-      overflow:visible;
-    }
-    .wu-wind-val { font-size:.8rem; font-weight:600; text-align:center; }
-    .wu-beaufort { font-size:.68rem; color:var(--muted); text-align:center; }
-    /* Sensor grid */
-    .wu-sensors { display:grid; grid-template-columns:repeat(auto-fill,minmax(80px,1fr)); gap:.4rem; flex:1; min-width:0; width:100%; }
+    .wu-compass-arrow { position:absolute; top:50%; left:50%; width:0; height:0; }
+    .wu-compass-arrow svg { position:absolute; transform:translate(-50%,-50%); overflow:visible; }
+    .wu-wind-val { font-size:.75rem; font-weight:600; text-align:center; color: var(--text); }
+    .wu-beaufort { font-size:.62rem; color:var(--muted); text-align:center; }
+    .wu-sensors { display:grid; grid-template-columns:repeat(auto-fill,minmax(72px,1fr)); gap:.35rem; flex:1; min-width:0; width:100%; }
     .wu-sensor-card {
-      background:var(--bg); border-radius:8px; padding:.4rem .5rem;
-      display:flex; flex-direction:column; gap:.1rem; min-width:80px;
+      background: rgba(255,255,255,.05); border-radius:8px; padding:.35rem .45rem;
+      display:flex; flex-direction:column; gap:.08rem;
     }
-    .wu-sensor-label { font-size:.62rem; color:var(--muted); text-transform:uppercase; letter-spacing:.03em; }
-    .wu-sensor-val   { font-size:1.1rem; font-weight:700; line-height:1.2; }
-    .wu-sensor-unit  { font-size:.65rem; color:var(--muted); }
-    /* fc-now — aktuální podmínky z OM pro vybrané místo */
-    #fc-now { margin-top:.5rem; padding-top:.5rem; border-top:1px solid var(--border); }
-    /* legacy small card (nearby stanice) */
-    .wu-card {
-      flex:1; min-width:140px; background:var(--panel); border-radius:10px;
-      padding:.55rem .75rem; display:flex; flex-direction:column; gap:.15rem;
-      border-left:3px solid #f59e0b;
+    .wu-sensor-label { font-size:.6rem; color:var(--muted); text-transform:uppercase; letter-spacing:.03em; }
+    .wu-sensor-val   { font-size:1rem; font-weight:700; line-height:1.2; color: var(--text); }
+    .wu-sensor-unit  { font-size:.62rem; color:var(--muted); }
+    #fc-now { padding:.5rem .85rem .65rem; border-top:1px solid var(--border); }
+
+    /* legacy wu-card */
+    .wu-card { flex:1; min-width:130px; background:rgba(255,255,255,.05); border-radius:10px; padding:.5rem .7rem; display:flex; flex-direction:column; gap:.12rem; border-left:3px solid #f59e0b; }
+    .wu-card-name { font-size:.68rem; font-weight:700; color:#f59e0b; text-transform:uppercase; letter-spacing:.03em; }
+    .wu-card-temp { font-size:1.4rem; font-weight:700; line-height:1; color: var(--text); }
+    .wu-card-row  { font-size:.72rem; color:var(--muted); }
+    .wu-card-age  { font-size:.65rem; color:var(--muted); margin-top:.08rem; }
+
+    /* ── Right floating panel ─────────────────────────────────────────── */
+    #right-panel {
+      position: fixed; right: 1rem; top: 64px; bottom: 100px;
+      width: 300px; z-index: 50;
+      display: flex; flex-direction: column; gap: .5rem;
+      overflow-y: auto; overflow-x: hidden;
+      scrollbar-width: none;
     }
-    .wu-card-name { font-size:.7rem; font-weight:700; color:#f59e0b; text-transform:uppercase; letter-spacing:.03em; }
-    .wu-card-temp { font-size:1.5rem; font-weight:700; line-height:1; }
-    .wu-card-row  { font-size:.75rem; color:var(--muted); }
-    .wu-card-age  { font-size:.68rem; color:var(--muted); margin-top:.1rem; }
+    #right-panel::-webkit-scrollbar { display: none; }
 
-    /* WU stanice markery */
-    .wu-marker-own   { background:#f59e0b; border:2px solid #fff; border-radius:50%; width:14px; height:14px; box-shadow:0 0 0 2px #f59e0b; }
-    .wu-marker-other { background:#6366f1; border:2px solid #fff; border-radius:50%; width:10px; height:10px; }
-    .chmi-marker     { background:#10b981; border:2px solid #fff; border-radius:3px; width:10px; height:10px; }
-
-    /* Teplotní štítek marker */
-    .temp-label-marker {
-      font-size: .72rem; font-weight: 700; color: #fff;
-      padding: 1px 5px; border-radius: 3px; white-space: nowrap;
-      border: 1.5px solid rgba(255,255,255,.6);
-      box-shadow: 0 1px 4px rgba(0,0,0,.35);
-      cursor: pointer; text-align: center; line-height: 1.4;
+    .fc24 {
+      background: var(--panel);
+      backdrop-filter: blur(16px) saturate(1.4);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: .85rem 1rem .75rem;
+      display: none;
+      box-shadow: 0 8px 32px rgba(0,0,0,.35);
     }
+    .fc24-title {
+      font-size: .68rem; font-weight: 700; color: var(--muted);
+      text-transform: uppercase; letter-spacing: .05em;
+      margin-bottom: .6rem;
+    }
+    .fc24-scroll {
+      display: flex; gap: 0; overflow-x: auto; scrollbar-width: thin;
+      padding-bottom: 2px;
+    }
+    .fc24-scroll::-webkit-scrollbar { height: 3px; }
+    .fc24-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+    .fc24-col {
+      flex: 0 0 auto; min-width: 56px; max-width: 68px;
+      text-align: center; padding: .3rem .18rem;
+      border-right: 1px solid var(--border);
+    }
+    .fc24-col:last-child { border-right: none; }
+    .fc24-col.fc24-block { min-width: 78px; max-width: 94px; }
+    .fc24-time    { font-size: .68rem; color: var(--muted); margin-bottom: .15rem; }
+    .fc24-icon    { font-size: 1.6rem; line-height: 1.2; }
+    .wc-emoji     { font-style: normal; line-height: 1; }
+    .fc24-temp    { font-size: .8rem; font-weight: 600; margin-top: .12rem; color: var(--text); }
+    .fc24-feels   { font-size: .65rem; color: var(--muted); }
+    .fc24-uv      { font-size: .65rem; font-weight: 600; }
+    .uv-low    { color: #22c55e; }
+    .uv-mod    { color: #f59e0b; }
+    .uv-high   { color: #ef4444; }
+    .uv-vhigh  { color: #7c3aed; }
+    .fc24-range { font-size: .72rem; color: var(--muted); }
+    .fc24-sub   { font-size: .65rem; color: var(--muted); margin-top: .08rem; white-space: nowrap; }
+    .fc24-prec  { color: #4f8ef7; }
+    .fc24-wind  { color: #64748b; }
+    .fc24-sep   { flex: 0 0 1px; align-self: stretch; background: var(--border); margin: 0 2px; display: flex; align-items: center; justify-content: center; }
+    .fc24-sep-label { writing-mode: vertical-rl; font-size: .58rem; color: var(--border); white-space: nowrap; }
 
-    /* ── Vrstvový selektor ──────────────────────────────────────────────── */
+    .fc7 {
+      background: var(--panel);
+      backdrop-filter: blur(16px) saturate(1.4);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: .85rem 1rem .75rem;
+      box-shadow: 0 8px 32px rgba(0,0,0,.35);
+    }
+    .fc7-title {
+      font-size: .68rem; font-weight: 700; color: var(--muted);
+      text-transform: uppercase; letter-spacing: .05em;
+      margin-bottom: .6rem;
+    }
+    .fc7-grid {
+      display: flex; gap: .45rem; overflow-x: auto;
+      scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch;
+      scrollbar-width: thin; padding-bottom: .2rem;
+    }
+    .fc7-grid::-webkit-scrollbar { height: 3px; }
+    .fc7-grid::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+    .fc7-day {
+      background: rgba(255,255,255,.05); border-radius: 8px;
+      padding: .5rem .55rem; display: flex; flex-direction: column; gap: .12rem;
+      min-width: 100px; flex-shrink: 0; scroll-snap-align: start;
+    }
+    .fc7-day-name { font-size: .73rem; font-weight: 700; color: var(--text); }
+    .fc7-day-date { font-size: .65rem; color: var(--muted); }
+    .fc7-day-icon { font-size: 1.5rem; line-height: 1.3; margin: .12rem 0; }
+    .fc7-day-temp { font-size: .78rem; font-weight: 600; color: var(--text); }
+    .fc7-day-temp .tmin { color: var(--muted); }
+    .fc7-day-sub  { font-size: .65rem; color: var(--muted); display: flex; flex-wrap: wrap; gap: .28rem; }
+    .fc7-day-sub .prec { color: #4f8ef7; }
+    .fc7-day-sun  { font-size: .62rem; color: #f59e0b; }
+    .fc7-today    { border: 1px solid rgba(79,142,247,.4); background: rgba(79,142,247,.08); }
+
+    /* ── Layer selector ───────────────────────────────────────────────── */
     #layer-selector {
-      display: flex; align-items: center; gap: .4rem;
-      padding: .5rem .75rem; background: var(--panel);
-      border: 1px solid var(--border); border-radius: 8px;
-      margin: .5rem 1rem .4rem; flex-wrap: wrap;
-      font-size: .78rem;
+      position: fixed; bottom: 88px; left: 284px;
+      z-index: 60;
+      display: flex; align-items: center; gap: .3rem;
+      flex-wrap: wrap;
     }
-    #layer-selector span { color: var(--muted); font-size: .7rem; font-weight: 700; text-transform: uppercase; }
+    #layer-selector span { display: none; } /* hide "Zobrazit:" label */
     .layer-btn {
-      padding: .25rem .65rem; border-radius: 5px; border: 1px solid var(--border);
-      background: transparent; color: var(--text); cursor: pointer; font-size: .75rem;
-      transition: background .15s, color .15s;
+      padding: .28rem .65rem; border-radius: 999px;
+      border: 1px solid var(--border);
+      background: var(--panel); backdrop-filter: blur(10px);
+      color: var(--muted); cursor: pointer; font-size: .72rem; font-weight: 500;
+      font-family: inherit; transition: all .15s; white-space: nowrap;
     }
-    .layer-btn.active { background: #10b981; color: #fff; border-color: #10b981; }
+    .layer-btn:hover { color: var(--text); border-color: rgba(255,255,255,.2); }
+    .layer-btn.active {
+      background: rgba(79,142,247,.2);
+      border-color: rgba(79,142,247,.5);
+      color: var(--accent);
+    }
 
-    /* ── ČHMÚ detail panel ──────────────────────────────────────────────── */
+    /* ── Radar bar (bottom floating) ─────────────────────────────────── */
+    #radar-bar {
+      position: fixed; bottom: 0; left: 0; right: 0;
+      z-index: 100; height: auto;
+      background: linear-gradient(to top, rgba(8,12,24,.94) 60%, transparent 100%);
+      padding: 1.2rem 1.25rem .75rem;
+      display: none;
+    }
+    .radar-row { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; margin-bottom: .45rem; }
+    .radar-row:last-child { margin-bottom: 0; }
+    .radar-row label { font-size: .75rem; color: var(--muted); white-space: nowrap; }
+
+    .timeline-wrap { position: relative; flex: 1; }
+    #timeline {
+      width: 100%; height: 5px; cursor: pointer;
+      -webkit-appearance: none; appearance: none;
+      background: rgba(255,255,255,.15); border-radius: 3px; outline: none;
+    }
+    #timeline::-webkit-slider-thumb {
+      -webkit-appearance: none; width: 16px; height: 16px;
+      border-radius: 50%; background: var(--accent); cursor: pointer;
+      box-shadow: 0 0 0 3px rgba(79,142,247,.3);
+    }
+    #t0-marker {
+      position: absolute; bottom: -16px;
+      transform: translateX(-50%);
+      font-size: .65rem; color: var(--t0-color); font-weight: 700;
+      pointer-events: none; white-space: nowrap;
+    }
+    #t0-tick {
+      position: absolute; top: 50%; transform: translateX(-50%) translateY(-50%);
+      width: 3px; height: 10px; background: var(--t0-color);
+      border-radius: 2px; pointer-events: none;
+    }
+    #frame-time { font-size: .85rem; font-weight: 700; min-width: 60px; text-align: right; color: var(--text); }
+    .nowcast-label { color: var(--accent); }
+    .t0-label { color: var(--t0-color); }
+
+    button.ctrl {
+      padding: .3rem .6rem; border-radius: 7px; cursor: pointer;
+      border: 1px solid var(--border);
+      background: var(--panel); backdrop-filter: blur(8px);
+      color: var(--text); font-size: .88rem; line-height: 1;
+      font-family: inherit; transition: background .12s;
+    }
+    button.ctrl:hover { background: rgba(255,255,255,.12); }
+    button.ctrl.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .speed-group { display: flex; gap: 2px; }
+    .speed-group button.ctrl { padding: .28rem .42rem; font-size: .76rem; }
+
+    #opacity-slider {
+      width: 72px; -webkit-appearance: none; appearance: none;
+      height: 4px; background: rgba(255,255,255,.2); border-radius: 2px; outline: none;
+    }
+    #opacity-slider::-webkit-slider-thumb {
+      -webkit-appearance: none; width: 13px; height: 13px;
+      border-radius: 50%; background: var(--muted); cursor: pointer;
+    }
+
+    .rain-spark-wrap { position: relative; width: 100%; height: 44px; margin-top: 4px; }
+    #rain-spark { width: 100%; height: 44px; display: block; }
+
+    /* ── Notif bar ────────────────────────────────────────────────────── */
+    #notif-bar {
+      position: fixed; top: 52px; left: 50%; transform: translateX(-50%);
+      z-index: 200; border-radius: 0 0 10px 10px;
+      display: none; align-items: center; gap: .6rem;
+      padding: .45rem 1rem; background: #854d0e;
+      color: #fef9c3; font-size: .82rem;
+      box-shadow: 0 4px 16px rgba(0,0,0,.4);
+      white-space: nowrap;
+    }
+    #notif-bar.show { display: flex; }
+    #notif-bar .notif-close {
+      cursor: pointer; color: rgba(254,249,195,.7); font-size: 1rem; margin-left: .5rem;
+    }
+
+    /* ── Storm bar ────────────────────────────────────────────────────── */
+    #storm-bar {
+      position: fixed; bottom: 88px; right: 1rem;
+      z-index: 80;
+      display: none; align-items: center; gap: .5rem;
+      padding: .4rem .85rem;
+      background: var(--panel); backdrop-filter: blur(12px);
+      border: 1px solid var(--border); border-radius: 10px;
+      font-size: .8rem; color: var(--text);
+      box-shadow: 0 4px 16px rgba(0,0,0,.3);
+    }
+    #storm-bar.show { display: flex; }
+    #storm-dist { font-weight: 600; }
+    #storm-dist.near   { color: #ef4444; }
+    #storm-dist.medium { color: #f59e0b; }
+    #storm-dist.far    { color: #6b7280; }
+    .lightning-btn { margin-left: .5rem; }
+
+    /* ── ČHMÚ detail panel ────────────────────────────────────────────── */
     #chmi-detail {
       display: none; position: fixed; top: 0; right: 0; bottom: 0;
-      width: min(420px, 100vw); background: var(--panel);
+      width: min(420px, 100vw);
+      background: var(--panel); backdrop-filter: blur(20px);
       border-left: 1px solid var(--border); z-index: 2000;
       flex-direction: column; overflow: hidden;
-      box-shadow: -4px 0 20px rgba(0,0,0,.15);
+      box-shadow: -4px 0 32px rgba(0,0,0,.5);
     }
     #chmi-detail.open { display: flex; }
     #chmi-detail-header {
       display: flex; align-items: center; gap: .5rem;
       padding: .75rem 1rem; border-bottom: 1px solid var(--border);
-      background: var(--panel); flex-shrink: 0;
+      flex-shrink: 0;
     }
-    #chmi-detail-header h3 { margin: 0; font-size: .95rem; flex: 1; }
+    #chmi-detail-header h3 { margin: 0; font-size: .95rem; flex: 1; color: var(--text); }
     #chmi-detail-header .chmi-badge { color: #10b981; font-size: .72rem; font-weight: 700; }
     #chmi-detail-close {
       cursor: pointer; font-size: 1.2rem; color: var(--muted);
-      background: none; border: none; padding: .2rem .4rem;
+      background: none; border: none; padding: .2rem .4rem; font-family: inherit;
     }
     #chmi-detail-body {
       flex: 1; overflow: hidden; padding: .5rem 1rem;
@@ -263,226 +466,151 @@
       flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 1rem;
     }
     .chmi-chart-block h4 {
-      margin: 0 0 .3rem; font-size: .8rem; color: var(--muted);
+      margin: 0 0 .3rem; font-size: .78rem; color: var(--muted);
       text-transform: uppercase; letter-spacing: .04em;
     }
     .chmi-chart-block canvas { width: 100% !important; height: 140px !important; }
-    .wu-popup { font-size:0.82rem; min-width:160px; }
-    .wu-popup strong { font-size:0.9rem; }
-    .wu-popup .wu-own-badge { color:#f59e0b; font-weight:700; font-size:0.7rem; }
 
-    /* ── 24h forecast timeline ───────────────────────────────────────────── */
-    .fc24 {
-      margin: 0 1rem 0.75rem; padding: 0.85rem 1rem 0.75rem;
-      background: var(--panel); border: 1px solid var(--border);
-      border-radius: 10px; display: none;
-    }
-    .fc24-title {
-      font-size: 0.72rem; font-weight: 600; color: var(--muted);
-      text-transform: uppercase; letter-spacing: .04em;
-      margin-bottom: 0.6rem;
-    }
-    .fc24-scroll {
-      display: flex; gap: 0; overflow-x: auto; scrollbar-width: thin;
-      padding-bottom: 2px;
-    }
-    .fc24-scroll::-webkit-scrollbar { height: 4px; }
-    .fc24-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
-
-    .fc24-col {
-      flex: 0 0 auto; min-width: 58px; max-width: 70px;
-      text-align: center; padding: 0.3rem 0.2rem;
-      border-right: 1px solid var(--border);
-    }
-    .fc24-col:last-child { border-right: none; }
-    .fc24-col.fc24-block { min-width: 80px; max-width: 96px; }
-
-    .fc24-time    { font-size: 0.7rem; color: var(--muted); margin-bottom: 0.18rem; }
-    .fc24-icon    { font-size: 1.7rem; line-height: 1.25; }
-    .wc-emoji     { font-style: normal; line-height: 1; }
-    .fc24-temp    { font-size: 0.82rem; font-weight: 600; margin-top: 0.15rem; }
-    .fc24-feels   { font-size: 0.68rem; color: var(--muted); }
-    .fc24-uv      { font-size: 0.68rem; font-weight: 600; }
-    .uv-low    { color: #22c55e; }
-    .uv-mod    { color: #f59e0b; }
-    .uv-high   { color: #ef4444; }
-    .uv-vhigh  { color: #7c3aed; }
-
-    /* Srážkový sparkline pod radar timelinemem */
-    .rain-spark-wrap {
-      position: relative; width: 100%; height: 44px; margin-top: 4px;
-    }
-    #rain-spark {
-      width: 100%; height: 44px; display: block;
-    }
-    .fc24-range { font-size: 0.76rem; color: var(--muted); }
-    .fc24-sub   {
-      font-size: 0.68rem; color: var(--muted); margin-top: 0.1rem;
-      white-space: nowrap;
-    }
-    .fc24-prec  { color: #2563eb; }
-    .fc24-wind  { color: #64748b; }
-
-    .fc24-sep {
-      flex: 0 0 1px; align-self: stretch;
-      background: var(--border); margin: 0 2px;
-      display: flex; align-items: center; justify-content: center;
-    }
-    .fc24-sep-label {
-      writing-mode: vertical-rl; font-size: 0.6rem; color: var(--border);
-      white-space: nowrap;
+    /* ── Map marker styles (unchanged) ───────────────────────────────── */
+    .wu-popup { font-size:.82rem; min-width:160px; }
+    .wu-popup strong { font-size:.9rem; }
+    .wu-popup .wu-own-badge { color:#f59e0b; font-weight:700; font-size:.7rem; }
+    .wu-marker-own   { background:#f59e0b; border:2px solid #fff; border-radius:50%; width:14px; height:14px; box-shadow:0 0 0 2px #f59e0b; }
+    .wu-marker-other { background:#6366f1; border:2px solid #fff; border-radius:50%; width:10px; height:10px; }
+    .chmi-marker     { background:#10b981; border:2px solid #fff; border-radius:3px; width:10px; height:10px; }
+    .temp-label-marker {
+      font-size:.72rem; font-weight:700; color:#fff;
+      padding:1px 5px; border-radius:3px; white-space:nowrap;
+      border:1.5px solid rgba(255,255,255,.6);
+      box-shadow:0 1px 4px rgba(0,0,0,.35);
+      cursor:pointer; text-align:center; line-height:1.4;
     }
 
-    /* ── 7denní výhled ──────────────────────────────────────────────────── */
-    .fc7 {
-      margin: 0 1rem 0.75rem; padding: 0.85rem 1rem 0.75rem;
-      background: var(--panel); border: 1px solid var(--border);
-      border-radius: 10px;
+    /* ── Warn chips ───────────────────────────────────────────────────── */
+    .warn-chip {
+      display: inline-block; padding: .15rem .6rem; border-radius: 999px;
+      font-size: .76rem; font-weight: 600; margin: 0 .25rem .35rem 0;
     }
-    .fc7-title {
-      font-size: 0.72rem; font-weight: 600; color: var(--muted);
-      text-transform: uppercase; letter-spacing: .04em;
-      margin-bottom: 0.6rem;
-    }
-    .fc7-grid {
-      display: flex;
-      gap: 0.5rem;
-      overflow-x: auto;
-      scroll-snap-type: x mandatory;
-      -webkit-overflow-scrolling: touch;
-      scrollbar-width: thin;
-      padding-bottom: 0.25rem;
-    }
-    .fc7-grid::-webkit-scrollbar { height: 4px; }
-    .fc7-grid::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
-    .fc7-day {
-      background: var(--bg); border-radius: 8px;
-      padding: 0.55rem 0.6rem; display: flex; flex-direction: column; gap: 0.15rem;
-      min-width: 110px; flex-shrink: 0; scroll-snap-align: start;
-    }
-    .fc7-day-name { font-size: 0.75rem; font-weight: 700; }
-    .fc7-day-date { font-size: 0.68rem; color: var(--muted); }
-    .fc7-day-icon { font-size: 1.6rem; line-height: 1.3; margin: 0.15rem 0; }
-    .fc7-day-temp { font-size: 0.82rem; font-weight: 600; }
-    .fc7-day-temp .tmin { color: var(--muted); }
-    .fc7-day-sub  { font-size: 0.68rem; color: var(--muted); display: flex; flex-wrap: wrap; gap: 0.3rem; }
-    .fc7-day-sub .prec { color: #2563eb; }
-    .fc7-day-sun  { font-size: 0.65rem; color: #f59e0b; }
-    .fc7-today    { border: 1px solid var(--accent); background: #eff6ff; }
+    .c-yellow  { background: #fbbf24; color: #1a1d23; }
+    .c-orange  { background: #f97316; color: #fff; }
+    .c-red     { background: #ef4444; color: #fff; }
+    .c-unknown { background: #9ca3af; color: #fff; }
 
-    /* ── Notifikační pruh ───────────────────────────────────────────────── */
-    #notif-bar {
-      display: none; align-items: center; gap: 0.6rem;
-      padding: 0.5rem 1rem; background: #fefce8;
-      border-bottom: 1px solid #fde68a; font-size: 0.82rem;
-    }
-    #notif-bar.show { display: flex; }
-    #notif-bar .notif-close {
-      margin-left: auto; cursor: pointer; color: var(--muted); font-size: 1rem;
-    }
-    /* Bouřkový potenciál badge */
+    /* ── CAPE badge ───────────────────────────────────────────────────── */
     .cape-badge {
-      display: inline-block; padding: 0.1rem 0.45rem; border-radius: 999px;
-      font-size: 0.68rem; font-weight: 700; margin-left: 0.25rem;
+      display: inline-block; padding: .1rem .45rem; border-radius: 999px;
+      font-size: .66rem; font-weight: 700; margin-left: .2rem;
     }
-    .cape-low    { background: #fef9c3; color: #854d0e; }
-    .cape-mod    { background: #fed7aa; color: #9a3412; }
-    .cape-high   { background: #fecaca; color: #7f1d1d; }
+    .cape-low  { background: #fef9c3; color: #854d0e; }
+    .cape-mod  { background: #fed7aa; color: #9a3412; }
+    .cape-high { background: #fecaca; color: #7f1d1d; }
 
-    /* Bouřkoměr */
-    #storm-bar {
-      display: none; align-items: center; gap: 0.6rem;
-      padding: 0.45rem 1rem; background: var(--panel);
-      border-bottom: 1px solid var(--border); font-size: 0.82rem;
-    }
-    #storm-bar.show { display: flex; }
-    #storm-dist { font-weight: 600; }
-    #storm-dist.near   { color: #ef4444; }
-    #storm-dist.medium { color: #f59e0b; }
-    #storm-dist.far    { color: #6b7280; }
-    .lightning-btn { margin-left: auto; }
-
-    /* ── Refresh bar ─────────────────────────────────────────────────────── */
-    .refresh-bar {
-      display: flex; align-items: center; gap: 0.75rem;
-      padding: 0.45rem 1rem; background: var(--panel);
-      border-bottom: 1px solid var(--border); font-size: 0.8rem;
-    }
-    #btn-refresh {
-      padding: 0.3rem 0.75rem; border-radius: 6px; cursor: pointer;
-      border: 1px solid var(--border); background: var(--bg);
-      color: var(--fg); font-size: 0.8rem; white-space: nowrap;
-    }
-    #btn-refresh:hover { background: #e8eaf0; }
-    #btn-refresh.spinning { opacity: .6; pointer-events: none; }
-    #refresh-time { color: var(--muted); }
-    #data-age-warn {
-      margin-left: auto; font-size: 0.75rem; color: #b45309;
-      display: none;
+    /* ── Footer ───────────────────────────────────────────────────────── */
+    footer {
+      display: none; /* hidden on desktop — shown on mobile */
     }
 
-    /* ── Oblíbená místa ──────────────────────────────────────────────── */
-    .fav-row {
-      display: flex; flex-wrap: wrap; gap: 0.4rem;
-      padding: 0.5rem 1rem 0.6rem; background: var(--panel);
-      border-bottom: 1px solid var(--border);
+    /* ── Mobile fallback ──────────────────────────────────────────────── */
+    @media (max-width: 768px) {
+      html, body { overflow: auto; height: auto; }
+      #map { position: relative; inset: auto; height: 360px; width: 100%; filter: none; }
+      #topbar {
+        position: relative; top: auto; height: auto;
+        background: var(--panel); padding: .6rem .75rem;
+        flex-wrap: wrap; gap: .5rem;
+        border-bottom: 1px solid var(--border);
+      }
+      #left-card {
+        position: relative; left: auto; top: auto; bottom: auto;
+        width: 100%; border-radius: 0; height: auto;
+        overflow-y: visible; overflow-x: visible;
+      }
+      #right-panel {
+        position: relative; right: auto; top: auto; bottom: auto;
+        width: 100%; overflow: visible; height: auto;
+        padding: 0 .75rem .75rem;
+      }
+      #layer-selector {
+        position: relative; bottom: auto; left: auto;
+        padding: .4rem .75rem; flex-wrap: wrap;
+      }
+      #radar-bar {
+        position: relative; bottom: auto;
+        background: var(--panel);
+        border-top: 1px solid var(--border);
+        padding: .75rem 1rem;
+      }
+      #storm-bar {
+        position: relative; bottom: auto; right: auto;
+        border-radius: 0; box-shadow: none;
+      }
+      #notif-bar {
+        position: relative; top: auto; left: auto; transform: none;
+        border-radius: 0;
+      }
+      footer { display: block; padding: 1rem 1rem 2.5rem; font-size: .72rem; color: var(--muted); }
     }
-    .fav-row:empty { display: none; }
-    .fav-chip {
-      display: inline-flex; align-items: center; gap: 0.3rem;
-      padding: 0.3rem 0.6rem; border-radius: 999px;
-      border: 1px solid var(--border); background: var(--bg);
-      font-size: 0.82rem; cursor: pointer; transition: background .15s;
-    }
-    .fav-chip:hover { background: #e8eaf0; }
-    .fav-chip .fav-remove {
-      font-size: 0.7rem; color: var(--muted); line-height: 1;
-      padding: 0 0.1rem; cursor: pointer;
-    }
-    .fav-chip .fav-remove:hover { color: #ef4444; }
-    #btn-fav {
-      padding: 0.3rem 0.6rem; border-radius: 6px; cursor: pointer;
-      border: 1px solid var(--border); background: var(--bg);
-      font-size: 0.82rem; color: var(--muted); white-space: nowrap;
-    }
-    #btn-fav:hover { background: #e8eaf0; }
-    #btn-fav.saved { color: #f59e0b; border-color: #f59e0b; }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 </head>
 <body>
 
-<header>
-  <h1>🌧️ Meteo Nowcast CZ</h1>
-  <span class="subtitle">Krátkodobá předpověď · Radarová smyčka</span>
-  <button id="btn-theme" title="Přepnout světlý/tmavý motiv" style="margin-left:auto;background:none;border:none;cursor:pointer;font-size:1.2rem;padding:0 .25rem;color:var(--fg)">🌙</button>
-</header>
+<!-- Fullscreen mapa — PRVNÍ, ostatní jsou přes ní -->
+<div id="map"></div>
 
-<!-- Refresh bar -->
-<div class="refresh-bar">
-  <button id="btn-refresh">↺ Aktualizovat</button>
-  <span id="refresh-time"></span>
-  <span id="data-age-warn">⚠ Data starší než obvykle</span>
-</div>
-
-<!-- Location search -->
-<div class="loc-panel">
-  <div class="loc-row">
-    <div class="suggest">
-      <input id="search" type="text" placeholder="Hledat obec (např. Ostrava)…" autocomplete="off" />
-      <ul id="suggestions"></ul>
-    </div>
-    <button class="loc-btn" id="geo">📍 Moje poloha</button>
+<!-- Topbar (floating, position:fixed, top:0) -->
+<div id="topbar">
+  <div class="logo">
+    <div class="logo-icon">⚡</div>
+    nowcast.cz
+  </div>
+  <div class="search-wrap suggest">
+    <input id="search" type="text" placeholder="Hledat obec…" autocomplete="off" />
+    <ul id="suggestions"></ul>
+  </div>
+  <div class="topbar-right">
+    <button class="glass-btn icon-only" id="geo" title="Moje poloha">📍</button>
+    <button class="glass-btn icon-only" id="btn-theme" title="Přepnout motiv">🌙</button>
+    <button class="glass-btn" id="btn-refresh" title="Aktualizovat">↺</button>
+    <span id="refresh-time"></span>
+    <span id="data-age-warn">⚠ Stará data</span>
   </div>
 </div>
 
-<!-- WU vlastní stanice panel -->
-<div class="wu-panel" id="wu-own-panel" style="display:none"></div>
+<!-- Levá floating karta -->
+<div id="left-card">
+  <!-- WU vlastní stanice panel -->
+  <div id="wu-own-panel"></div>
 
-<!-- Oblíbená místa -->
-<div class="fav-row" id="fav-row"></div>
+  <!-- Forecast panel -->
+  <div id="forecast-panel">
+    <div class="place" id="place">Zvolte místo na mapě</div>
+    <div class="dist" id="dist"></div>
+    <div class="verdict-text" id="verdict">
+      <span class="hint">Vyhledejte obec, klikněte do mapy nebo použijte polohu.</span>
+    </div>
+    <div class="updated" id="updated"></div>
+    <div id="fc-now" style="display:none"></div>
+  </div>
 
-<!-- ČHMÚ detail panel -->
+  <!-- Oblíbená místa -->
+  <div id="fav-row"></div>
+  <button id="btn-fav" style="display:none">☆ Uložit místo</button>
+</div>
+
+<!-- Pravý floating panel — 24h + 7denní výhled -->
+<div id="right-panel">
+  <div class="fc24" id="fc24">
+    <div class="fc24-title">24 hodin — <span id="fc24-place">—</span></div>
+    <div class="fc24-scroll" id="fc24-scroll"></div>
+  </div>
+  <div class="fc7" id="fc7" style="display:none">
+    <div class="fc7-title">7 dní — <span id="fc7-place">—</span></div>
+    <div class="fc7-grid" id="fc7-grid"></div>
+  </div>
+</div>
+
+<!-- ČHMÚ detail panel (fixed right side) -->
 <div id="chmi-detail">
   <div id="chmi-detail-header">
     <h3 id="chmi-detail-name">—</h3>
@@ -492,36 +620,17 @@
   <div id="chmi-detail-body"></div>
 </div>
 
-<!-- Notifikační pruh (srážkové upozornění) -->
+<!-- Notif bar (fixed top pod topbarem) -->
 <div id="notif-bar">
   <span id="notif-text"></span>
   <span class="notif-close" id="notif-close" title="Zavřít">✕</span>
 </div>
 
-<!-- Forecast -->
-<div class="forecast-card">
-  <div style="display:flex;align-items:baseline;gap:.5rem">
-    <div class="place" id="place">Zvolte místo</div>
-    <button id="btn-fav" style="display:none" title="Přidat do oblíbených">☆ Uložit</button>
-  </div>
-  <div class="dist"  id="dist"></div>
-  <div class="verdict-text" id="verdict">
-    <span class="hint">Vyhledejte obec, klikněte do mapy nebo použijte „Moje poloha".</span>
-  </div>
-  <div class="updated" id="updated"></div>
-  <div id="fc-now" style="display:none"></div>
-</div>
-
-<!-- 24h forecast timeline -->
-<div class="fc24" id="fc24">
-  <div class="fc24-title">Předpověď na 24 hodin — <span id="fc24-place">—</span></div>
-  <div class="fc24-scroll" id="fc24-scroll"></div>
-</div>
-
-<!-- 7denní výhled -->
-<div class="fc7" id="fc7" style="display:none">
-  <div class="fc7-title">7denní výhled — <span id="fc7-place">—</span></div>
-  <div class="fc7-grid" id="fc7-grid"></div>
+<!-- Storm bar -->
+<div id="storm-bar">
+  ⚡ Blesky: <span id="storm-dist">—</span>
+  <span id="storm-dir"></span>
+  <span style="color:var(--muted);font-size:.75rem" id="storm-age"></span>
 </div>
 
 <!-- Vrstvový selektor ČHMÚ markerů -->
@@ -532,28 +641,24 @@
   <button class="layer-btn" data-layer="wind_kmh">🌬️ Vítr</button>
   <button class="layer-btn" data-layer="precip_rate">🌧️ Srážky</button>
   <button class="layer-btn" data-layer="pressure">🔵 Tlak</button>
-  <button class="layer-btn" data-layer="solar">☀️ Sluneční záření</button>
+  <button class="layer-btn" data-layer="solar">☀️ Záření</button>
 </div>
 
-<div id="map"></div>
-
-<!-- Radar controls -->
-<div class="radar-bar" id="radar-bar" style="display:none">
-  <!-- Řádek 1: tlačítka ovládání -->
+<!-- Radar bar (fixed bottom) -->
+<div id="radar-bar" style="display:none">
   <div class="radar-row">
     <button class="ctrl" id="btn-prev" title="Předchozí snímek (←)">◀</button>
     <button class="ctrl" id="btn-play" title="Přehrát/Pozastavit (mezerník)">▶ Play</button>
     <button class="ctrl" id="btn-next" title="Další snímek (→)">▶</button>
     <div class="speed-group" title="Rychlost animace">
-      <button class="ctrl" id="speed-slow"  data-ms="900">🐢</button>
-      <button class="ctrl active" id="speed-norm"  data-ms="500">–</button>
-      <button class="ctrl" id="speed-fast"  data-ms="200">⚡</button>
+      <button class="ctrl" id="speed-slow" data-ms="900">🐢</button>
+      <button class="ctrl active" id="speed-norm" data-ms="500">–</button>
+      <button class="ctrl" id="speed-fast" data-ms="200">⚡</button>
     </div>
     <button class="ctrl" id="btn-global" title="Globální radar (RainViewer)">🌍 Svět</button>
     <button class="ctrl lightning-btn" id="btn-lightning" title="Zobrazit blesky (RainViewer)">⚡ Blesky</button>
     <div id="frame-time" style="margin-left:auto">—</div>
   </div>
-  <!-- Řádek 2: slider na celou šířku -->
   <div class="radar-row">
     <div class="timeline-wrap" style="flex:1">
       <input type="range" id="timeline" min="0" value="0" />
@@ -562,26 +667,18 @@
     </div>
   </div>
   <div class="radar-row">
-    <label>Průhlednost radaru:</label>
+    <label>Průhlednost:</label>
     <input type="range" id="opacity-slider" min="0" max="100" value="70" />
-    <span id="opacity-val" style="font-size:0.78rem;color:var(--muted);min-width:32px">70 %</span>
-    <span id="radar-t0" style="font-size:0.8rem;font-weight:600;color:var(--fg)"></span>
-    <span id="radar-updated" style="margin-left:auto;font-size:0.75rem;color:var(--muted)"></span>
+    <span id="opacity-val" style="font-size:.76rem;color:var(--muted);min-width:32px">70 %</span>
+    <span id="radar-t0" style="font-size:.8rem;font-weight:600;color:var(--text)"></span>
+    <span id="radar-updated" style="margin-left:auto;font-size:.72rem;color:var(--muted)"></span>
   </div>
   <div class="radar-row">
-    <span id="radar-source" style="font-size:0.72rem;color:var(--muted);font-style:italic"></span>
+    <span id="radar-source" style="font-size:.7rem;color:var(--muted);font-style:italic"></span>
   </div>
-  <!-- Srážkový sparkline — viditelný pouze pokud je vybrané místo -->
   <div class="rain-spark-wrap" id="rain-spark-wrap" style="display:none">
     <canvas id="rain-spark"></canvas>
   </div>
-</div>
-
-<!-- Bouřkoměr — vzdálenost bouřky od vybraného místa -->
-<div id="storm-bar">
-  ⚡ Blesky: <span id="storm-dist">—</span>
-  <span id="storm-dir"></span>
-  <span style="color:var(--muted);font-size:0.75rem" id="storm-age"></span>
 </div>
 
 <footer>Data: ČHMÚ (CC BY) · Open-Meteo (CC BY) · Radar: RainViewer · Stanice: Weather Underground · Předpověď generovaná v prohlížeči</footer>
@@ -2383,16 +2480,26 @@ window.addEventListener("DOMContentLoaded", async () => {
     );
   }
 
-  // Dark mode toggle
-  const savedTheme = localStorage.getItem("theme") || "light";
-  document.documentElement.setAttribute("data-theme", savedTheme);
+  // Dark mode toggle — dark je default (žádný atribut = dark, light mode = data-theme="light")
+  const savedTheme = localStorage.getItem("theme") || "dark";
+  if (savedTheme === "light") {
+    document.documentElement.setAttribute("data-theme", "light");
+  } else {
+    document.documentElement.removeAttribute("data-theme");
+  }
   const themeBtn = document.getElementById("btn-theme");
-  themeBtn.textContent = savedTheme === "dark" ? "☀️" : "🌙";
+  themeBtn.textContent = savedTheme === "light" ? "🌙" : "☀️";
   themeBtn.addEventListener("click", () => {
-    const next = document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark";
-    document.documentElement.setAttribute("data-theme", next);
+    const isDark = !document.documentElement.hasAttribute("data-theme") ||
+                   document.documentElement.getAttribute("data-theme") === "dark";
+    const next = isDark ? "light" : "dark";
+    if (next === "light") {
+      document.documentElement.setAttribute("data-theme", "light");
+    } else {
+      document.documentElement.removeAttribute("data-theme");
+    }
     localStorage.setItem("theme", next);
-    themeBtn.textContent = next === "dark" ? "☀️" : "🌙";
+    themeBtn.textContent = next === "light" ? "🌙" : "☀️";
   });
 
   // Refresh button
