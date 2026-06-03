@@ -145,15 +145,44 @@
 
     /* forecast panel inside left card */
     #forecast-panel {
-      padding: .85rem 1rem .6rem;
-      display: flex; flex-direction: column; gap: .15rem;
+      padding: 1rem 1rem .75rem;
+      display: flex; flex-direction: column; gap: .2rem;
       border-bottom: 1px solid var(--border);
     }
-    .place { font-size: 1rem; font-weight: 700; color: var(--text); }
-    .dist  { color: var(--muted); font-size: .75rem; margin-top: .1rem; }
-    .verdict-text { line-height: 1.6; font-size: .85rem; margin-top: .5rem; color: var(--text); }
-    .hint { color: var(--muted); }
-    .updated { color: var(--muted); font-size: .72rem; margin-top: .35rem; }
+    /* hero row: big temp + weather icon */
+    .fc-hero {
+      display: flex; align-items: flex-end; gap: .75rem; margin-bottom: .5rem;
+    }
+    .fc-temp-big {
+      font-size: 3.6rem; font-weight: 900; line-height: .9; letter-spacing: -.04em;
+      background: linear-gradient(135deg, #fde68a 0%, #fb923c 55%, #f87171 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    }
+    .fc-temp-big.cold {
+      background: linear-gradient(135deg, #bae6fd, #38bdf8, #818cf8);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    }
+    .fc-hero-right { display: flex; flex-direction: column; gap: .2rem; padding-bottom: .35rem; }
+    .fc-desc { font-size: .92rem; font-weight: 600; }
+    .fc-feels { font-size: .72rem; color: var(--muted); }
+    /* stats mini-grid */
+    .fc-stats {
+      display: grid; grid-template-columns: 1fr 1fr;
+      gap: 1px; background: var(--border);
+      border-radius: 10px; overflow: hidden;
+      margin-top: .4rem;
+    }
+    .fc-stat {
+      background: rgba(255,255,255,.04); padding: .5rem .7rem;
+      display: flex; flex-direction: column; gap: .08rem;
+    }
+    .fc-stat-label { font-size: .6rem; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+    .fc-stat-val   { font-size: .95rem; font-weight: 700; }
+    .place { font-size: .78rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; display: flex; align-items: center; gap: .3rem; }
+    .dist  { display: none; }
+    .verdict-text { font-size: .82rem; line-height: 1.55; color: var(--text); margin-top: .5rem; }
+    .hint { color: var(--muted); font-size: .82rem; }
+    .updated { color: var(--muted); font-size: .68rem; margin-top: .3rem; }
 
     /* fav row inside left card */
     #fav-row {
@@ -562,7 +591,7 @@
 <div id="topbar">
   <div class="logo">
     <div class="logo-icon">⚡</div>
-    nowcast.cz
+    nowcast
   </div>
   <div class="search-wrap suggest">
     <input id="search" type="text" placeholder="Hledat obec…" autocomplete="off" />
@@ -584,8 +613,16 @@
 
   <!-- Forecast panel -->
   <div id="forecast-panel">
-    <div class="place" id="place">Zvolte místo na mapě</div>
+    <div class="place" id="place">📍 Zvolte místo</div>
     <div class="dist" id="dist"></div>
+    <!-- Hero teplota (plněno JS) -->
+    <div id="fc-hero" style="display:none" class="fc-hero">
+      <div class="fc-temp-big" id="fc-temp-big">—</div>
+      <div class="fc-hero-right">
+        <div class="fc-desc" id="fc-desc">—</div>
+        <div class="fc-feels" id="fc-feels"></div>
+      </div>
+    </div>
     <div class="verdict-text" id="verdict">
       <span class="hint">Vyhledejte obec, klikněte do mapy nebo použijte polohu.</span>
     </div>
@@ -648,39 +685,39 @@
 
 <!-- Radar bar (fixed bottom) -->
 <div id="radar-bar" style="display:none">
-  <div class="radar-row">
-    <button class="ctrl" id="btn-prev" title="Předchozí snímek (←)">◀</button>
-    <button class="ctrl" id="btn-play" title="Přehrát/Pozastavit (mezerník)">▶ Play</button>
-    <button class="ctrl" id="btn-next" title="Další snímek (→)">▶</button>
-    <div class="speed-group" title="Rychlost animace">
-      <button class="ctrl" id="speed-slow" data-ms="900">🐢</button>
-      <button class="ctrl active" id="speed-norm" data-ms="500">–</button>
-      <button class="ctrl" id="speed-fast" data-ms="200">⚡</button>
-    </div>
-    <button class="ctrl" id="btn-global" title="Globální radar (RainViewer)">🌍 Svět</button>
-    <button class="ctrl lightning-btn" id="btn-lightning" title="Zobrazit blesky (RainViewer)">⚡ Blesky</button>
-    <div id="frame-time" style="margin-left:auto">—</div>
-  </div>
-  <div class="radar-row">
+  <!-- Řádek 1: slider na celou šířku -->
+  <div class="radar-row" style="margin-bottom:.6rem">
     <div class="timeline-wrap" style="flex:1">
       <input type="range" id="timeline" min="0" value="0" />
       <div id="t0-tick"></div>
       <div id="t0-marker">teď</div>
     </div>
   </div>
+  <!-- Řádek 2: ovládací tlačítka -->
   <div class="radar-row">
-    <label>Průhlednost:</label>
-    <input type="range" id="opacity-slider" min="0" max="100" value="70" />
-    <span id="opacity-val" style="font-size:.76rem;color:var(--muted);min-width:32px">70 %</span>
-    <span id="radar-t0" style="font-size:.8rem;font-weight:600;color:var(--text)"></span>
-    <span id="radar-updated" style="margin-left:auto;font-size:.72rem;color:var(--muted)"></span>
-  </div>
-  <div class="radar-row">
-    <span id="radar-source" style="font-size:.7rem;color:var(--muted);font-style:italic"></span>
+    <button class="ctrl" id="btn-prev" title="Předchozí snímek (←)">◀</button>
+    <button class="ctrl" id="btn-play" title="Přehrát/Pozastavit (mezerník)">▶</button>
+    <button class="ctrl" id="btn-next" title="Další snímek (→)">▶▶</button>
+    <div class="speed-group" title="Rychlost animace">
+      <button class="ctrl" id="speed-slow" data-ms="900">🐢</button>
+      <button class="ctrl active" id="speed-norm" data-ms="500">–</button>
+      <button class="ctrl" id="speed-fast" data-ms="200">⚡</button>
+    </div>
+    <div id="frame-time" style="min-width:60px;text-align:center">—</div>
+    <span id="radar-t0" style="font-size:.78rem;font-weight:600;color:var(--text)"></span>
+    <div style="margin-left:auto;display:flex;align-items:center;gap:.5rem">
+      <label style="font-size:.72rem;color:var(--muted)">Průhlednost</label>
+      <input type="range" id="opacity-slider" min="0" max="100" value="70" style="width:70px" />
+      <span id="opacity-val" style="font-size:.72rem;color:var(--muted);min-width:30px">70 %</span>
+    </div>
+    <button class="ctrl" id="btn-global" title="Globální radar (RainViewer)">🌍</button>
+    <button class="ctrl lightning-btn" id="btn-lightning" title="Zobrazit blesky (RainViewer)">⚡</button>
+    <span id="radar-updated" style="font-size:.68rem;color:var(--muted)"></span>
   </div>
   <div class="rain-spark-wrap" id="rain-spark-wrap" style="display:none">
     <canvas id="rain-spark"></canvas>
   </div>
+  <span id="radar-source" style="font-size:.65rem;color:var(--muted);font-style:italic;display:block;margin-top:.3rem"></span>
 </div>
 
 <footer>Data: ČHMÚ (CC BY) · Open-Meteo (CC BY) · Radar: RainViewer · Stanice: Weather Underground · Předpověď generovaná v prohlížeči</footer>
@@ -1472,7 +1509,8 @@ function destroyRainViewerFrames() {
 }
 
 function initMap() {
-  map = L.map("map", { zoomControl: true }).setView([49.8, 15.5], 7);
+  map = L.map("map", { zoomControl: false }).setView([49.8, 15.5], 7);
+  L.control.zoom({ position: "bottomright" }).addTo(map);
 
   // CARTO Positron — světlý podklad, čitelný pod průhledným radarem
   L.tileLayer(
@@ -1790,6 +1828,9 @@ const WC_EMOJI = (() => {
   return m;
 })();
 
+const WC_LABEL = {0:"Jasno",1:"Převážně jasno",2:"Polojasno",3:"Zataženo",45:"Mlha",48:"Mlha",51:"Slabé mrholení",53:"Mrholení",55:"Silné mrholení",56:"Mrznoucí mrholení",57:"Silné mrznoucí mrholení",61:"Slabý déšť",63:"Déšť",65:"Silný déšť",66:"Mrznoucí déšť",67:"Silný mrznoucí déšť",71:"Slabé sněžení",73:"Sněžení",75:"Silné sněžení",77:"Sněhové krupky",80:"Přeháňky",81:"Přeháňky",82:"Silné přeháňky",85:"Sněhové přeháňky",86:"Silné sněhové přeháňky",95:"Bouřka",96:"Bouřka s krupobitím",99:"Silná bouřka s krupobitím"};
+function wcLabel(wc) { return WC_LABEL[wc] ?? ""; }
+
 function wcIcon(wc, hour) {
   let e = wc != null ? (WC_EMOJI[wc] ?? "🌡️") : "🌡️";
   // Noční varianty pro jasné/polojasné stavy (hora mimo 6–21)
@@ -1895,55 +1936,51 @@ function parseFc24(data) {
   return { hourly, blocks };
 }
 
+function renderFcHero(fc) {
+  const now = fc.hourly[0];
+  if (!now || now.temp == null) {
+    document.getElementById("fc-hero").style.display = "none";
+    return;
+  }
+  const hero = document.getElementById("fc-hero");
+  const tempEl = document.getElementById("fc-temp-big");
+  const descEl = document.getElementById("fc-desc");
+  const feelsEl = document.getElementById("fc-feels");
+
+  tempEl.textContent = now.temp + "°";
+  tempEl.className = "fc-temp-big" + (now.temp < 5 ? " cold" : "");
+  descEl.innerHTML = (now.wc != null ? wcIcon(now.wc, parseInt(now.t)) + " " + wcLabel(now.wc) : "");
+  feelsEl.textContent = now.feels != null && Math.abs(now.feels - now.temp) >= 2
+    ? `Pocitová ${now.feels}°` : "";
+  hero.style.display = "flex";
+}
+
 function renderFcNow(fc) {
   const el = document.getElementById("fc-now");
   const now = fc.hourly[0];
   if (!now) { el.style.display = "none"; return; }
 
-  const deg = now.wind_dir ?? 0;
+  const windDir = now.wind_dir != null ? degToCompass(now.wind_dir) : "";
   const windVal = now.wind != null
-    ? `${now.wind}${now.gust != null ? " / " + now.gust : ""} km/h`
+    ? `${now.wind}${now.gust != null ? "·" + now.gust : ""} km/h${windDir ? " " + windDir : ""}`
     : "—";
-  const dirStr = now.wind_dir != null ? degToCompass(now.wind_dir) + ` · ${now.wind_dir}°` : "";
-  const bft = beaufortLabel(now.wind);
 
-  const sensors = [
-    { label: "Vlhkost",    val: now.humidity != null ? now.humidity + " %" : "—" },
-    { label: "Tlak",       val: now.pressure != null ? now.pressure + " hPa" : "—" },
-    { label: "Srážky",     val: (now.precip ?? 0) > 0 ? now.precip + " mm" : "0 mm" },
-    { label: "UV index",   val: now.uv != null ? now.uv : "—" },
-    ...(now.cape != null && now.cape >= 200 ? [{ label: "Bouř. pot.", val: now.cape + " J/kg" }] : []),
+  const stats = [
+    { label: "Vítr",    val: windVal },
+    { label: "Vlhkost", val: now.humidity != null ? now.humidity + " %" : "—" },
+    { label: "Tlak",    val: now.pressure != null ? now.pressure + " hPa" : "—" },
+    { label: "Srážky",  val: (now.precip ?? 0) > 0 ? now.precip + " mm" : "0 mm" },
+    ...(now.uv != null ? [{ label: "UV", val: now.uv }] : []),
+    ...(now.cape != null && now.cape >= 200 ? [{ label: "CAPE", val: now.cape + " J/kg" }] : []),
   ];
 
   el.style.display = "block";
-  el.innerHTML = `
-    <div class="wu-station-body" style="margin-top:.25rem">
-      ${now.wind_dir != null || now.wind != null ? `
-      <div class="wu-compass-wrap">
-        <div class="wu-compass">
-          <span class="wu-compass-label n">S</span>
-          <span class="wu-compass-label s">J</span>
-          <span class="wu-compass-label e">V</span>
-          <span class="wu-compass-label w">Z</span>
-          <div class="wu-compass-arrow">
-            <svg width="50" height="50" viewBox="-25 -25 50 50">
-              <polygon points="0,-22 4,8 0,4 -4,8" fill="#ef4444" transform="rotate(${deg})"/>
-              <polygon points="0,22 4,-8 0,-4 -4,-8" fill="#94a3b8" transform="rotate(${deg})"/>
-              <circle cx="0" cy="0" r="3" fill="var(--fg)"/>
-            </svg>
-          </div>
-        </div>
-        <div class="wu-wind-val">${windVal}</div>
-        <div class="wu-beaufort">${dirStr}</div>
-        <div class="wu-beaufort">${bft}</div>
-      </div>` : ""}
-      <div class="wu-sensors">
-        ${sensors.map(c => `<div class="wu-sensor-card">
-          <div class="wu-sensor-label">${c.label}</div>
-          <div class="wu-sensor-val">${c.val}</div>
-        </div>`).join("")}
-      </div>
-    </div>`;
+  el.innerHTML = `<div class="fc-stats">
+    ${stats.map(s => `<div class="fc-stat">
+      <div class="fc-stat-label">${s.label}</div>
+      <div class="fc-stat-val">${s.val}</div>
+    </div>`).join("")}
+  </div>`;
 }
 
 function renderFc24(fc, label) {
@@ -2074,6 +2111,7 @@ async function showFc24(lat, lon, label) {
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const data = await r.json();
     const fc = parseFc24(data);
+    renderFcHero(fc);
     renderFc24(fc, label);
     renderFcNow(fc);
     renderFc7(data, label);
