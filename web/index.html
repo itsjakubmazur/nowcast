@@ -208,6 +208,7 @@
     /* WU stanice markery */
     .wu-marker-own   { background:#f59e0b; border:2px solid #fff; border-radius:50%; width:14px; height:14px; box-shadow:0 0 0 2px #f59e0b; }
     .wu-marker-other { background:#6366f1; border:2px solid #fff; border-radius:50%; width:10px; height:10px; }
+    .chmi-marker     { background:#10b981; border:2px solid #fff; border-radius:3px; width:10px; height:10px; }
     .wu-popup { font-size:0.82rem; min-width:160px; }
     .wu-popup strong { font-size:0.9rem; }
     .wu-popup .wu-own-badge { color:#f59e0b; font-weight:700; font-size:0.7rem; }
@@ -521,6 +522,10 @@ let preloadedImgs = [];
 let WU = null;
 let wuMarkers = [];
 
+// ČHMÚ stanice
+let CHMI = null;
+let chmiMarkers = [];
+
 // Globální radar (RainViewer)
 let globalMode = false;
 let rvFrames   = [];   // [{time, path, layer}]
@@ -538,16 +543,18 @@ const AUTO_REFRESH_MS   = 5 * 60 * 1000;
 async function loadData() {
   const v    = `?v=${Date.now()}`;
   const opts = { cache: "no-store" };
-  const [m, g, wu, fc] = await Promise.all([
+  const [m, g, wu, fc, chmi] = await Promise.all([
     fetch(`data/radar_manifest.json${v}`, opts).then(r => r.json()),
     fetch(`data/forecast_grid.json${v}`,  opts).then(r => r.json()),
     fetch(`data/wu_stations.json${v}`,    opts).then(r => r.json()).catch(() => null),
     fetch(`data/forecast.json${v}`,       opts).then(r => r.json()).catch(() => null),
+    fetch(`data/chmi_stations.json${v}`,  opts).then(r => r.json()).catch(() => null),
   ]);
   MANIFEST = m;
   GRID     = g;
   WU       = wu;
   FORECAST = fc;
+  CHMI     = chmi;
 }
 
 // ── Preload PNG do cache prohlížeče ───────────────────────────────────────────
@@ -688,6 +695,46 @@ function renderWuMarkers() {
   });
 
   console.log(`WU: ${wuMarkers.length} markerů na mapě`);
+}
+
+function renderChmiMarkers() {
+  chmiMarkers.forEach(m => m.remove());
+  chmiMarkers = [];
+  if (!CHMI || !CHMI.stations || !map) return;
+
+  CHMI.stations.forEach(s => {
+    if (s.lat == null || s.lon == null) return;
+    const icon = L.divIcon({
+      className: "",
+      html: `<div class="chmi-marker"></div>`,
+      iconSize: [10, 10],
+      iconAnchor: [5, 5],
+    });
+
+    const windDir = s.wind_dir != null ? degToCompass(s.wind_dir) : "—";
+    const age     = s.time_utc ? ageMinutes(s.time_utc) : null;
+    const ageStr  = age != null ? `<span style="color:var(--muted);font-size:.7rem"> před ${age} min</span>` : "";
+
+    const popup = `
+      <div class="wu-popup">
+        <strong>${s.name || s.id}</strong>
+        <span style="color:#10b981;font-size:.7rem"> ● ČHMÚ</span>${ageStr}<br>
+        🌡️ ${s.temp != null ? s.temp + " °C" : "—"} &nbsp;
+        💧 ${s.humidity != null ? s.humidity + " %" : "—"}<br>
+        🌬️ ${s.wind_kmh != null ? s.wind_kmh + " km/h " + windDir : "—"}
+        ${s.gust_kmh != null ? `<small>(nárazy ${s.gust_kmh})</small>` : ""}<br>
+        🔵 ${s.pressure != null ? s.pressure + " hPa" : "—"} &nbsp;
+        🌧️ ${s.precip_rate != null ? s.precip_rate + " mm/10min" : "—"}
+        <br><small style="color:var(--muted)">${s.id}</small>
+      </div>`;
+
+    const marker = L.marker([s.lat, s.lon], { icon, zIndexOffset: 50 })
+      .bindPopup(popup)
+      .addTo(map);
+    chmiMarkers.push(marker);
+  });
+
+  console.log(`ČHMÚ: ${chmiMarkers.length} markerů na mapě`);
 }
 
 function degToCompass(deg) {
@@ -1766,7 +1813,7 @@ async function refreshAll() {
     await loadData();
     preloadFrames();
     applyManifestUI();
-    renderWuOwnPanel(); renderWuMarkers();
+    renderWuOwnPanel(); renderWuMarkers(); renderChmiMarkers();
     // Pokud je vybrané místo, obnov verdikt + 24h
     if (_currentLat !== null) {
       // 24h live fetch — renderLocationVerdict uvnitř přepíše verdikt
@@ -1864,7 +1911,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   document.getElementById("radar-bar").style.display = "";
   applyManifestUI();
   renderFavRow();
-  renderWuOwnPanel(); renderWuMarkers();
+  renderWuOwnPanel(); renderWuMarkers(); renderChmiMarkers();
   checkRainNotifications();
 
   // Slider events
