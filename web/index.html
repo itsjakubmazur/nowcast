@@ -191,6 +191,8 @@
     .wu-sensor-label { font-size:.62rem; color:var(--muted); text-transform:uppercase; letter-spacing:.03em; }
     .wu-sensor-val   { font-size:1.1rem; font-weight:700; line-height:1.2; }
     .wu-sensor-unit  { font-size:.65rem; color:var(--muted); }
+    /* fc-now — aktuální podmínky z OM pro vybrané místo */
+    #fc-now { margin-top:.5rem; padding-top:.5rem; border-top:1px solid var(--border); }
     /* legacy small card (nearby stanice) */
     .wu-card {
       flex:1; min-width:140px; background:var(--panel); border-radius:10px;
@@ -429,6 +431,7 @@
     <span class="hint">Vyhledejte obec, klikněte do mapy nebo použijte „Moje poloha".</span>
   </div>
   <div class="updated" id="updated"></div>
+  <div id="fc-now" style="display:none"></div>
 </div>
 
 <!-- 24h forecast timeline -->
@@ -1247,8 +1250,11 @@ function parseFc24(data) {
   const prob   = h.precipitation_probability || [];
   const wind   = h.wind_speed_10m || [];
   const gust   = h.wind_gusts_10m || [];
+  const wdir   = h.wind_direction_10m || [];
   const uv     = h.uv_index || [];
   const cape   = h.cape || [];
+  const hum    = h.relative_humidity_2m || [];
+  const pres   = h.surface_pressure || [];
 
   // Najdi první index >= aktuální hodina (string comparison funguje pro ISO formát)
   let si = times.findIndex(t => t >= nowPrague);
@@ -1268,8 +1274,12 @@ function parseFc24(data) {
       precip:     Math.round(_nn(prec[i]) * 10) / 10,
       prob:       Math.round(_nn(prob[i])),
       wind:       Math.round(_nn(wind[i])),
+      gust:       gust[i] != null ? Math.round(gust[i]) : null,
+      wind_dir:   wdir[i] != null ? Math.round(wdir[i]) : null,
       uv:         uv[i]   != null ? Math.round(uv[i]   * 10) / 10 : null,
       cape:       cape[i] != null ? Math.round(cape[i])           : null,
+      humidity:   hum[i]  != null ? Math.round(hum[i])            : null,
+      pressure:   pres[i] != null ? Math.round(pres[i])           : null,
     });
   }
 
@@ -1294,6 +1304,57 @@ function parseFc24(data) {
     i += BLOCK_H;
   }
   return { hourly, blocks };
+}
+
+function renderFcNow(fc) {
+  const el = document.getElementById("fc-now");
+  const now = fc.hourly[0];
+  if (!now) { el.style.display = "none"; return; }
+
+  const deg = now.wind_dir ?? 0;
+  const windVal = now.wind != null
+    ? `${now.wind}${now.gust != null ? " / " + now.gust : ""} km/h`
+    : "—";
+  const dirStr = now.wind_dir != null ? degToCompass(now.wind_dir) + ` · ${now.wind_dir}°` : "";
+  const bft = beaufortLabel(now.wind);
+
+  const sensors = [
+    { label: "Vlhkost",    val: now.humidity != null ? now.humidity + " %" : "—" },
+    { label: "Tlak",       val: now.pressure != null ? now.pressure + " hPa" : "—" },
+    { label: "Srážky",     val: (now.precip ?? 0) > 0 ? now.precip + " mm" : "0 mm" },
+    { label: "UV index",   val: now.uv != null ? now.uv : "—" },
+    ...(now.cape != null && now.cape >= 200 ? [{ label: "Bouř. pot.", val: now.cape + " J/kg" }] : []),
+  ];
+
+  el.style.display = "block";
+  el.innerHTML = `
+    <div class="wu-station-body" style="margin-top:.25rem">
+      ${now.wind_dir != null || now.wind != null ? `
+      <div class="wu-compass-wrap">
+        <div class="wu-compass">
+          <span class="wu-compass-label n">S</span>
+          <span class="wu-compass-label s">J</span>
+          <span class="wu-compass-label e">V</span>
+          <span class="wu-compass-label w">Z</span>
+          <div class="wu-compass-arrow">
+            <svg width="50" height="50" viewBox="-25 -25 50 50">
+              <polygon points="0,-22 4,8 0,4 -4,8" fill="#ef4444" transform="rotate(${deg})"/>
+              <polygon points="0,22 4,-8 0,-4 -4,-8" fill="#94a3b8" transform="rotate(${deg})"/>
+              <circle cx="0" cy="0" r="3" fill="var(--fg)"/>
+            </svg>
+          </div>
+        </div>
+        <div class="wu-wind-val">${windVal}</div>
+        <div class="wu-beaufort">${dirStr}</div>
+        <div class="wu-beaufort">${bft}</div>
+      </div>` : ""}
+      <div class="wu-sensors">
+        ${sensors.map(c => `<div class="wu-sensor-card">
+          <div class="wu-sensor-label">${c.label}</div>
+          <div class="wu-sensor-val">${c.val}</div>
+        </div>`).join("")}
+      </div>
+    </div>`;
 }
 
 function renderFc24(fc, label) {
@@ -1412,7 +1473,7 @@ async function showFc24(lat, lon, label) {
   el.style.display = "block";
 
   const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}`
-    + `&hourly=weather_code,temperature_2m,apparent_temperature,precipitation,precipitation_probability,wind_speed_10m,wind_gusts_10m,uv_index,cape`
+    + `&hourly=weather_code,temperature_2m,apparent_temperature,precipitation,precipitation_probability,wind_speed_10m,wind_gusts_10m,wind_direction_10m,uv_index,cape,relative_humidity_2m,surface_pressure`
     + `&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,wind_gusts_10m_max,uv_index_max,sunrise,sunset`
     + `&forecast_days=7&timezone=Europe%2FPrague`;
 
@@ -1425,6 +1486,7 @@ async function showFc24(lat, lon, label) {
     const data = await r.json();
     const fc = parseFc24(data);
     renderFc24(fc, label);
+    renderFcNow(fc);
     renderFc7(data, label);
     await renderLocationVerdict(fc, label);
   } catch (e) {
