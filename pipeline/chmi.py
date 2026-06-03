@@ -1,46 +1,77 @@
 """
-ČHMÚ automatické stanice — stažení aktuálních 10minutových pozorování.
+ČHMÚ stanice — stažení aktuálních pozorování.
 
-Zdroj: opendata.chmi.cz/meteorology/climate/now/
-Soubory: 10m-0-20000-0-{ID}-{YYYYMMDD}.json
-Výstup:  data/chmi_stations.json   (aktuální hodnoty, kompatibilní s wu_stations.json)
-         data/chmi_series.json     (časové řady za posledních 24h pro grafy)
+Kombinuje dvě datové sady:
+  now/data/      — 40 synoptických stanic, 10min data + SYNOP 1h
+  recent/hourly/ — 500+ stanic (auto + manuální), hodinová data
+
+Výstup:
+  data/chmi_stations.json  — aktuální hodnoty všech stanic
+  data/chmi_series.json    — časové řady za posledních 24h pro grafy
 """
 
 import json
 import re
 import sys
 import requests
-from datetime import datetime, timezone
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 DATA_DIR = Path(__file__).parent.parent / "data"
 TIMEOUT  = 20
+MAX_WORKERS = 24   # paralelní HTTP requesty
 
-BASE_NOW      = "https://opendata.chmi.cz/meteorology/climate/now"
-DATA_URL      = f"{BASE_NOW}/data/"
-METADATA_URL  = f"{BASE_NOW}/metadata/"
+BASE          = "https://opendata.chmi.cz/meteorology/climate"
+NOW_DATA      = f"{BASE}/now/data/"
+NOW_META      = f"{BASE}/now/metadata/"
+RECENT_HOURLY = f"{BASE}/recent/data/hourly/"
+RECENT_META   = f"{BASE}/recent/metadata/"
+
+# Česká republika — bounding box (loosely)
+CZ_LAT = (48.4, 51.3)
+CZ_LON = (11.9, 19.0)
+
+HOURS_SERIES = 25   # kolik hodin zpětně uchovávat v series
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (compatible; NowcastBot/1.0)",
-    "Accept": "application/json,text/html,*/*",
+    "Accept":     "application/json,text/html,*/*",
 }
 
-# Elementy které nás zajímají a jejich výstupní klíče
-ELEMENT_MAP = {
-    "T":      "temp",        # °C
-    "H":      "humidity",    # %
-    "P":      "pressure",    # hPa
-    "F":      "wind_ms",     # m/s → přepočítáme na km/h
-    "Fmax":   "gust_ms",     # m/s
-    "Fprum":  "wind_avg_ms", # m/s
-    "D":      "wind_dir",    # °
-    "SRA10M": "precip_10m",  # mm / 10 min
-    "SSV10M": "solar",       # W/m²
+# Elementy z now/data/ 10m souborů
+ELEM_10M = {
+    "T":      "temp",
+    "H":      "humidity",
+    "P":      "pressure",
+    "F":      "wind_ms",
+    "Fmax":   "gust_ms",
+    "D":      "wind_dir",
+    "SRA10M": "precip_10m",
+    "SSV10M": "solar",
+}
+
+# Elementy z recent/hourly/ 1h souborů
+ELEM_1H = {
+    "T":    "temp",
+    "H":    "humidity",
+    "P":    "pressure",
+    "F":    "wind_ms",
+    "Fmax": "gust_ms",
+    "D":    "wind_dir",
+    "RR":   "precip_1h",     # srážky za hodinu mm
+    "SCE":  "snow_cm",        # výška sněhu cm
+    "SD":   "snow_cm",        # alt. kód sněhu
+    "Vis":  "visibility_m",   # viditelnost m
+    "Td":   "dewpoint",       # rosný bod °C
+    "W":    "weather_code",   # kód počasí WMO
+    "SSV":  "solar",          # sluneční záření W/m²
 }
 
 
-def fetch(url: str) -> requests.Response | None:
+# ── HTTP helpers ───────────────────────────────────────────────────────────────
+
+def fetch(url: str) -> "requests.Response | None":
     try:
         r = requests.get(url, headers=HEADERS, timeout=TIMEOUT)
         if r.ok:
@@ -51,86 +82,146 @@ def fetch(url: str) -> requests.Response | None:
     return None
 
 
-def list_station_ids(today: str, yesterday: str) -> tuple[list[str], list[str]]:
-    """
-    Parsuje HTML directory listing.
-    Vrátí (ids_10m, ids_1h) — odlišné prefixové soubory pro dnešek i včerejšek.
-    """
-    r = fetch(DATA_URL)
+def fetch_json(url: str) -> dict | None:
+    r = fetch(url)
     if not r:
-        return [], []
-    text = r.text
-    # 10-minutové soubory (dnešek + včerejšek pro pozdní noc UTC)
-    p10 = re.compile(r'10m-0-20000-0-(\d+)-(?:' + today + r'|' + yesterday + r')\.json')
-    ids_10m = list(dict.fromkeys(p10.findall(text)))
-    # 1-hodinové SYNOP soubory — obsahují aktuálnější SYNOP záznamy
-    p1h = re.compile(r'1h-0-20000-0-(\d+)-(?:' + today + r'|' + yesterday + r')\.json')
-    ids_1h = list(dict.fromkeys(p1h.findall(text)))
-    print(f"  Nalezeno {len(ids_10m)} ×10m, {len(ids_1h)} ×1h souborů", file=sys.stderr)
-    return ids_10m, ids_1h
+        return None
+    try:
+        return r.json()
+    except Exception as e:
+        print(f"  JSON parse {url}: {e}", file=sys.stderr)
+        return None
 
+
+def fetch_all(urls: list[tuple[str, str]]) -> dict[str, dict]:
+    """Paralelně stáhne seznam (key, url) → {key: json_data}."""
+    results = {}
+
+    def _get(key_url):
+        key, url = key_url
+        data = fetch_json(url)
+        return key, data
+
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as ex:
+        futures = {ex.submit(_get, ku): ku for ku in urls}
+        for future in as_completed(futures):
+            key, data = future.result()
+            if data is not None:
+                results[key] = data
+    return results
+
+
+# ── Metadata ──────────────────────────────────────────────────────────────────
 
 def parse_meta1(values: list) -> dict[str, dict]:
     """
-    Parsuje meta1-*.json: flat tabulka stanic.
-    Header: WSI, GH_ID, FULL_NAME, GEOGR1 (lon), GEOGR2 (lat), ELEVATION, BEGIN_DATE
-    Sloupce jsou pevně dané — indexujeme pozičně.
+    Parsuje meta1-*.json: flat tabulka.
+    Sloupce: WSI, GH_ID, FULL_NAME, GEOGR1(lon), GEOGR2(lat), ELEVATION, ...
+    Vrátí jen stanice v bounding boxu ČR.
     """
     meta = {}
     for row in values:
         if len(row) < 5:
             continue
-        wsi = str(row[0])   # "0-20000-0-11406"
+        wsi  = str(row[0])
         name = str(row[2]) if row[2] else None
         try:
             lon = float(row[3])
             lat = float(row[4])
         except (TypeError, ValueError):
             continue
-        num = re.search(r'(\d+)$', wsi)
-        if not num:
+        if not (CZ_LAT[0] <= lat <= CZ_LAT[1] and CZ_LON[0] <= lon <= CZ_LON[1]):
             continue
-        sid = num.group(1)
+        m = re.search(r'(\d+)$', wsi)
+        if not m:
+            continue
+        sid = m.group(1)
+        elev = None
+        try:
+            if len(row) > 5 and row[5] is not None:
+                elev = float(row[5])
+        except (TypeError, ValueError):
+            pass
         meta[sid] = {
             "name": name or f"Stanice {sid}",
             "lat":  lat,
             "lon":  lon,
+            "elev": elev,
         }
     return meta
 
 
 def load_metadata() -> dict[str, dict]:
     """
-    Stáhne meta1-{datum}.json a vrátí dict: numeric_station_id → {name, lat, lon}.
+    Zkusí meta1 z recent/metadata/ (pokrývá více stanic), fallback na now/metadata/.
+    Vrátí dict: numeric_sid → {name, lat, lon, elev}.
     """
-    today = datetime.now(timezone.utc).strftime("%Y%m%d")
-    yesterday = (datetime.now(timezone.utc)
-                 .__class__.fromtimestamp(
-                     datetime.now(timezone.utc).timestamp() - 86400, tz=timezone.utc
-                 ).strftime("%Y%m%d"))
+    now_utc   = datetime.now(timezone.utc)
+    today     = now_utc.strftime("%Y%m%d")
+    yesterday = (now_utc - timedelta(days=1)).strftime("%Y%m%d")
 
-    for date in (today, yesterday):
-        url = f"{METADATA_URL}meta1-{date}.json"
+    sources = [
+        f"{RECENT_META}meta1-{today}.json",
+        f"{RECENT_META}meta1-{yesterday}.json",
+        f"{NOW_META}meta1-{today}.json",
+        f"{NOW_META}meta1-{yesterday}.json",
+    ]
+    for url in sources:
         r = fetch(url)
         if not r:
             continue
         try:
-            data = r.json()
+            data   = r.json()
             values = data["data"]["data"]["values"]
-            meta = parse_meta1(values)
+            meta   = parse_meta1(values)
             if meta:
-                print(f"  Metadata: {len(meta)} stanic z {url}", file=sys.stderr)
+                print(f"  Metadata: {len(meta)} CZ stanic z {url}", file=sys.stderr)
                 return meta
         except Exception as e:
             print(f"  Metadata parse error ({url}): {e}", file=sys.stderr)
 
-    print("  Metadata nedostupná — stanice budou bez jmen/souřadnic", file=sys.stderr)
+    print("  Metadata nedostupná", file=sys.stderr)
     return {}
 
 
-def _extract_by_dt(data: dict) -> dict[str, dict[str, float]]:
-    """Extrahuje data z JSON souboru do struktury {dt: {element: value}}."""
-    by_dt: dict[str, dict[str, float]] = {}
+# ── Directory listing ─────────────────────────────────────────────────────────
+
+def list_now_ids(today: str, yesterday: str) -> list[str]:
+    """Vrátí numerická ID stanic z now/data/ (10m + 1h soubory)."""
+    r = fetch(NOW_DATA)
+    if not r:
+        return []
+    text = r.text
+    ids = set()
+    for date in (today, yesterday):
+        for prefix in ("10m", "1h"):
+            p = re.compile(rf'{prefix}-0-20000-0-(\d+)-{date}\.json')
+            ids.update(p.findall(text))
+    result = list(ids)
+    print(f"  now/: {len(result)} stanic", file=sys.stderr)
+    return result
+
+
+def list_recent_ids(yyyymm: str, prev_yyyymm: str) -> list[str]:
+    """Vrátí numerická ID stanic z recent/data/hourly/."""
+    r = fetch(RECENT_HOURLY)
+    if not r:
+        return []
+    text = r.text
+    ids = set()
+    for ym in (yyyymm, prev_yyyymm):
+        p = re.compile(rf'1h-0-20000-0-(\d+)-{ym}\.json')
+        ids.update(p.findall(text))
+    result = list(ids)
+    print(f"  recent/hourly/: {len(result)} stanic", file=sys.stderr)
+    return result
+
+
+# ── Parsování datových souborů ────────────────────────────────────────────────
+
+def _extract_by_dt(data: dict, elem_map: dict) -> dict[str, dict[str, float]]:
+    """Z JSON pivot souboru vrátí {dt: {elem_key: value}}."""
+    by_dt: dict[str, dict] = {}
     try:
         values = data["data"]["data"]["values"]
     except (KeyError, TypeError):
@@ -139,50 +230,63 @@ def _extract_by_dt(data: dict) -> dict[str, dict[str, float]]:
         if len(row) < 4:
             continue
         _sid, element, dt, val = row[0], row[1], row[2], row[3]
-        if val is None or val == "" or val != val:
-            continue
-        if element not in ELEMENT_MAP:
+        key = elem_map.get(element)
+        if key is None or val is None or val == "":
             continue
         try:
             fval = float(val)
+            if fval != fval:   # nan
+                continue
         except (TypeError, ValueError):
             continue
         if dt not in by_dt:
             by_dt[dt] = {}
-        by_dt[dt][element] = fval
+        # Nepřepisuj existující hodnotu (10m má prioritu nad 1h pro stejný dt)
+        by_dt[dt].setdefault(key, fval)
     return by_dt
 
 
-def parse_station_file(station_id: str, data_10m: dict,
-                       data_1h: dict | None = None) -> tuple[dict | None, list[dict]]:
+def merge_by_dt(base: dict, extra: dict) -> dict:
+    """Sloučí dva by_dt diktáty — base má prioritu."""
+    merged = dict(base)
+    for dt, elems in extra.items():
+        if dt not in merged:
+            merged[dt] = {}
+        for k, v in elems.items():
+            merged[dt].setdefault(k, v)
+    return merged
+
+
+def parse_station(sid: str,
+                  data_10m: dict | None,
+                  data_1h_now: dict | None,
+                  data_1h_recent: dict | None,
+                  cutoff_dt: str) -> tuple[dict | None, list[dict]]:
     """
-    Parsuje JSON soubory jedné stanice (10m + volitelně 1h).
-    Data z 1h souboru doplní chybějící hodnoty v 10m (zejm. aktuálnější T).
-    Vrátí (current_obs, time_series).
+    Sloučí data ze všech dostupných zdrojů a vrátí (current_obs, series).
+    cutoff_dt: ISO timestamp — starší záznamy vynecháme ze series.
     """
-    by_dt = _extract_by_dt(data_10m)
-    if data_1h:
-        for dt, elems in _extract_by_dt(data_1h).items():
-            if dt not in by_dt:
-                by_dt[dt] = {}
-            # 1h data doplní jen chybějící elementy pro daný timestamp
-            for k, v in elems.items():
-                by_dt[dt].setdefault(k, v)
+    by_dt: dict[str, dict] = {}
+
+    if data_10m:
+        by_dt = merge_by_dt(by_dt, _extract_by_dt(data_10m, ELEM_10M))
+    if data_1h_now:
+        by_dt = merge_by_dt(by_dt, _extract_by_dt(data_1h_now, ELEM_1H))
+    if data_1h_recent:
+        by_dt = merge_by_dt(by_dt, _extract_by_dt(data_1h_recent, ELEM_1H))
 
     if not by_dt:
         return None, []
 
-    # Nejnovější timestamp s alespoň teplotou nebo vlhkostí
     sorted_dts = sorted(by_dt.keys(), reverse=True)
-    latest_dt = None
-    latest = {}
+
+    # Nejnovější timestamp s alespoň teplotou nebo vlhkostí
+    latest_dt, latest = None, {}
     for dt in sorted_dts:
         elems = by_dt[dt]
-        if "T" in elems or "H" in elems:
-            latest_dt = dt
-            latest = elems
+        if "temp" in elems or "humidity" in elems:
+            latest_dt, latest = dt, elems
             break
-
     if not latest:
         latest_dt = sorted_dts[0]
         latest = by_dt[latest_dt]
@@ -191,102 +295,137 @@ def parse_station_file(station_id: str, data_10m: dict,
         return round(v * 3.6, 1) if v is not None else None
 
     obs = {
-        "id":          f"0-20000-0-{station_id}",
-        "time_utc":    latest_dt,
-        "temp":        latest.get("T"),
-        "humidity":    latest.get("H"),
-        "pressure":    latest.get("P"),
-        "wind_kmh":    ms_to_kmh(latest.get("F")),
-        "gust_kmh":    ms_to_kmh(latest.get("Fmax")),
-        "wind_dir":    latest.get("D"),
-        "precip_rate": latest.get("SRA10M"),
-        "solar":       latest.get("SSV10M"),
-        "own":         False,
+        "id":           f"0-20000-0-{sid}",
+        "time_utc":     latest_dt,
+        "temp":         latest.get("temp"),
+        "humidity":     latest.get("humidity"),
+        "pressure":     latest.get("pressure"),
+        "wind_kmh":     ms_to_kmh(latest.get("wind_ms")),
+        "gust_kmh":     ms_to_kmh(latest.get("gust_ms")),
+        "wind_dir":     latest.get("wind_dir"),
+        "precip_1h":    latest.get("precip_1h"),
+        "precip_10m":   latest.get("precip_10m"),
+        "snow_cm":      latest.get("snow_cm"),
+        "solar":        latest.get("solar"),
+        "dewpoint":     latest.get("dewpoint"),
+        "visibility_m": latest.get("visibility_m"),
+        "own":          False,
     }
 
-    # Časová řada pro grafy — všechny timestampy
+    # Series — jen záznamy novější než cutoff_dt
     series = []
     for dt in sorted(by_dt.keys()):
+        if dt < cutoff_dt:
+            continue
         elems = by_dt[dt]
         row = {"dt": dt}
-        if "T"      in elems: row["temp"]     = elems["T"]
-        if "H"      in elems: row["humidity"] = elems["H"]
-        if "P"      in elems: row["pressure"] = elems["P"]
-        if "F"      in elems: row["wind_kmh"] = ms_to_kmh(elems["F"])
-        if "Fmax"   in elems: row["gust_kmh"] = ms_to_kmh(elems["Fmax"])
-        if "D"      in elems: row["wind_dir"] = elems["D"]
-        if "SRA10M" in elems: row["precip"]   = elems["SRA10M"]
-        if "SSV10M" in elems: row["solar"]    = elems["SSV10M"]
+        for key in ("temp", "humidity", "pressure", "solar", "dewpoint",
+                    "precip_1h", "precip_10m", "snow_cm", "visibility_m"):
+            if key in elems:
+                row[key] = elems[key]
+        if "wind_ms" in elems:
+            row["wind_kmh"] = ms_to_kmh(elems["wind_ms"])
+        if "gust_ms" in elems:
+            row["gust_kmh"] = ms_to_kmh(elems["gust_ms"])
+        if "wind_dir" in elems:
+            row["wind_dir"] = elems["wind_dir"]
         series.append(row)
 
     return obs, series
 
 
-def fetch_json(url: str) -> dict | None:
-    r = fetch(url)
-    if not r:
-        return None
-    try:
-        return r.json()
-    except Exception as e:
-        print(f"  JSON parse error ({url}): {e}", file=sys.stderr)
-        return None
-
+# ── Main ──────────────────────────────────────────────────────────────────────
 
 def main():
-    print("\n=== ČHMÚ stanice — stažení 10m+1h pozorování ===")
+    print("\n=== ČHMÚ stanice — now/ + recent/hourly/ ===")
 
-    now_utc   = datetime.now(timezone.utc)
-    today     = now_utc.strftime("%Y%m%d")
-    yesterday = (now_utc.__class__.fromtimestamp(now_utc.timestamp() - 86400, tz=timezone.utc)
-                 .strftime("%Y%m%d"))
-    print(f"  Datum (UTC): {today}", file=sys.stderr)
+    now_utc      = datetime.now(timezone.utc)
+    today        = now_utc.strftime("%Y%m%d")
+    yesterday    = (now_utc - timedelta(days=1)).strftime("%Y%m%d")
+    yyyymm       = now_utc.strftime("%Y%m")
+    prev_yyyymm  = (now_utc - timedelta(days=32)).strftime("%Y%m")
+    cutoff_dt    = (now_utc - timedelta(hours=HOURS_SERIES)).isoformat(timespec="minutes")
 
-    # 1. Zjisti seznam souborů (10m + 1h)
-    ids_10m, ids_1h = list_station_ids(today, yesterday)
-    all_ids = list(dict.fromkeys(ids_10m + ids_1h))
-    if not all_ids:
-        print("  Žádné soubory nenalezeny — ukládám prázdný výstup", file=sys.stderr)
-        _save_empty("Žádné soubory v data/ adresáři")
+    print(f"  UTC: {now_utc.isoformat(timespec='minutes')}", file=sys.stderr)
+
+    # 1. Metadata
+    metadata = load_metadata()
+    if not metadata:
+        print("  !! Metadata nedostupná — konec", file=sys.stderr)
+        _save_empty("Metadata nedostupná")
         return
 
-    # 2. Metadata (jméno, souřadnice)
-    metadata = load_metadata()
+    # 2. Seznam stanic
+    now_ids    = list_now_ids(today, yesterday)
+    recent_ids = list_recent_ids(yyyymm, prev_yyyymm)
 
-    # 3. Stáhni a parsuj každou stanici
+    # Sjednocení — filtr na stanice s metadaty v CZ
+    all_sids = list(dict.fromkeys(now_ids + recent_ids))
+    cz_sids  = [sid for sid in all_sids if sid in metadata]
+    print(f"  Celkem unikátních CZ stanic: {len(cz_sids)} "
+          f"(now={len(now_ids)}, recent={len(recent_ids)})", file=sys.stderr)
+
+    if not cz_sids:
+        _save_empty("Žádné CZ stanice nenalezeny")
+        return
+
+    # 3. Paralelní stahování dat
+    # now/: 10m soubory (priorita pro synoptické prvky)
+    now_10m_urls = [
+        (f"10m_{sid}_{d}", f"{NOW_DATA}10m-0-20000-0-{sid}-{d}.json")
+        for sid in now_ids if sid in metadata
+        for d in (today, yesterday)
+    ]
+    # now/: 1h soubory (SYNOP hodinové záznamy)
+    now_1h_urls = [
+        (f"1h_now_{sid}_{d}", f"{NOW_DATA}1h-0-20000-0-{sid}-{d}.json")
+        for sid in now_ids if sid in metadata
+        for d in (today, yesterday)
+    ]
+    # recent/hourly/: 1h soubory pro všechny CZ stanice
+    rec_1h_urls = [
+        (f"1h_rec_{sid}_{ym}", f"{RECENT_HOURLY}1h-0-20000-0-{sid}-{ym}.json")
+        for sid in cz_sids
+        for ym in (yyyymm, prev_yyyymm)
+    ]
+
+    all_urls = now_10m_urls + now_1h_urls + rec_1h_urls
+    print(f"  Stahuji {len(all_urls)} souborů ({MAX_WORKERS} paralelně)…", file=sys.stderr)
+    fetched = fetch_all(all_urls)
+    print(f"  Staženo {len(fetched)} souborů", file=sys.stderr)
+
+    def best(prefix, sid, dates_or_months):
+        """Vrátí první dostupný JSON pro daný prefix a sid."""
+        for d in dates_or_months:
+            key = f"{prefix}_{sid}_{d}"
+            if key in fetched:
+                return fetched[key]
+        return None
+
+    # 4. Parsování
     stations   = []
     all_series = {}
-    ok = 0
-    err = 0
+    ok = err   = 0
 
-    for sid in all_ids:
-        # Zkus nejprve dnešní datum, pak včerejší
-        data_10m = None
-        for date in (today, yesterday):
-            data_10m = fetch_json(f"{DATA_URL}10m-0-20000-0-{sid}-{date}.json")
-            if data_10m:
-                break
+    for sid in cz_sids:
+        data_10m       = best("10m", sid, (today, yesterday))
+        data_1h_now    = best("1h_now", sid, (today, yesterday))
+        data_1h_recent = best("1h_rec", sid, (yyyymm, prev_yyyymm))
 
-        data_1h = None
-        for date in (today, yesterday):
-            data_1h = fetch_json(f"{DATA_URL}1h-0-20000-0-{sid}-{date}.json")
-            if data_1h:
-                break
-
-        if not data_10m and not data_1h:
+        if not any([data_10m, data_1h_now, data_1h_recent]):
             err += 1
             continue
 
-        obs, series = parse_station_file(sid, data_10m or {}, data_1h)
+        obs, series = parse_station(sid, data_10m, data_1h_now, data_1h_recent, cutoff_dt)
         if obs is None:
             err += 1
             continue
 
-        # Doplň metadata
-        m = metadata.get(sid, {})
-        obs["name"] = m.get("name") or f"Stanice {sid}"
-        obs["lat"]  = m.get("lat")
-        obs["lon"]  = m.get("lon")
+        m = metadata[sid]
+        obs["name"] = m["name"]
+        obs["lat"]  = m["lat"]
+        obs["lon"]  = m["lon"]
+        obs["elev"] = m.get("elev")
 
         stations.append(obs)
         if series:
@@ -298,48 +437,36 @@ def main():
             }
         ok += 1
 
-    print(f"  Načteno: {ok} stanic, chyba: {err}", file=sys.stderr)
-
-    # Vyřaď stanice bez souřadnic
-    with_coords    = [s for s in stations if s["lat"] is not None and s["lon"] is not None]
-    without_coords = [s for s in stations if s["lat"] is None or s["lon"] is None]
-    if without_coords:
-        print(f"  Stanice bez souřadnic: {len(without_coords)} (skryty)", file=sys.stderr)
+    print(f"  Zpracováno: {ok} OK, {err} chyb", file=sys.stderr)
 
     DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-    # Výstup: aktuální pozorování
     out = {
-        "generated_at_utc": datetime.now(timezone.utc).isoformat(),
-        "count": len(with_coords),
-        "stations": with_coords,
+        "generated_at_utc": now_utc.isoformat(),
+        "count":    len(stations),
+        "stations": stations,
     }
-    path = DATA_DIR / "chmi_stations.json"
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(out, f, indent=2, ensure_ascii=False)
-    print(f"  ✓ chmi_stations.json — {len(with_coords)} stanic se souřadnicemi", file=sys.stderr)
+    (DATA_DIR / "chmi_stations.json").write_text(
+        json.dumps(out, indent=2, ensure_ascii=False))
+    print(f"  ✓ chmi_stations.json — {len(stations)} stanic", file=sys.stderr)
 
-    # Výstup: časové řady
     series_out = {
-        "generated_at_utc": datetime.now(timezone.utc).isoformat(),
-        "stations": {k: v for k, v in all_series.items()
-                     if v.get("lat") is not None and v.get("lon") is not None},
+        "generated_at_utc": now_utc.isoformat(),
+        "stations": all_series,
     }
-    path2 = DATA_DIR / "chmi_series.json"
-    with open(path2, "w", encoding="utf-8") as f:
-        json.dump(series_out, f, indent=2, ensure_ascii=False)
-    print(f"  ✓ chmi_series.json — {len(series_out['stations'])} stanic s časovými řadami", file=sys.stderr)
+    (DATA_DIR / "chmi_series.json").write_text(
+        json.dumps(series_out, indent=2, ensure_ascii=False))
+    print(f"  ✓ chmi_series.json — {len(all_series)} stanic s časovými řadami", file=sys.stderr)
 
 
 def _save_empty(error_msg: str):
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     for fname in ("chmi_stations.json", "chmi_series.json"):
-        with open(DATA_DIR / fname, "w", encoding="utf-8") as f:
-            json.dump({
-                "generated_at_utc": datetime.now(timezone.utc).isoformat(),
-                "error": error_msg,
-                "stations": [],
-            }, f, indent=2, ensure_ascii=False)
+        (DATA_DIR / fname).write_text(json.dumps({
+            "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+            "error":    error_msg,
+            "stations": [],
+        }, indent=2, ensure_ascii=False))
 
 
 if __name__ == "__main__":
