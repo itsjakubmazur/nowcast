@@ -67,6 +67,19 @@ jobs:
       - name: Run chmi (ČHMÚ stanice)
         run: python pipeline/chmi.py || echo "chmi.py selhalo, pokračuji"
 
+      - name: Run chmi_stats (ČHMÚ historická data, 1× denně)
+        run: |
+          HOUR=$(date -u +%H)
+          MINUTE=$(date -u +%M)
+          # Spouštět jen mezi 04:00-04:30 UTC (denní aktualizace)
+          if [ "$HOUR" = "04" ] && [ "$MINUTE" -lt 30 ]; then
+            python pipeline/chmi_stats.py || echo "chmi_stats.py selhalo, pokračuji"
+          elif [ ! -f data/chmi_stats.json ]; then
+            python pipeline/chmi_stats.py || echo "chmi_stats.py selhalo, pokračuji"
+          else
+            echo "chmi_stats.py: přeskočeno (není čas denní aktualizace)"
+          fi
+
       - name: Upload data artifacts
         uses: actions/upload-artifact@v4
         with:
