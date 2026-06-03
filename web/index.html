@@ -919,6 +919,7 @@ function _makeChart(canvas, type, labels, vals, color, fill, unit) {
     },
     options: {
       animation: false, responsive: true, maintainAspectRatio: false,
+      interaction: { mode: "index", intersect: false },
       plugins: { legend: { display: false }, tooltip: {
         callbacks: { label: ctx => ` ${ctx.parsed.y} ${unit}` },
       }},
@@ -1065,6 +1066,7 @@ function _renderTabRocni(body, stationId) {
       ]},
       options: {
         animation: false, responsive: true, maintainAspectRatio: false,
+        interaction: { mode: "index", intersect: false },
         plugins: { legend: { display: true, labels: { color: tc, font: { size: 10 } } } },
         scales: {
           x: { ticks: { maxTicksLimit: 8, color: tc, font: { size: 10 } }, grid: { color: gc } },
