@@ -13,7 +13,16 @@
       --bg: #f4f6f8; --panel: #fff; --border: #dde1e7;
       --muted: #6b7280; --fg: #1a1d23; --accent: #2563eb;
       --t0-color: #f59e0b;
+      --card: #fff;
     }
+    [data-theme="dark"] {
+      --bg: #0f1117; --panel: #1a1d23; --border: #2a2d35;
+      --muted: #8b909a; --fg: #e8eaf0; --accent: #3b82f6;
+      --t0-color: #f59e0b; --card: #1e2128;
+    }
+    [data-theme="dark"] button.ctrl:hover { background: #2a2d35; }
+    [data-theme="dark"] #map { filter: brightness(0.85) saturate(0.9); }
+    [data-theme="dark"] input[type=range] { background: #2a2d35; }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--fg); }
 
@@ -139,9 +148,52 @@
     .updated { color: var(--muted); font-size: 0.75rem; margin-top: 0.5rem; }
 
     /* WU vlastní stanice — panel nahoře */
-    .wu-panel { display:flex; gap:.5rem; flex-wrap:wrap; padding:.4rem .5rem; }
+    .wu-panel { padding:.5rem .75rem; display:flex; flex-direction:column; gap:.5rem; }
+    .wu-station-card {
+      background:var(--panel); border:1px solid var(--border); border-radius:12px;
+      padding:.75rem 1rem; display:flex; flex-direction:column; gap:.5rem;
+    }
+    .wu-station-header { display:flex; align-items:center; gap:.5rem; }
+    .wu-station-name { font-size:.75rem; font-weight:700; color:#f59e0b; text-transform:uppercase; letter-spacing:.04em; }
+    .wu-station-age  { font-size:.68rem; color:var(--muted); margin-left:auto; }
+    .wu-station-body { display:flex; gap:.75rem; flex-wrap:wrap; align-items:flex-start; }
+    /* Hero teplota */
+    .wu-hero { display:flex; flex-direction:column; min-width:100px; }
+    .wu-hero-temp { font-size:2.4rem; font-weight:700; line-height:1; }
+    .wu-hero-feels { font-size:.78rem; color:var(--muted); }
+    /* Kompas */
+    .wu-compass-wrap { display:flex; flex-direction:column; align-items:center; gap:.25rem; }
+    .wu-compass {
+      width:72px; height:72px; border-radius:50%; border:2px solid var(--border);
+      background:var(--bg); position:relative; flex-shrink:0;
+    }
+    .wu-compass-label { position:absolute; font-size:.55rem; color:var(--muted); font-weight:700; }
+    .wu-compass-label.n { top:3px; left:50%; transform:translateX(-50%); }
+    .wu-compass-label.s { bottom:3px; left:50%; transform:translateX(-50%); }
+    .wu-compass-label.e { right:4px; top:50%; transform:translateY(-50%); }
+    .wu-compass-label.w { left:4px; top:50%; transform:translateY(-50%); }
+    .wu-compass-arrow {
+      position:absolute; top:50%; left:50%;
+      width:0; height:0;
+    }
+    .wu-compass-arrow svg {
+      position:absolute; transform:translate(-50%,-50%);
+      overflow:visible;
+    }
+    .wu-wind-val { font-size:.8rem; font-weight:600; text-align:center; }
+    .wu-beaufort { font-size:.68rem; color:var(--muted); text-align:center; }
+    /* Sensor grid */
+    .wu-sensors { display:grid; grid-template-columns:repeat(auto-fill,minmax(90px,1fr)); gap:.4rem; flex:1; }
+    .wu-sensor-card {
+      background:var(--bg); border-radius:8px; padding:.4rem .5rem;
+      display:flex; flex-direction:column; gap:.1rem; min-width:80px;
+    }
+    .wu-sensor-label { font-size:.62rem; color:var(--muted); text-transform:uppercase; letter-spacing:.03em; }
+    .wu-sensor-val   { font-size:1.1rem; font-weight:700; line-height:1.2; }
+    .wu-sensor-unit  { font-size:.65rem; color:var(--muted); }
+    /* legacy small card (nearby stanice) */
     .wu-card {
-      flex:1; min-width:140px; background:var(--card); border-radius:10px;
+      flex:1; min-width:140px; background:var(--panel); border-radius:10px;
       padding:.55rem .75rem; display:flex; flex-direction:column; gap:.15rem;
       border-left:3px solid #f59e0b;
     }
@@ -333,6 +385,7 @@
 <header>
   <h1>🌧️ Meteo Nowcast CZ</h1>
   <span class="subtitle">Krátkodobá předpověď · Radarová smyčka</span>
+  <button id="btn-theme" title="Přepnout světlý/tmavý motiv" style="margin-left:auto;background:none;border:none;cursor:pointer;font-size:1.2rem;padding:0 .25rem;color:var(--fg)">🌙</button>
 </header>
 
 <!-- Refresh bar -->
@@ -498,25 +551,89 @@ function preloadFrames() {
 
 // ── Inicializace mapy ─────────────────────────────────────────────────────────
 // ── WU stanice na mapě ────────────────────────────────────────────────────────
+function beaufortLabel(kmh) {
+  if (kmh == null) return "";
+  if (kmh < 1)  return "Beaufort 0 · Bezvětří";
+  if (kmh < 6)  return "Beaufort 1 · Vánek";
+  if (kmh < 12) return "Beaufort 2 · Větřík";
+  if (kmh < 20) return "Beaufort 3 · Slabý vítr";
+  if (kmh < 29) return "Beaufort 4 · Mírný vítr";
+  if (kmh < 39) return "Beaufort 5 · Čerstvý vítr";
+  if (kmh < 50) return "Beaufort 6 · Silný vítr";
+  if (kmh < 62) return "Beaufort 7 · Mírný štorm";
+  if (kmh < 75) return "Beaufort 8 · Čerstvý štorm";
+  if (kmh < 89) return "Beaufort 9 · Silný štorm";
+  if (kmh < 103) return "Beaufort 10 · Plný štorm";
+  if (kmh < 118) return "Beaufort 11 · Vichřice";
+  return "Beaufort 12 · Orkán";
+}
+
 function renderWuOwnPanel() {
   const panel = document.getElementById("wu-own-panel");
   if (!WU || !WU.stations) { panel.style.display = "none"; return; }
   const own = WU.stations.filter(s => s.own);
   if (!own.length) { panel.style.display = "none"; return; }
-  panel.style.display = "flex";
+  panel.style.display = "block";
+
   panel.innerHTML = own.map(s => {
-    const age = s.time_utc ? Math.round((Date.now() - new Date(s.time_utc).getTime()) / 60000) : null;
+    const age    = s.time_utc ? ageMinutes(s.time_utc) : null;
     const ageStr = age != null ? `před ${age} min` : "";
-    const wind = s.wind_kmh != null ? `💨 ${Math.round(s.wind_kmh)} km/h` : "";
-    const hum  = s.humidity  != null ? `💧 ${s.humidity}%` : "";
-    const pres = s.pressure  != null ? `🌡 ${Math.round(s.pressure)} hPa` : "";
-    const prec = s.precip_rate != null && s.precip_rate > 0 ? `🌧 ${s.precip_rate} mm/h` : "";
-    return `<div class="wu-card">
-      <div class="wu-card-name">★ ${s.name || s.id}</div>
-      <div class="wu-card-temp">${s.temp != null ? s.temp + "°C" : "—"}</div>
-      <div class="wu-card-row">${[hum, wind].filter(Boolean).join("  ")}</div>
-      <div class="wu-card-row">${[pres, prec].filter(Boolean).join("  ")}</div>
-      <div class="wu-card-age">${ageStr}</div>
+
+    const deg = s.wind_dir ?? 0;
+
+    // Beaufort
+    const bft = beaufortLabel(s.wind_kmh);
+    const gustStr = s.gust_kmh != null ? ` / ${Math.round(s.gust_kmh)}` : "";
+    const windVal = s.wind_kmh != null ? `${Math.round(s.wind_kmh)}${gustStr} km/h` : "—";
+    const dirStr  = s.wind_dir != null ? degToCompass(s.wind_dir) + ` · ${s.wind_dir}°` : "";
+
+    // Senzorové karty
+    const sensors = [
+      { label:"Vlhkost",   val: s.humidity   != null ? s.humidity + " %" : "—" },
+      { label:"Tlak",      val: s.pressure   != null ? Math.round(s.pressure) + " hPa" : "—" },
+      { label:"Srážky/h",  val: s.precip_rate  != null ? s.precip_rate + " mm" : "0 mm" },
+      { label:"Srážky den",val: s.precip_total != null ? s.precip_total + " mm" : "0 mm" },
+      ...(s.solar_radiation != null ? [{ label:"Sluneční", val: Math.round(s.solar_radiation) + " W/m²" }] : []),
+      ...(s.uv != null ? [{ label:"UV index", val: s.uv.toFixed(1) }] : []),
+      ...(s.feels != null ? [{ label:"Pocitová", val: s.feels + " °C" }] : []),
+    ];
+
+    return `<div class="wu-station-card">
+      <div class="wu-station-header">
+        <span class="wu-station-name">★ ${s.name || s.id}</span>
+        <span class="wu-station-age">${ageStr}</span>
+      </div>
+      <div class="wu-station-body">
+        <div class="wu-hero">
+          <div class="wu-hero-temp">${s.temp != null ? s.temp + "°C" : "—"}</div>
+          ${s.feels != null ? `<div class="wu-hero-feels">pocitová ${s.feels}°C</div>` : ""}
+        </div>
+        ${s.wind_dir != null || s.wind_kmh != null ? `
+        <div class="wu-compass-wrap">
+          <div class="wu-compass">
+            <span class="wu-compass-label n">S</span>
+            <span class="wu-compass-label s">J</span>
+            <span class="wu-compass-label e">V</span>
+            <span class="wu-compass-label w">Z</span>
+            <div class="wu-compass-arrow">
+              <svg width="50" height="50" viewBox="-25 -25 50 50">
+                <polygon points="0,-22 4,8 0,4 -4,8" fill="#ef4444" transform="rotate(${deg})"/>
+                <polygon points="0,22 4,-8 0,-4 -4,-8" fill="#94a3b8" transform="rotate(${deg})"/>
+                <circle cx="0" cy="0" r="3" fill="var(--fg)"/>
+              </svg>
+            </div>
+          </div>
+          <div class="wu-wind-val">${windVal}</div>
+          <div class="wu-beaufort">${dirStr}</div>
+          <div class="wu-beaufort">${bft}</div>
+        </div>` : ""}
+        <div class="wu-sensors">
+          ${sensors.map(c => `<div class="wu-sensor-card">
+            <div class="wu-sensor-label">${c.label}</div>
+            <div class="wu-sensor-val">${c.val}</div>
+          </div>`).join("")}
+        </div>
+      </div>
     </div>`;
   }).join("");
 }
@@ -1729,6 +1846,18 @@ window.addEventListener("DOMContentLoaded", async () => {
       { timeout: 10000 }
     );
   }
+
+  // Dark mode toggle
+  const savedTheme = localStorage.getItem("theme") || "light";
+  document.documentElement.setAttribute("data-theme", savedTheme);
+  const themeBtn = document.getElementById("btn-theme");
+  themeBtn.textContent = savedTheme === "dark" ? "☀️" : "🌙";
+  themeBtn.addEventListener("click", () => {
+    const next = document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark";
+    document.documentElement.setAttribute("data-theme", next);
+    localStorage.setItem("theme", next);
+    themeBtn.textContent = next === "dark" ? "☀️" : "🌙";
+  });
 
   // Refresh button
   document.getElementById("btn-refresh").addEventListener("click", refreshAll);

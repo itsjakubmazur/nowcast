@@ -97,7 +97,9 @@ def parse_obs(o: dict, own: bool = False) -> dict | None:
         "pressure":  m.get("pressure"),
         "precip_rate":  m.get("precipRate"),
         "precip_total": m.get("precipTotal"),
-        "elev":      m.get("elev"),
+        "solar_radiation": o.get("solarRadiation"),
+        "uv":          o.get("uv"),
+        "elev":        m.get("elev"),
     }
 
 
