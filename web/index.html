@@ -1658,46 +1658,65 @@ async function requestNotifPermission() {
   }
 }
 
-// Zkontroluj srážky pro oblíbená místa a pošli notifikaci/pruh
+// Zkontroluj počasí pro oblíbená místa a zobraz upozornění
 async function checkRainNotifications() {
+  if (!GRID) return;
   const favs = loadFavs();
   if (!favs.length) return;
 
-  // Snooze: nenotifikuj víckrát za 20 minut pro stejné místo
   const snooze = JSON.parse(localStorage.getItem(NOTIF_SNOOZE_KEY) || "{}");
   const now = Date.now();
 
-  for (const f of favs) {
-    if (snooze[f.label] && now - snooze[f.label] < 20 * 60 * 1000) continue;
+  // 1. CAP výstrahy ČHMÚ (žlutá/oranžová/červená) — snooze 1 hodina
+  const WARN_COLORS = { "YELLOW": "🟡", "ORANGE": "🟠", "RED": "🔴" };
+  if (GRID.warnings && GRID.wmatch) {
+    for (const f of favs) {
+      const { id } = nearestPt(f.lat, f.lon);
+      const matchIdx = new Set(GRID.wmatch[String(id)] || []);
+      const activeWarns = GRID.warnings.filter((w, wi) =>
+        matchIdx.has(wi) && WARN_COLORS[w.color]
+      );
+      for (const w of activeWarns) {
+        const snoozeKey = `warn_${f.label}_${w.event}`;
+        if (snooze[snoozeKey] && now - snooze[snoozeKey] < 60 * 60 * 1000) continue;
+        const icon = WARN_COLORS[w.color];
+        const msg = `${icon} ${w.event} u ${f.label} — platí do ${localHM(w.expires_utc)}`;
+        if (notifAllowed()) {
+          new Notification("⚠️ Výstraha ČHMÚ", { body: msg, icon: "icon.svg", tag: snoozeKey });
+        }
+        showNotifBar(msg);
+        snooze[snoozeKey] = now;
+        localStorage.setItem(NOTIF_SNOOZE_KEY, JSON.stringify(snooze));
+        return;
+      }
+    }
+  }
 
-    // Zkontroluj GRID data pro nejbližší bod
-    if (!GRID) continue;
+  // 2. Příchozí srážky — snooze 20 minut
+  for (const f of favs) {
+    const snoozeKey = `rain_${f.label}`;
+    if (snooze[snoozeKey] && now - snooze[snoozeKey] < 20 * 60 * 1000) continue;
+
     const { id } = nearestPt(f.lat, f.lon);
     const a = GRID.act[String(id)];
     if (!a) continue;
 
-    // a = [startStep, endStep, peakMmH, totalMm]
     const t0ms    = new Date(GRID.t0_utc).getTime();
     const startMs = t0ms + (a[0] + 1) * (GRID.step_min || 10) * 60000;
     const minsAway = (startMs - now) / 60000;
     if (minsAway < 0 || minsAway > 60) continue;
 
-    const mins  = Math.round(minsAway);
+    const mins   = Math.round(minsAway);
     const intenz = a[2] >= 7.5 ? "vydatný déšť" : a[2] >= 2.5 ? "mírný déšť" : "slabé srážky";
-    const msg   = `Za ${mins} min — ${intenz} (${a[2]} mm/h) u ${f.label}`;
+    const msg    = `Za ${mins} min — ${intenz} (${a[2]} mm/h) u ${f.label}`;
 
-    // Browser notifikace (pokud je povolena)
     if (notifAllowed()) {
-      new Notification("🌧️ Meteo Nowcast", { body: msg, icon: "icon.svg", tag: f.label });
+      new Notification("🌧️ Meteo Nowcast", { body: msg, icon: "icon.svg", tag: snoozeKey });
     }
-
-    // In-app pruh vždy (jako fallback)
     showNotifBar(`🌧️ ${msg}`);
-
-    // Snooze
-    snooze[f.label] = now;
+    snooze[snoozeKey] = now;
     localStorage.setItem(NOTIF_SNOOZE_KEY, JSON.stringify(snooze));
-    break; // max jedna notifikace na refresh
+    return;
   }
 }
 
@@ -1846,6 +1865,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   applyManifestUI();
   renderFavRow();
   renderWuOwnPanel(); renderWuMarkers();
+  checkRainNotifications();
 
   // Slider events
   document.getElementById("timeline").addEventListener("input", e => {
@@ -1940,9 +1960,12 @@ window.addEventListener("DOMContentLoaded", async () => {
   // Auto-refresh každých 5 minut (tiše na pozadí)
   setInterval(() => { refreshAll(); checkRainNotifications(); }, AUTO_REFRESH_MS);
 
-  // Zavření notif pruhu
+  // Zavření notif pruhu — smaže snooze srážek (výstrahy mají vlastní snooze)
   document.getElementById("notif-close").addEventListener("click", () => {
     document.getElementById("notif-bar").classList.remove("show");
+    const snooze = JSON.parse(localStorage.getItem(NOTIF_SNOOZE_KEY) || "{}");
+    Object.keys(snooze).filter(k => k.startsWith("rain_")).forEach(k => delete snooze[k]);
+    localStorage.setItem(NOTIF_SNOOZE_KEY, JSON.stringify(snooze));
   });
 
   // Obnov stav z URL
