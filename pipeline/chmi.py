@@ -64,149 +64,62 @@ def list_station_ids(today: str) -> list[str]:
     return unique
 
 
-def parse_pivot_metadata(values: list) -> dict[str, dict]:
+def parse_meta1(values: list) -> dict[str, dict]:
     """
-    Parsuje metadata ve stejném pivot formátu jako datové soubory.
-    Každý řádek: [station_id, element, value, ...]
-    Elementy: lat/lon/station_name/...
+    Parsuje meta1-*.json: flat tabulka stanic.
+    Header: WSI, GH_ID, FULL_NAME, GEOGR1 (lon), GEOGR2 (lat), ELEVATION, BEGIN_DATE
+    Sloupce jsou pevně dané — indexujeme pozičně.
     """
-    # Debug: ukaž první řádky a unikátní elementy
-    if values:
-        sample = values[:3]
-        print(f"  META sample rows: {sample}", file=sys.stderr)
-        elements = list(dict.fromkeys(str(r[1]) for r in values if len(r) >= 2))
-        print(f"  META elementy: {elements[:20]}", file=sys.stderr)
-
-    by_station: dict[str, dict] = {}
+    meta = {}
     for row in values:
-        if len(row) < 3:
+        if len(row) < 5:
             continue
-        sid_raw, element, val = str(row[0]), str(row[1]), row[2]
-        if val is None or val == "":
+        wsi = str(row[0])   # "0-20000-0-11406"
+        name = str(row[2]) if row[2] else None
+        try:
+            lon = float(row[3])
+            lat = float(row[4])
+        except (TypeError, ValueError):
             continue
-        num = re.search(r'(\d+)$', sid_raw)
+        num = re.search(r'(\d+)$', wsi)
         if not num:
             continue
         sid = num.group(1)
-        if sid not in by_station:
-            by_station[sid] = {"id_raw": sid_raw}
-        el = element.lower()
-        if el in ("lat", "latitude"):
-            try: by_station[sid]["lat"] = float(val)
-            except: pass
-        elif el in ("lon", "lng", "longitude"):
-            try: by_station[sid]["lon"] = float(val)
-            except: pass
-        elif el in ("station_name", "name", "nazev", "jmeno"):
-            by_station[sid]["name"] = str(val)
-        elif el in ("alt", "altitude", "elevation", "elev"):
-            try: by_station[sid]["alt"] = float(val)
-            except: pass
-
-    # Výsledek: jen stanice s alespoň lat nebo lon
-    meta = {}
-    for sid, s in by_station.items():
-        if s.get("lat") is not None or s.get("lon") is not None:
-            meta[sid] = {
-                "name": s.get("name") or f"Stanice {sid}",
-                "lat":  s.get("lat"),
-                "lon":  s.get("lon"),
-            }
+        meta[sid] = {
+            "name": name or f"Stanice {sid}",
+            "lat":  lat,
+            "lon":  lon,
+        }
     return meta
 
 
 def load_metadata() -> dict[str, dict]:
     """
-    Stáhne metadata stanic (jméno, lat, lon) z metadata/ adresáře.
-    Vrátí dict: station_numeric_id → {name, lat, lon}.
+    Stáhne meta1-{datum}.json a vrátí dict: numeric_station_id → {name, lat, lon}.
     """
-    meta = {}
     today = datetime.now(timezone.utc).strftime("%Y%m%d")
-    yesterday = (datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    yesterday = (datetime.now(timezone.utc)
                  .__class__.fromtimestamp(
                      datetime.now(timezone.utc).timestamp() - 86400, tz=timezone.utc
                  ).strftime("%Y%m%d"))
 
-    # Soubory ve stejném pivot formátu jako data — meta1 = základní info (jméno, lat, lon)
-    meta_candidates = [
-        f"{METADATA_URL}meta1-{today}.json",
-        f"{METADATA_URL}meta1-{yesterday}.json",
-        f"{METADATA_URL}meta2-{today}.json",
-        f"{METADATA_URL}meta2-{yesterday}.json",
-    ]
-
-    for url in meta_candidates:
+    for date in (today, yesterday):
+        url = f"{METADATA_URL}meta1-{date}.json"
         r = fetch(url)
         if not r:
             continue
         try:
             data = r.json()
-            # Stejný wrapper jako datové soubory: data.data.values
-            values = None
-            if isinstance(data, dict):
-                try:
-                    values = data["data"]["data"]["values"]
-                except (KeyError, TypeError):
-                    pass
-                if values is None:
-                    # Alternativní struktura
-                    for k in ("values", "data", "stations"):
-                        v = data.get(k)
-                        if isinstance(v, list):
-                            values = v
-                            break
-            elif isinstance(data, list):
-                values = data
-
-            if not values:
-                continue
-
-            parsed = parse_pivot_metadata(values)
-            if parsed:
-                meta.update(parsed)
-                print(f"  Metadata: {len(parsed)} stanic z {url}", file=sys.stderr)
-                # Stáhni všechny meta soubory pro dnešek (meta1, meta2, meta3...)
-                continue  # zkus i další soubory pro doplnění jmen
+            values = data["data"]["data"]["values"]
+            meta = parse_meta1(values)
+            if meta:
+                print(f"  Metadata: {len(meta)} stanic z {url}", file=sys.stderr)
+                return meta
         except Exception as e:
             print(f"  Metadata parse error ({url}): {e}", file=sys.stderr)
 
-    if meta:
-        return meta
-
-    # Záloha: zkus directory listing a parsuj všechny meta soubory
-    r = fetch(METADATA_URL)
-    if r:
-        files = re.findall(r'href="(meta\d+-[^"]+\.json)"', r.text)
-        # Preferuj nejnovější (řaď sestupně)
-        files = sorted(set(files), reverse=True)[:6]
-        for fname in files:
-            url = METADATA_URL + fname
-            r2 = fetch(url)
-            if not r2:
-                continue
-            try:
-                data = r2.json()
-                values = None
-                if isinstance(data, dict):
-                    try:
-                        values = data["data"]["data"]["values"]
-                    except (KeyError, TypeError):
-                        pass
-                elif isinstance(data, list):
-                    values = data
-                if values:
-                    parsed = parse_pivot_metadata(values)
-                    meta.update(parsed)
-                    if parsed:
-                        print(f"  Metadata: +{len(parsed)} stanic z {url}", file=sys.stderr)
-            except Exception as e:
-                print(f"  Metadata parse error ({url}): {e}", file=sys.stderr)
-
-    if meta:
-        return meta
-
     print("  Metadata nedostupná — stanice budou bez jmen/souřadnic", file=sys.stderr)
-    return meta
+    return {}
 
 
 def parse_station_file(station_id: str, data: dict) -> tuple[dict | None, list[dict]]:
