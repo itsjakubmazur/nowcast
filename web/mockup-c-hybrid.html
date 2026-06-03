@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Mockup C — Hybrid Map-first</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #0c0f1a;
+  --glass: rgba(15,20,35,.82);
+  --glass2: rgba(255,255,255,.06);
+  --border: rgba(255,255,255,.09);
+  --text: #edf0f8;
+  --muted: #5a6480;
+  --accent: #4f8ef7;
+  --rain: #38bdf8;
+  --green: #34d399;
+  --warm: #fb923c;
+}
+
+body {
+  font-family: 'Inter', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  height: 100vh;
+  overflow: hidden;
+  position: relative;
+}
+
+/* ── Full-screen map ── */
+.map-bg {
+  position: absolute; inset: 0;
+  background:
+    radial-gradient(ellipse at 40% 50%, rgba(79,142,247,.15) 0%, transparent 55%),
+    radial-gradient(ellipse at 68% 38%, rgba(52,211,153,.1) 0%, transparent 45%),
+    radial-gradient(ellipse at 20% 70%, rgba(251,146,60,.08) 0%, transparent 40%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1200' height='800'%3E%3Crect fill='%230e1525' width='1200' height='800'/%3E%3Cpath d='M100,220 Q200,165 310,188 Q420,210 475,170 Q548,128 630,155 Q714,175 762,208 L780,295 Q718,318 655,338 Q572,365 488,345 Q404,322 318,352 Q235,372 170,332 Q128,312 100,290Z' fill='%23152038' stroke='%231c2d50' stroke-width='1.5' opacity='.8'/%3E%3Cpath d='M210,295 Q294,272 358,300 Q422,326 468,295 Q530,260 595,278 Q660,298 700,320 L712,395 Q650,415 588,406 Q525,390 470,415 Q408,436 346,415 Q284,392 230,370Z' fill='%23182440' stroke='%231c2d50' stroke-width='1' opacity='.7'/%3E%3Ccircle cx='480' cy='260' r='3' fill='%232a3a58' opacity='.6'/%3E%3Ccircle cx='380' cy='300' r='2' fill='%232a3a58' opacity='.5'/%3E%3Ccircle cx='550' cy='230' r='2' fill='%232a3a58' opacity='.5'/%3E%3C/svg%3E");
+  background-size: cover;
+}
+
+/* Radar blobs */
+.radar-blob { position: absolute; border-radius: 50%; pointer-events: none; }
+.blob1 { width:280px; height:200px; top:26%; left:33%; background:rgba(79,142,247,.22); filter:blur(40px); }
+.blob2 { width:140px; height:120px; top:40%; left:52%; background:rgba(99,102,241,.18); filter:blur(30px); }
+.blob3 { width:90px; height:80px; top:33%; left:46%; background:rgba(147,197,253,.25); filter:blur(20px); }
+
+/* Temp markers */
+.tmarker {
+  position: absolute;
+  font-size: .75rem; font-weight: 700; color: #fff;
+  padding: 2px 8px; border-radius: 5px;
+  border: 1.5px solid rgba(255,255,255,.25);
+  box-shadow: 0 2px 10px rgba(0,0,0,.5);
+  cursor: pointer; transition: transform .15s, box-shadow .15s;
+  letter-spacing: -.01em;
+}
+.tmarker:hover { transform: scale(1.12); box-shadow: 0 4px 16px rgba(0,0,0,.6); z-index: 2; }
+.t-cold { background: #0284c7; }
+.t-cool { background: #38bdf8; }
+.t-mild { background: #22c55e; }
+.t-warm { background: #f59e0b; }
+.t-hot  { background: #f97316; }
+
+/* ── Topbar (floating) ── */
+.topbar {
+  position: absolute; top: 0; left: 0; right: 0;
+  height: 52px; z-index: 20;
+  display: flex; align-items: center; gap: .75rem;
+  padding: 0 1rem;
+  background: linear-gradient(to bottom, rgba(12,15,26,.85) 0%, transparent 100%);
+}
+
+.logo {
+  font-size: .95rem; font-weight: 900; letter-spacing: -.02em;
+  color: var(--text);
+  display: flex; align-items: center; gap: .45rem;
+}
+.logo-icon {
+  width: 26px; height: 26px; border-radius: 7px;
+  background: linear-gradient(135deg, #4f8ef7, #38bdf8);
+  display: flex; align-items: center; justify-content: center;
+  font-size: .85rem;
+}
+
+.search-pill {
+  flex: 1; max-width: 300px;
+  display: flex; align-items: center; gap: .5rem;
+  background: var(--glass);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--border);
+  border-radius: 999px; padding: .35rem .9rem;
+  font-size: .83rem; color: var(--muted);
+}
+.search-pill input {
+  background: none; border: none; outline: none;
+  color: var(--text); font-size: .83rem; flex: 1; font-family: inherit;
+}
+.search-pill input::placeholder { color: var(--muted); }
+
+.topbar-right { margin-left: auto; display: flex; gap: .45rem; align-items: center; }
+.glass-btn {
+  height: 32px; border-radius: 8px;
+  background: var(--glass);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--border);
+  display: flex; align-items: center; gap: .35rem;
+  padding: 0 .65rem;
+  cursor: pointer; font-size: .78rem; color: var(--text);
+  font-family: inherit; white-space: nowrap;
+  transition: background .15s;
+}
+.glass-btn:hover { background: var(--glass2); }
+.glass-btn.icon-only { padding: 0; width: 32px; justify-content: center; }
+
+/* ── Bottom radar bar (floating) ── */
+.radar-bar {
+  position: absolute; bottom: 0; left: 0; right: 0;
+  z-index: 20;
+  background: linear-gradient(to top, rgba(12,15,26,.9) 0%, transparent 100%);
+  padding: 1.5rem 1.5rem .85rem;
+  display: flex; align-items: center; gap: .75rem;
+}
+
+.play-btn {
+  width: 36px; height: 36px; border-radius: 10px;
+  background: var(--accent); border: none; color: #fff;
+  font-size: 1rem; cursor: pointer; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 2px 12px rgba(79,142,247,.5);
+}
+.step-btn {
+  width: 30px; height: 30px; border-radius: 8px;
+  background: var(--glass); backdrop-filter: blur(8px);
+  border: 1px solid var(--border);
+  color: var(--text); font-size: .8rem; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.timeline-wrap { flex: 1; position: relative; }
+.timeline-track {
+  width: 100%; height: 4px; background: rgba(255,255,255,.1);
+  border-radius: 2px; cursor: pointer; position: relative;
+}
+.timeline-fill {
+  width: 60%; height: 100%; background: var(--accent);
+  border-radius: 2px; position: relative;
+}
+.timeline-fill::after {
+  content: ''; position: absolute; right: -7px; top: -6px;
+  width: 16px; height: 16px; border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px rgba(79,142,247,.3), 0 0 12px rgba(79,142,247,.5);
+}
+.t0-mark {
+  position: absolute; bottom: 10px; left: 60%;
+  font-size: .62rem; color: #f59e0b; font-weight: 700;
+  transform: translateX(-50%); white-space: nowrap;
+}
+.time-labels {
+  display: flex; justify-content: space-between;
+  margin-top: 6px; font-size: .62rem; color: var(--muted);
+  padding: 0 1px;
+}
+.frame-display {
+  display: flex; flex-direction: column; align-items: center; gap: .1rem;
+  min-width: 52px;
+}
+.frame-time { font-size: .95rem; font-weight: 700; color: var(--accent); }
+.frame-label { font-size: .6rem; color: var(--muted); }
+
+/* ── Left floating panel (current weather) ── */
+.weather-card {
+  position: absolute; left: 1rem; top: 68px;
+  width: 240px; z-index: 20;
+  background: var(--glass);
+  backdrop-filter: blur(16px);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  overflow: hidden;
+}
+.weather-card-top {
+  padding: 1rem 1rem .75rem;
+}
+.loc-row {
+  display: flex; align-items: center; gap: .4rem;
+  font-size: .72rem; color: var(--muted); margin-bottom: .6rem;
+}
+.temp-giant {
+  font-size: 3.2rem; font-weight: 900; line-height: .9;
+  letter-spacing: -.04em;
+  background: linear-gradient(135deg, #fde68a 0%, #fb923c 60%, #f87171 100%);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+}
+.weather-icon-desc {
+  display: flex; align-items: center; gap: .4rem;
+  margin-top: .4rem; font-size: .88rem; font-weight: 500;
+}
+.feels { font-size: .72rem; color: var(--muted); margin-top: .2rem; }
+.precip-row {
+  display: flex; align-items: center; gap: .5rem;
+  padding: .65rem 1rem;
+  background: rgba(79,142,247,.12);
+  border-top: 1px solid rgba(79,142,247,.15);
+}
+.precip-pct { font-size: 1.4rem; font-weight: 800; color: var(--accent); line-height: 1; }
+.precip-text { font-size: .72rem; color: rgba(79,142,247,.8); }
+.card-stats {
+  display: grid; grid-template-columns: 1fr 1fr;
+  border-top: 1px solid var(--border);
+}
+.card-stat {
+  padding: .55rem .9rem;
+  border-right: 1px solid var(--border);
+  display: flex; flex-direction: column; gap: .1rem;
+}
+.card-stat:nth-child(even) { border-right: none; }
+.card-stat:nth-child(n+3) { border-top: 1px solid var(--border); }
+.cs-label { font-size: .6rem; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.cs-val { font-size: .88rem; font-weight: 600; }
+
+/* Alert */
+.alert-float {
+  position: absolute; left: 1rem; top: 450px; width: 240px; z-index: 20;
+  padding: .6rem .85rem;
+  background: rgba(251,191,36,.12);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(251,191,36,.25);
+  border-radius: 10px;
+  display: flex; align-items: center; gap: .5rem;
+  font-size: .78rem;
+}
+.alert-badge { font-size: .62rem; font-weight: 700; padding: .15rem .4rem; border-radius: 4px; background: #fbbf24; color: #000; white-space: nowrap; }
+
+/* ── Right floating panel (timeline + 7day) ── */
+.right-card {
+  position: absolute; right: 1rem; top: 68px;
+  width: 260px; z-index: 20;
+  background: var(--glass);
+  backdrop-filter: blur(16px);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  overflow: hidden;
+  max-height: calc(100vh - 130px);
+  display: flex; flex-direction: column;
+}
+
+.rc-section {
+  padding: .75rem 1rem;
+  border-bottom: 1px solid var(--border);
+}
+.rc-section:last-child { border-bottom: none; }
+.rc-title {
+  font-size: .6rem; font-weight: 700; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .06em; margin-bottom: .55rem;
+}
+
+.hourly-scroll { display: flex; gap: .3rem; overflow-x: auto; padding-bottom: 2px; }
+.hourly-scroll::-webkit-scrollbar { height: 2px; }
+.hourly-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+.hour-item {
+  flex: 0 0 auto; width: 48px; text-align: center;
+  display: flex; flex-direction: column; align-items: center; gap: .2rem;
+  padding: .4rem .15rem; border-radius: 8px; cursor: pointer;
+  transition: background .1s;
+}
+.hour-item:hover { background: var(--glass2); }
+.hour-item.now { background: rgba(79,142,247,.15); }
+.hour-time { font-size: .62rem; color: var(--muted); }
+.hour-icon { font-size: 1rem; }
+.hour-temp { font-size: .8rem; font-weight: 600; }
+.hour-rain { font-size: .6rem; color: var(--rain); }
+
+.day-row {
+  display: flex; align-items: center; gap: .45rem;
+  padding: .38rem 0; border-bottom: 1px solid rgba(255,255,255,.04);
+  font-size: .78rem;
+}
+.day-row:last-child { border-bottom: none; }
+.day-name { width: 28px; font-weight: 500; }
+.day-icon { font-size: .95rem; }
+.day-desc { flex: 1; color: var(--muted); font-size: .72rem; }
+.day-min { color: var(--muted); font-size: .75rem; }
+.day-max { font-weight: 600; font-size: .8rem; }
+
+/* ── Layer selector (floating bottom-left of map) ── */
+.layer-selector {
+  position: absolute; left: 1rem; bottom: 110px; z-index: 20;
+  display: flex; gap: .3rem;
+}
+.layer-pill {
+  padding: .3rem .7rem; border-radius: 999px;
+  background: var(--glass);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--border);
+  font-size: .73rem; font-weight: 500; cursor: pointer;
+  color: var(--muted); transition: all .15s; white-space: nowrap;
+}
+.layer-pill:hover { color: var(--text); border-color: rgba(255,255,255,.2); }
+.layer-pill.active {
+  background: rgba(79,142,247,.2);
+  border-color: rgba(79,142,247,.5);
+  color: var(--accent);
+}
+
+.label-note {
+  position: absolute; bottom: 90px; right: 1rem;
+  font-size: .72rem; color: var(--muted); font-style: italic; z-index: 20;
+}
+</style>
+</head>
+<body>
+
+<!-- Full-screen map background -->
+<div class="map-bg">
+  <div class="radar-blob blob1"></div>
+  <div class="radar-blob blob2"></div>
+  <div class="radar-blob blob3"></div>
+
+  <!-- Temp markers on map -->
+  <div class="tmarker t-mild" style="top:34%;left:42%">13.4°</div>
+  <div class="tmarker t-cool" style="top:29%;left:57%">12.1°</div>
+  <div class="tmarker t-cold" style="top:23%;left:31%">8.7°</div>
+  <div class="tmarker t-warm" style="top:51%;left:38%">16.2°</div>
+  <div class="tmarker t-warm" style="top:46%;left:61%">15.8°</div>
+  <div class="tmarker t-mild" style="top:39%;left:69%">11.9°</div>
+  <div class="tmarker t-cold" style="top:19%;left:49%">7.3°</div>
+  <div class="tmarker t-hot"  style="top:58%;left:52%">19.1°</div>
+  <div class="tmarker t-mild" style="top:55%;left:30%">14.5°</div>
+  <div class="tmarker t-warm" style="top:63%;left:71%">17.4°</div>
+</div>
+
+<!-- Topbar -->
+<div class="topbar">
+  <div class="logo">
+    <div class="logo-icon">⚡</div>
+    nowcast.cz
+  </div>
+  <div class="search-pill">
+    <span>🔍</span>
+    <input type="text" placeholder="Hledat obec…" />
+  </div>
+  <div class="topbar-right">
+    <div class="glass-btn icon-only">📍</div>
+    <div class="glass-btn icon-only">🌙</div>
+    <div class="glass-btn">
+      <span style="opacity:.5;font-size:.75rem">●</span>
+      Aktualizováno 14:40
+    </div>
+  </div>
+</div>
+
+<!-- Left floating weather card -->
+<div class="weather-card">
+  <div class="weather-card-top">
+    <div class="loc-row">📍 Praha — Smíchov</div>
+    <div class="temp-giant">13.4<span style="font-size:1.4rem;opacity:.6">°</span></div>
+    <div class="weather-icon-desc">🌥️ Částečná oblačnost</div>
+    <div class="feels">Pocitová 11° · ↑16° ↓9°</div>
+  </div>
+  <div class="precip-row">
+    <div class="precip-pct">38%</div>
+    <div>
+      <div class="precip-text" style="font-weight:700">Pravděpodobnost deště</div>
+      <div class="precip-text">Max. intenzita 15:00–16:00</div>
+    </div>
+  </div>
+  <div class="card-stats">
+    <div class="card-stat">
+      <div class="cs-label">Vítr</div>
+      <div class="cs-val">28 km/h</div>
+    </div>
+    <div class="card-stat">
+      <div class="cs-label">Vlhkost</div>
+      <div class="cs-val">72%</div>
+    </div>
+    <div class="card-stat">
+      <div class="cs-label">Tlak</div>
+      <div class="cs-val">1014 hPa</div>
+    </div>
+    <div class="card-stat">
+      <div class="cs-label">Záření</div>
+      <div class="cs-val">312 W/m²</div>
+    </div>
+  </div>
+</div>
+
+<!-- Alert floating -->
+<div class="alert-float">
+  ⚠️
+  <span style="flex:1;font-size:.76rem">Výstraha: silný vítr</span>
+  <span class="alert-badge">ŽLUTÁ</span>
+</div>
+
+<!-- Layer selector pills (above radar bar) -->
+<div class="layer-selector">
+  <div class="layer-pill active">🌡️ Teplota</div>
+  <div class="layer-pill">💧 Vlhkost</div>
+  <div class="layer-pill">🌬️ Vítr</div>
+  <div class="layer-pill">🌧️ Srážky</div>
+  <div class="layer-pill">🔵 Tlak</div>
+</div>
+
+<!-- Right floating panel -->
+<div class="right-card">
+  <div class="rc-section">
+    <div class="rc-title">Průběh dne</div>
+    <div class="hourly-scroll">
+      <div class="hour-item"><div class="hour-time">12h</div><div class="hour-icon">🌤️</div><div class="hour-temp">13°</div><div class="hour-rain">10%</div></div>
+      <div class="hour-item"><div class="hour-time">13h</div><div class="hour-icon">🌥️</div><div class="hour-temp">14°</div><div class="hour-rain">15%</div></div>
+      <div class="hour-item now"><div class="hour-time">14h</div><div class="hour-icon">🌧️</div><div class="hour-temp">13°</div><div class="hour-rain">65%</div></div>
+      <div class="hour-item"><div class="hour-time">15h</div><div class="hour-icon">🌧️</div><div class="hour-temp">12°</div><div class="hour-rain">80%</div></div>
+      <div class="hour-item"><div class="hour-time">16h</div><div class="hour-icon">🌦️</div><div class="hour-temp">12°</div><div class="hour-rain">40%</div></div>
+      <div class="hour-item"><div class="hour-time">17h</div><div class="hour-icon">⛅</div><div class="hour-temp">11°</div><div class="hour-rain">15%</div></div>
+      <div class="hour-item"><div class="hour-time">18h</div><div class="hour-icon">🌤️</div><div class="hour-temp">11°</div><div class="hour-rain">5%</div></div>
+      <div class="hour-item"><div class="hour-time">19h</div><div class="hour-icon">🌙</div><div class="hour-temp">10°</div><div class="hour-rain">0%</div></div>
+    </div>
+  </div>
+  <div class="rc-section">
+    <div class="rc-title">7 dní</div>
+    <div class="day-row">
+      <div class="day-name" style="color:var(--accent)">Dnes</div>
+      <div class="day-icon">🌧️</div>
+      <div class="day-desc">Přeháňky</div>
+      <div class="day-min">9°</div>
+      <div class="day-max">16°</div>
+    </div>
+    <div class="day-row">
+      <div class="day-name">Út</div>
+      <div class="day-icon">⛅</div>
+      <div class="day-desc">Oblačno</div>
+      <div class="day-min">7°</div>
+      <div class="day-max">14°</div>
+    </div>
+    <div class="day-row">
+      <div class="day-name">St</div>
+      <div class="day-icon">🌤️</div>
+      <div class="day-desc">Polojasno</div>
+      <div class="day-min">8°</div>
+      <div class="day-max">18°</div>
+    </div>
+    <div class="day-row">
+      <div class="day-name">Čt</div>
+      <div class="day-icon">☀️</div>
+      <div class="day-desc">Slunečno</div>
+      <div class="day-min">10°</div>
+      <div class="day-max">22°</div>
+    </div>
+    <div class="day-row">
+      <div class="day-name">Pá</div>
+      <div class="day-icon">🌤️</div>
+      <div class="day-desc">Převážně jasno</div>
+      <div class="day-min">11°</div>
+      <div class="day-max">21°</div>
+    </div>
+  </div>
+  <div class="rc-section" style="display:flex;flex-direction:column;gap:.35rem">
+    <div class="rc-title">Oblíbená místa</div>
+    <div style="display:flex;align-items:center;gap:.5rem;padding:.25rem 0;cursor:pointer">
+      <span style="font-size:.8rem">🏠</span>
+      <span style="flex:1;font-size:.8rem;font-weight:500">Brno — Žabovřesky</span>
+      <span style="font-size:.85rem;font-weight:700">11.2°</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:.5rem;padding:.25rem 0;cursor:pointer">
+      <span style="font-size:.8rem">📌</span>
+      <span style="flex:1;font-size:.8rem;font-weight:500">Ostrava</span>
+      <span style="font-size:.85rem;font-weight:700">9.8°</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:.5rem;padding:.25rem 0;cursor:pointer">
+      <span style="font-size:.8rem">📌</span>
+      <span style="flex:1;font-size:.8rem;font-weight:500">Liberec</span>
+      <span style="font-size:.85rem;font-weight:700">6.4°</span>
+    </div>
+  </div>
+</div>
+
+<!-- Radar bar -->
+<div class="radar-bar">
+  <div class="step-btn">⏮</div>
+  <button class="play-btn">▶</button>
+  <div class="step-btn">⏭</div>
+  <div class="timeline-wrap">
+    <div class="timeline-track">
+      <div class="timeline-fill"></div>
+    </div>
+    <div class="t0-mark">▲ teď</div>
+    <div class="time-labels">
+      <span>-2h</span><span>-90min</span><span>-60min</span><span>-30min</span><span>teď</span><span>+30min</span><span>+60min</span><span>+90min</span>
+    </div>
+  </div>
+  <div class="frame-display">
+    <div class="frame-time">+45 min</div>
+    <div class="frame-label">předpověď</div>
+  </div>
+  <div style="display:flex;gap:.5rem;margin-left:.5rem">
+    <div class="glass-btn" style="font-size:.72rem">0.5× ▾</div>
+    <div class="glass-btn" style="font-size:.72rem">70% ▾</div>
+  </div>
+</div>
+
+<div class="label-note">— Mockup C: Hybrid Map-first —</div>
+
+</body>
+</html>
