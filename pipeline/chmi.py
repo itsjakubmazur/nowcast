@@ -70,6 +70,13 @@ def parse_pivot_metadata(values: list) -> dict[str, dict]:
     Každý řádek: [station_id, element, value, ...]
     Elementy: lat/lon/station_name/...
     """
+    # Debug: ukaž první řádky a unikátní elementy
+    if values:
+        sample = values[:3]
+        print(f"  META sample rows: {sample}", file=sys.stderr)
+        elements = list(dict.fromkeys(str(r[1]) for r in values if len(r) >= 2))
+        print(f"  META elementy: {elements[:20]}", file=sys.stderr)
+
     by_station: dict[str, dict] = {}
     for row in values:
         if len(row) < 3:
