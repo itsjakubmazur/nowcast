@@ -635,15 +635,13 @@
 
 <!-- Vrstvový selektor ČHMÚ markerů -->
 <div id="layer-selector">
+  <span>Zobrazit:</span>
   <button class="layer-btn active" data-layer="temp">🌡️ Teplota</button>
-  <button class="layer-btn" data-layer="dewpoint">🌫️ Rosný bod</button>
   <button class="layer-btn" data-layer="humidity">💧 Vlhkost</button>
   <button class="layer-btn" data-layer="wind_kmh">🌬️ Vítr</button>
-  <button class="layer-btn" data-layer="precip_1h">🌧️ Srážky/hod</button>
-  <button class="layer-btn" data-layer="snow_cm">❄️ Sníh</button>
+  <button class="layer-btn" data-layer="precip_rate">🌧️ Srážky</button>
   <button class="layer-btn" data-layer="pressure">🔵 Tlak</button>
   <button class="layer-btn" data-layer="solar">☀️ Záření</button>
-  <button class="layer-btn" data-layer="visibility_m">👁️ Viditelnost</button>
 </div>
 
 <!-- Radar bar (fixed bottom) -->
@@ -883,10 +881,9 @@ function renderWuMarkers() {
 // Vrátí barvu markeru dle hodnoty a typu vrstvy
 function chmiMarkerColor(layer, value) {
   if (value == null) return "#94a3b8";
-  if (layer === "temp" || layer === "dewpoint") {
-    if (value <= -15) return "#bfdbfe";
-    if (value <= -5)  return "#38bdf8";
-    if (value <= 0)   return "#67e8f9";
+  if (layer === "temp") {
+    if (value <= -10) return "#7dd3fc"; // ledová modrá
+    if (value <= 0)   return "#38bdf8";
     if (value <= 5)   return "#34d399";
     if (value <= 10)  return "#86efac";
     if (value <= 15)  return "#fde68a";
@@ -896,55 +893,34 @@ function chmiMarkerColor(layer, value) {
     return "#b91c1c";
   }
   if (layer === "humidity") {
-    if (value < 30) return "#f97316";
-    if (value < 50) return "#fbbf24";
-    if (value < 70) return "#34d399";
-    if (value < 85) return "#38bdf8";
-    return "#3b82f6";
+    if (value < 40) return "#f97316";
+    if (value < 60) return "#fbbf24";
+    if (value < 80) return "#34d399";
+    return "#38bdf8";
   }
   if (layer === "wind_kmh") {
     if (value < 10) return "#34d399";
     if (value < 30) return "#fbbf24";
-    if (value < 50) return "#f97316";
-    if (value < 75) return "#ef4444";
-    return "#b91c1c";
+    if (value < 60) return "#f97316";
+    return "#ef4444";
   }
-  if (layer === "precip_1h") {
-    if (value === 0 || value == null) return "#94a3b8";
-    if (value < 0.3) return "#bfdbfe";
-    if (value < 1)   return "#7dd3fc";
-    if (value < 3)   return "#3b82f6";
-    if (value < 10)  return "#1d4ed8";
-    return "#1e3a8a";
-  }
-  if (layer === "snow_cm") {
-    if (value <= 0)  return "#94a3b8";
-    if (value < 2)   return "#e0f2fe";
-    if (value < 10)  return "#bae6fd";
-    if (value < 30)  return "#7dd3fc";
-    if (value < 60)  return "#38bdf8";
-    return "#0284c7";
+  if (layer === "precip_rate") {
+    if (value === 0) return "#94a3b8";
+    if (value < 0.5) return "#7dd3fc";
+    if (value < 2)   return "#3b82f6";
+    return "#1d4ed8";
   }
   if (layer === "pressure") {
-    if (value < 985)  return "#f97316";
-    if (value < 1000) return "#fbbf24";
-    if (value < 1015) return "#34d399";
-    if (value < 1025) return "#38bdf8";
-    return "#3b82f6";
+    if (value < 990) return "#f97316";
+    if (value < 1005) return "#fbbf24";
+    if (value < 1020) return "#34d399";
+    return "#38bdf8";
   }
   if (layer === "solar") {
-    if (value < 20)  return "#94a3b8";
-    if (value < 100) return "#fde68a";
-    if (value < 300) return "#fbbf24";
-    if (value < 600) return "#f59e0b";
-    return "#d97706";
-  }
-  if (layer === "visibility_m") {
-    if (value < 200)   return "#7c3aed";
-    if (value < 1000)  return "#ef4444";
-    if (value < 5000)  return "#f97316";
-    if (value < 10000) return "#fbbf24";
-    return "#34d399";
+    if (value < 50)  return "#94a3b8";
+    if (value < 200) return "#fde68a";
+    if (value < 500) return "#fbbf24";
+    return "#f59e0b";
   }
   return "#10b981";
 }
@@ -953,18 +929,12 @@ function chmiMarkerColor(layer, value) {
 function chmiMarkerText(layer, s) {
   const v = s[layer];
   if (v == null) return "—";
-  if (layer === "temp" || layer === "dewpoint") return v.toFixed(1) + "°";
-  if (layer === "humidity")     return Math.round(v) + "%";
-  if (layer === "wind_kmh")     return Math.round(v) + "km";
-  if (layer === "precip_1h")    return v.toFixed(1) + "mm";
-  if (layer === "snow_cm")      return Math.round(v) + "cm";
-  if (layer === "pressure")     return Math.round(v) + "";
-  if (layer === "solar")        return Math.round(v) + "W";
-  if (layer === "visibility_m") {
-    if (v >= 10000) return "≥10km";
-    if (v >= 1000)  return (v/1000).toFixed(1) + "km";
-    return Math.round(v) + "m";
-  }
+  if (layer === "temp")       return v.toFixed(1) + "°";
+  if (layer === "humidity")   return Math.round(v) + "%";
+  if (layer === "wind_kmh")   return Math.round(v) + "km";
+  if (layer === "precip_rate") return v.toFixed(1) + "mm";
+  if (layer === "pressure")   return Math.round(v) + "";
+  if (layer === "solar")      return Math.round(v) + "W";
   return String(v);
 }
 
@@ -993,20 +963,16 @@ function renderChmiMarkers() {
     const ageStr   = age != null ? `<span style="color:var(--muted);font-size:.7rem"> · před ${age} min</span>` : "";
     const stationId = s.id;
 
-    const elev = s.elev != null ? ` · ${Math.round(s.elev)} m` : "";
     const popup = `
       <div class="wu-popup">
         <strong>${s.name || s.id}</strong>
-        <span style="color:#10b981;font-size:.7rem"> ● ČHMÚ</span>${ageStr}${elev}<br>
+        <span style="color:#10b981;font-size:.7rem"> ● ČHMÚ</span>${ageStr}<br>
         🌡️ ${s.temp != null ? s.temp + " °C" : "—"} &nbsp;
-        💧 ${s.humidity != null ? s.humidity + " %" : "—"}
-        ${s.dewpoint != null ? "<small>ros. bod " + s.dewpoint.toFixed(1) + " °C</small>" : ""}<br>
+        💧 ${s.humidity != null ? s.humidity + " %" : "—"}<br>
         🌬️ ${s.wind_kmh != null ? s.wind_kmh + " km/h " + windDir : "—"}
         ${s.gust_kmh != null ? `<small>(nárazy ${s.gust_kmh})</small>` : ""}<br>
         🔵 ${s.pressure != null ? s.pressure + " hPa" : "—"} &nbsp;
-        🌧️ ${s.precip_1h != null ? s.precip_1h.toFixed(1) + " mm/hod" : s.precip_10m != null ? s.precip_10m.toFixed(1) + " mm/10min" : "—"}<br>
-        ${s.snow_cm != null && s.snow_cm > 0 ? "❄️ Sníh: " + Math.round(s.snow_cm) + " cm &nbsp;" : ""}
-        ${s.visibility_m != null ? "👁️ " + (s.visibility_m >= 1000 ? (s.visibility_m/1000).toFixed(1) + " km" : Math.round(s.visibility_m) + " m") : ""}
+        🌧️ ${s.precip_rate != null ? s.precip_rate + " mm/10min" : "—"}
         <br><small style="color:var(--muted)">${s.id}</small>
         <br><button onclick="openChmiDetail('${stationId}')"
           style="margin-top:.4rem;padding:.25rem .7rem;font-size:.78rem;cursor:pointer;
@@ -1077,17 +1043,13 @@ function _renderTabDnes(body, stationId) {
   });
   body.innerHTML = "";
   const chartCfgs = [
-    { key: "temp",         label: "Teplota (°C)",           color: "#f59e0b", fill: true,  unit: "°C" },
-    { key: "dewpoint",     label: "Rosný bod (°C)",          color: "#a78bfa", fill: false, unit: "°C" },
-    { key: "humidity",     label: "Vlhkost (%)",             color: "#3b82f6", fill: false, unit: "%" },
-    { key: "pressure",     label: "Tlak (hPa)",              color: "#8b5cf6", fill: false, unit: "hPa" },
-    { key: "wind_kmh",     label: "Rychlost větru (km/h)",   color: "#10b981", fill: true,  unit: "km/h" },
-    { key: "gust_kmh",     label: "Nárazy větru (km/h)",     color: "#ef4444", fill: false, unit: "km/h" },
-    { key: "precip_1h",    label: "Srážky / hod (mm)",       color: "#06b6d4", fill: true,  unit: "mm", bar: true },
-    { key: "precip_10m",   label: "Srážky / 10min (mm)",     color: "#0ea5e9", fill: true,  unit: "mm", bar: true },
-    { key: "snow_cm",      label: "Výška sněhu (cm)",        color: "#bae6fd", fill: true,  unit: "cm" },
-    { key: "solar",        label: "Záření (W/m²)",           color: "#fbbf24", fill: true,  unit: "W/m²" },
-    { key: "visibility_m", label: "Viditelnost (m)",         color: "#94a3b8", fill: false, unit: "m" },
+    { key: "temp",     label: "Teplota (°C)",         color: "#f59e0b", fill: true,  unit: "°C" },
+    { key: "humidity", label: "Vlhkost (%)",           color: "#3b82f6", fill: false, unit: "%" },
+    { key: "pressure", label: "Tlak (hPa)",            color: "#8b5cf6", fill: false, unit: "hPa" },
+    { key: "wind_kmh", label: "Rychlost větru (km/h)", color: "#10b981", fill: true,  unit: "km/h" },
+    { key: "gust_kmh", label: "Nárazy větru (km/h)",   color: "#ef4444", fill: false, unit: "km/h" },
+    { key: "precip",   label: "Srážky (mm/10min)",     color: "#06b6d4", fill: true,  unit: "mm", bar: true },
+    { key: "solar",    label: "Záření (W/m²)",         color: "#fbbf24", fill: true,  unit: "W/m²" },
   ];
   for (const cfg of chartCfgs) {
     const vals = series.map(r => r[cfg.key] ?? null);
