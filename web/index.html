@@ -148,6 +148,7 @@
       padding: 1rem 1rem .75rem;
       display: flex; flex-direction: column; gap: .2rem;
       border-bottom: 1px solid var(--border);
+      background: linear-gradient(180deg, rgba(79,142,247,.04) 0%, transparent 100%);
     }
     /* hero row: big temp + weather icon */
     .fc-hero {
@@ -168,16 +169,19 @@
     /* stats mini-grid */
     .fc-stats {
       display: grid; grid-template-columns: 1fr 1fr;
-      gap: 1px; background: var(--border);
-      border-radius: 10px; overflow: hidden;
-      margin-top: .4rem;
+      gap: .35rem; background: transparent;
+      border-radius: 12px; overflow: hidden;
+      margin-top: .5rem;
     }
     .fc-stat {
-      background: rgba(255,255,255,.04); padding: .5rem .7rem;
-      display: flex; flex-direction: column; gap: .08rem;
+      background: rgba(255,255,255,.05); padding: .6rem .7rem;
+      display: flex; flex-direction: column; gap: .12rem;
+      border-radius: 10px; border: 1px solid rgba(255,255,255,.07);
+      transition: background .12s;
     }
-    .fc-stat-label { font-size: .6rem; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
-    .fc-stat-val   { font-size: .95rem; font-weight: 700; }
+    .fc-stat:hover { background: rgba(255,255,255,.08); }
+    .fc-stat-label { font-size: .58rem; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; font-weight: 600; }
+    .fc-stat-val   { font-size: 1.05rem; font-weight: 800; letter-spacing: -.01em; }
     .place { font-size: .78rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; display: flex; align-items: center; gap: .3rem; }
     .dist  { display: none; }
     .verdict-text { font-size: .82rem; line-height: 1.55; color: var(--text); margin-top: .5rem; }
@@ -301,7 +305,7 @@
     .sd-chart-head { display:flex; justify-content:space-between; align-items:baseline;
       font-size:.75rem; font-weight:700; margin-bottom:.5rem; }
     .sd-chart-unit { font-size:.65rem; font-weight:400; color:var(--muted); }
-    .sd-chart canvas { display:block; }
+    .sd-chart canvas { display:block; width:100% !important; height:120px !important; }
 
     /* legacy wu-card */
     .wu-card { flex:1; min-width:130px; background:rgba(255,255,255,.05); border-radius:10px; padding:.5rem .7rem; display:flex; flex-direction:column; gap:.12rem; border-left:3px solid #f59e0b; }
@@ -317,8 +321,22 @@
       display: flex; flex-direction: column; gap: .5rem;
       overflow-y: auto; overflow-x: hidden;
       scrollbar-width: none;
+      background: var(--panel);
+      backdrop-filter: blur(16px) saturate(1.4);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: .5rem;
+      box-shadow: 0 8px 32px rgba(0,0,0,.4);
     }
     #right-panel::-webkit-scrollbar { display: none; }
+    /* Inside right-panel, remove duplicate borders from cards */
+    #right-panel .fc24,
+    #right-panel .fc7 {
+      background: rgba(255,255,255,.04);
+      backdrop-filter: none;
+      border: 1px solid rgba(255,255,255,.06);
+      box-shadow: none;
+    }
 
     .fc24 {
       background: var(--panel);
@@ -548,7 +566,8 @@
       margin: 0 0 .3rem; font-size: .78rem; color: var(--muted);
       text-transform: uppercase; letter-spacing: .04em;
     }
-    .chmi-chart-block canvas { width: 100% !important; height: 140px !important; }
+    .chmi-chart-block { position: relative; }
+    .chmi-chart-block canvas { display: block; width: 100% !important; height: 140px !important; }
 
     /* ── Map marker styles (unchanged) ───────────────────────────────── */
     .wu-popup { font-size:.82rem; min-width:160px; }
@@ -1191,7 +1210,7 @@ let _chmiActiveTab = "dnes";
 let _chmiActiveStation = null;
 
 function _makeChart(canvas, type, labels, vals, color, fill, unit) {
-  const isDark = document.documentElement.getAttribute("data-theme") === "dark";
+  const isDark = document.documentElement.getAttribute("data-theme") !== "light";
   const gridColor = isDark ? "rgba(255,255,255,.08)" : "rgba(0,0,0,.07)";
   const textColor = isDark ? "#8b909a" : "#6b7280";
   const isBar = type === "bar";
@@ -1309,9 +1328,9 @@ function _renderTabDnes(body, stationId) {
       <canvas id="${canvasId}" height="90"></canvas>`;
     body.appendChild(wrap);
 
-    const isDark = document.documentElement.getAttribute("data-theme") !== "light";
-    const gc = isDark ? "rgba(255,255,255,.07)" : "rgba(0,0,0,.07)";
-    const tc = isDark ? "#6b7280" : "#9ca3af";
+    const isDark2 = document.documentElement.getAttribute("data-theme") !== "light";
+    const gc = isDark2 ? "rgba(255,255,255,.07)" : "rgba(0,0,0,.07)";
+    const tc = isDark2 ? "#6b7280" : "#9ca3af";
 
     const valid = vals.filter(v => v != null);
     const vMin = valid.length ? Math.min(...valid) : 0;
@@ -2776,7 +2795,7 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   preloadFrames();
   initMap();
-  document.getElementById("radar-bar").style.display = "";
+  document.getElementById("radar-bar").style.display = "block";
   applyManifestUI();
   renderFavRow();
   renderWuOwnPanel(); renderWuMarkers(); renderChmiMarkers();
