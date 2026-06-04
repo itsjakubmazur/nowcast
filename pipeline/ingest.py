@@ -297,8 +297,10 @@ def main():
             with open(om_path) as f:
                 om_data = json.load(f)
         else:
-            print("  Žádná cache — přeskakuji Open-Meteo data", file=sys.stderr)
+            print("  Žádná cache — zapisuji prázdný openmeteo.json", file=sys.stderr)
             om_data = {}
+            with open(om_path, "w") as f:
+                json.dump(om_data, f)
 
     m15    = om_data.get("minutely_15", {})
     hourly = om_data.get("hourly", {})
