@@ -25,7 +25,7 @@ MAX_WORKERS = 24   # paralelní HTTP requesty
 BASE          = "https://opendata.chmi.cz/meteorology/climate"
 NOW_DATA      = f"{BASE}/now/data/"
 NOW_META      = f"{BASE}/now/metadata/"
-RECENT_HOURLY = f"{BASE}/recent/data/hourly/"
+RECENT_HOURLY = f"{BASE}/recent/data/1hour/"
 RECENT_META   = f"{BASE}/recent/metadata/"
 
 # Střední Evropa — ČR + okolní státy (~200 km za hranice)
@@ -230,18 +230,18 @@ def list_now_ids(today: str, yesterday: str) -> list[str]:
     return result
 
 
-def list_recent_ids(yyyymm: str, prev_yyyymm: str) -> list[str]:
-    """Vrátí numerická ID stanic z recent/data/hourly/."""
+def list_recent_ids(today: str, yesterday: str) -> list[str]:
+    """Vrátí numerická ID stanic z recent/data/1hour/."""
     r = fetch(RECENT_HOURLY)
     if not r:
         return []
     text = r.text
     ids = set()
-    for ym in (yyyymm, prev_yyyymm):
-        p = re.compile(rf'1h-0-20000-0-(\d+)-{ym}\.json')
+    for d in (today, yesterday):
+        p = re.compile(rf'1h-0-20000-0-(\d+)-{d}\.json')
         ids.update(p.findall(text))
     result = list(ids)
-    print(f"  recent/hourly/: {len(result)} stanic", file=sys.stderr)
+    print(f"  recent/1hour/: {len(result)} stanic", file=sys.stderr)
     return result
 
 
@@ -407,7 +407,7 @@ def main():
 
     # 2. Seznam stanic
     now_ids    = list_now_ids(today, yesterday)
-    recent_ids = list_recent_ids(yyyymm, prev_yyyymm)
+    recent_ids = list_recent_ids(today, yesterday)
 
     # Klíčová oprava: directory listing na recent/ vrací 403 → recent_ids = [].
     # Proto použij VŠECHNY stanice z metadat jako základ pro recent/ stahování.
@@ -437,12 +437,11 @@ def main():
         for sid in now_ids if sid in metadata
         for d in (today, yesterday)
     ]
-    # recent/hourly/: 1h soubory — pouze pro synoptické stanice z now/ (meta-only stanice tam nemají data)
-    rec_1h_sids = [sid for sid in now_ids if sid in metadata]
+    # recent/data/1hour/: 1h soubory — daily format YYYYMMDD (PDF dokumentace)
     rec_1h_urls = [
-        (f"1h_rec_{sid}_{ym}", f"{RECENT_HOURLY}1h-0-20000-0-{sid}-{ym}.json")
-        for sid in rec_1h_sids
-        for ym in (yyyymm, prev_yyyymm)
+        (f"1h_rec_{sid}_{d}", f"{RECENT_HOURLY}1h-0-20000-0-{sid}-{d}.json")
+        for sid in cz_sids
+        for d in (today, yesterday)
     ]
 
     all_urls = now_10m_urls + now_1h_urls + rec_1h_urls
@@ -466,7 +465,7 @@ def main():
     for sid in cz_sids:
         data_10m       = best("10m", sid, (today, yesterday))
         data_1h_now    = best("1h_now", sid, (today, yesterday))
-        data_1h_recent = best("1h_rec", sid, (yyyymm, prev_yyyymm))
+        data_1h_recent = best("1h_rec", sid, (today, yesterday))
 
         if not any([data_10m, data_1h_now, data_1h_recent]):
             err += 1
