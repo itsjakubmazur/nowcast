@@ -227,41 +227,53 @@
 
     /* wu-own-panel inside left card */
     #wu-own-panel { display: none; }
-    .wu-panel { padding:.6rem .85rem .4rem; display:flex; flex-direction:column; gap:.5rem; border-bottom:1px solid var(--border); }
-    .wu-station-card {
-      background: rgba(255,255,255,.04); border:1px solid var(--border); border-radius:12px;
-      padding:.65rem .85rem; display:flex; flex-direction:column; gap:.5rem;
-      overflow:hidden; max-width:100%;
+    .wu-mini-row {
+      display: flex; align-items: center; gap: .55rem;
+      padding: .55rem .85rem; border-bottom: 1px solid var(--border);
+      cursor: pointer; transition: background .15s;
     }
-    .wu-station-header { display:flex; align-items:center; gap:.5rem; flex-wrap:wrap; }
-    .wu-station-name { font-size:.72rem; font-weight:700; color:#f59e0b; text-transform:uppercase; letter-spacing:.04em; }
-    .wu-station-age  { font-size:.65rem; color:var(--muted); margin-left:auto; }
-    .wu-station-body { display:flex; gap:.65rem; flex-wrap:wrap; align-items:flex-start; width:100%; }
-    .wu-hero { display:flex; flex-direction:column; min-width:72px; }
-    .wu-hero-temp { font-size:2rem; font-weight:800; line-height:1; color: var(--text); }
-    .wu-hero-feels { font-size:.72rem; color:var(--muted); }
-    .wu-compass-wrap { display:flex; flex-direction:column; align-items:center; gap:.2rem; }
-    .wu-compass {
-      width:64px; height:64px; border-radius:50%; border:2px solid var(--border);
-      background: rgba(255,255,255,.04); position:relative; flex-shrink:0;
+    .wu-mini-row:hover { background: rgba(255,255,255,.04); }
+    .wu-mini-dot { width:8px; height:8px; border-radius:50%; background:#f59e0b; flex-shrink:0; }
+    .wu-mini-name { font-size:.72rem; font-weight:700; color:#f59e0b; flex:1; min-width:0;
+      overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .wu-mini-temp { font-size:.9rem; font-weight:700; color:var(--text); }
+    .wu-mini-meta { font-size:.65rem; color:var(--muted); white-space:nowrap; }
+    .wu-mini-arrow { font-size:.7rem; color:var(--muted); }
+    /* Detail overlay */
+    #wu-detail-overlay {
+      position:fixed; inset:0; z-index:200; background:rgba(0,0,0,.55);
+      display:none; align-items:center; justify-content:center;
     }
-    .wu-compass-label { position:absolute; font-size:.52rem; color:var(--muted); font-weight:700; }
-    .wu-compass-label.n { top:3px; left:50%; transform:translateX(-50%); }
-    .wu-compass-label.s { bottom:3px; left:50%; transform:translateX(-50%); }
-    .wu-compass-label.e { right:4px; top:50%; transform:translateY(-50%); }
-    .wu-compass-label.w { left:4px; top:50%; transform:translateY(-50%); }
-    .wu-compass-arrow { position:absolute; top:50%; left:50%; width:0; height:0; }
-    .wu-compass-arrow svg { position:absolute; transform:translate(-50%,-50%); overflow:visible; }
-    .wu-wind-val { font-size:.75rem; font-weight:600; text-align:center; color: var(--text); }
-    .wu-beaufort { font-size:.62rem; color:var(--muted); text-align:center; }
-    .wu-sensors { display:grid; grid-template-columns:repeat(auto-fill,minmax(72px,1fr)); gap:.35rem; flex:1; min-width:0; width:100%; }
-    .wu-sensor-card {
-      background: rgba(255,255,255,.05); border-radius:8px; padding:.35rem .45rem;
-      display:flex; flex-direction:column; gap:.08rem;
+    #wu-detail-overlay.open { display:flex; }
+    #wu-detail-box {
+      background:var(--panel); backdrop-filter:blur(20px) saturate(1.4);
+      border:1px solid var(--border); border-radius:18px;
+      padding:1.25rem 1.5rem; width:min(92vw,380px); max-height:85vh;
+      overflow-y:auto; box-shadow:0 24px 64px rgba(0,0,0,.6);
     }
-    .wu-sensor-label { font-size:.6rem; color:var(--muted); text-transform:uppercase; letter-spacing:.03em; }
-    .wu-sensor-val   { font-size:1rem; font-weight:700; line-height:1.2; color: var(--text); }
-    .wu-sensor-unit  { font-size:.62rem; color:var(--muted); }
+    #wu-detail-box h3 { font-size:.85rem; font-weight:700; color:#f59e0b; margin:0 0 .1rem; }
+    #wu-detail-box .wu-detail-sub { font-size:.68rem; color:var(--muted); margin-bottom:.9rem; }
+    #wu-detail-close { position:absolute; top:.9rem; right:1rem; background:none; border:none;
+      color:var(--muted); font-size:1.1rem; cursor:pointer; }
+    #wu-detail-box { position:relative; }
+    .wu-detail-hero { display:flex; align-items:flex-end; gap:.75rem; margin-bottom:.8rem; }
+    .wu-detail-temp { font-size:3rem; font-weight:900; line-height:.9; letter-spacing:-.04em; color:var(--text); }
+    .wu-detail-compass {
+      width:56px; height:56px; border-radius:50%; border:1.5px solid var(--border);
+      background:rgba(255,255,255,.04); position:relative; flex-shrink:0;
+    }
+    .wu-detail-compass .wu-compass-label { position:absolute; font-size:.48rem; color:var(--muted); font-weight:700; }
+    .wu-detail-compass .wu-compass-label.n { top:2px; left:50%; transform:translateX(-50%); }
+    .wu-detail-compass .wu-compass-label.s { bottom:2px; left:50%; transform:translateX(-50%); }
+    .wu-detail-compass .wu-compass-label.e { right:3px; top:50%; transform:translateY(-50%); }
+    .wu-detail-compass .wu-compass-label.w { left:3px; top:50%; transform:translateY(-50%); }
+    .wu-detail-arrow { position:absolute; top:50%; left:50%; }
+    .wu-detail-arrow svg { position:absolute; transform:translate(-50%,-50%); overflow:visible; }
+    .wu-detail-grid { display:grid; grid-template-columns:1fr 1fr; gap:1px;
+      background:var(--border); border-radius:10px; overflow:hidden; }
+    .wu-detail-cell { background:rgba(255,255,255,.04); padding:.45rem .6rem; }
+    .wu-detail-cell-label { font-size:.58rem; color:var(--muted); text-transform:uppercase; letter-spacing:.03em; }
+    .wu-detail-cell-val { font-size:.88rem; font-weight:700; }
     #fc-now { padding:.5rem .85rem .65rem; border-top:1px solid var(--border); }
 
     /* legacy wu-card */
@@ -674,6 +686,11 @@
   <span class="notif-close" id="notif-close" title="Zavřít">✕</span>
 </div>
 
+<!-- WU detail overlay -->
+<div id="wu-detail-overlay" onclick="if(event.target===this)closeWuDetail()">
+  <div id="wu-detail-box"></div>
+</div>
+
 <!-- Storm bar -->
 <div id="storm-bar">
   ⚡ Blesky: <span id="storm-dist">—</span>
@@ -828,64 +845,83 @@ function renderWuOwnPanel() {
   panel.innerHTML = own.map(s => {
     const age    = s.time_utc ? ageMinutes(s.time_utc) : null;
     const ageStr = age != null ? `před ${age} min` : "";
-
-    const deg = s.wind_dir ?? 0;
-
-    // Beaufort
-    const bft = beaufortLabel(s.wind_kmh);
-    const gustStr = s.gust_kmh != null ? ` / ${Math.round(s.gust_kmh)}` : "";
-    const windVal = s.wind_kmh != null ? `${Math.round(s.wind_kmh)}${gustStr} km/h` : "—";
-    const dirStr  = s.wind_dir != null ? degToCompass(s.wind_dir) + ` · ${s.wind_dir}°` : "";
-
-    // Senzorové karty
-    const sensors = [
-      { label:"Vlhkost",   val: s.humidity   != null ? s.humidity + " %" : "—" },
-      { label:"Tlak",      val: s.pressure   != null ? Math.round(s.pressure) + " hPa" : "—" },
-      { label:"Srážky/h",  val: s.precip_rate  != null ? s.precip_rate + " mm" : "0 mm" },
-      { label:"Srážky den",val: s.precip_total != null ? s.precip_total + " mm" : "0 mm" },
-      ...(s.solar_radiation != null ? [{ label:"Sluneční", val: Math.round(s.solar_radiation) + " W/m²" }] : []),
-      ...(s.uv != null ? [{ label:"UV index", val: s.uv.toFixed(1) }] : []),
-      ...(s.feels != null ? [{ label:"Pocitová", val: s.feels + " °C" }] : []),
-    ];
-
-    return `<div class="wu-station-card">
-      <div class="wu-station-header">
-        <span class="wu-station-name">★ ${s.name || s.id}</span>
-        <span class="wu-station-age">${ageStr}</span>
-      </div>
-      <div class="wu-station-body">
-        <div class="wu-hero">
-          <div class="wu-hero-temp">${s.temp != null ? s.temp + "°C" : "—"}</div>
-          ${s.feels != null ? `<div class="wu-hero-feels">pocitová ${s.feels}°C</div>` : ""}
-        </div>
-        ${s.wind_dir != null || s.wind_kmh != null ? `
-        <div class="wu-compass-wrap">
-          <div class="wu-compass">
-            <span class="wu-compass-label n">S</span>
-            <span class="wu-compass-label s">J</span>
-            <span class="wu-compass-label e">V</span>
-            <span class="wu-compass-label w">Z</span>
-            <div class="wu-compass-arrow">
-              <svg width="50" height="50" viewBox="-25 -25 50 50">
-                <polygon points="0,-22 4,8 0,4 -4,8" fill="#ef4444" transform="rotate(${deg})"/>
-                <polygon points="0,22 4,-8 0,-4 -4,-8" fill="#94a3b8" transform="rotate(${deg})"/>
-                <circle cx="0" cy="0" r="3" fill="var(--fg)"/>
-              </svg>
-            </div>
-          </div>
-          <div class="wu-wind-val">${windVal}</div>
-          <div class="wu-beaufort">${dirStr}</div>
-          <div class="wu-beaufort">${bft}</div>
-        </div>` : ""}
-        <div class="wu-sensors">
-          ${sensors.map(c => `<div class="wu-sensor-card">
-            <div class="wu-sensor-label">${c.label}</div>
-            <div class="wu-sensor-val">${c.val}</div>
-          </div>`).join("")}
-        </div>
-      </div>
+    const loc    = s.neighborhood || s.city || "";
+    const windStr = s.wind_kmh != null
+      ? Math.round(s.wind_kmh) + " km/h" + (s.wind_dir != null ? " " + degToCompass(s.wind_dir) : "")
+      : "";
+    const meta = [loc, windStr].filter(Boolean).join(" · ");
+    return `<div class="wu-mini-row" onclick="openWuDetail('${s.id}')">
+      <div class="wu-mini-dot"></div>
+      <div class="wu-mini-name">${s.name || s.id}</div>
+      <div class="wu-mini-temp">${s.temp != null ? s.temp + "°" : "—"}</div>
+      ${meta ? `<div class="wu-mini-meta">${meta}</div>` : ""}
+      <div class="wu-mini-arrow">›</div>
     </div>`;
   }).join("");
+}
+
+function openWuDetail(stationId) {
+  const s = WU?.stations?.find(x => x.id === stationId);
+  if (!s) return;
+  const overlay = document.getElementById("wu-detail-overlay");
+  const box = document.getElementById("wu-detail-box");
+  const age = s.time_utc ? ageMinutes(s.time_utc) : null;
+  const ageStr = age != null ? `před ${age} min` : "";
+  const loc = [s.neighborhood, s.city].filter(Boolean).join(", ");
+  const deg = s.wind_dir ?? 0;
+  const gustStr = s.gust_kmh != null ? `·${Math.round(s.gust_kmh)}` : "";
+  const windVal = s.wind_kmh != null ? `${Math.round(s.wind_kmh)}${gustStr} km/h` : "—";
+  const dirStr  = s.wind_dir != null ? degToCompass(s.wind_dir) + " " + s.wind_dir + "°" : "";
+  const cells = [
+    { label:"Vlhkost",     val: s.humidity != null ? s.humidity + " %" : "—" },
+    { label:"Tlak",        val: s.pressure != null ? Math.round(s.pressure) + " hPa" : "—" },
+    { label:"Srážky/hod",  val: s.precip_rate  != null ? s.precip_rate + " mm" : "0 mm" },
+    { label:"Srážky dnes", val: s.precip_total != null ? s.precip_total + " mm" : "0 mm" },
+    ...(s.solar_radiation != null ? [{ label:"Záření", val: Math.round(s.solar_radiation) + " W/m²" }] : []),
+    ...(s.uv != null ? [{ label:"UV index", val: s.uv.toFixed(1) }] : []),
+    ...(s.feels != null ? [{ label:"Pocitová", val: s.feels + " °C" }] : []),
+    ...(s.dewpoint != null ? [{ label:"Rosný bod", val: s.dewpoint.toFixed(1) + " °C" }] : []),
+  ];
+  box.innerHTML = `
+    <button id="wu-detail-close" onclick="closeWuDetail()">✕</button>
+    <h3>★ ${s.name || s.id}</h3>
+    <div class="wu-detail-sub">${[loc, s.id, ageStr].filter(Boolean).join(" · ")}</div>
+    <div class="wu-detail-hero">
+      <div class="wu-detail-temp">${s.temp != null ? s.temp + "°" : "—"}</div>
+      ${s.wind_dir != null || s.wind_kmh != null ? `
+      <div style="display:flex;flex-direction:column;align-items:center;gap:.2rem">
+        <div class="wu-detail-compass">
+          <span class="wu-compass-label n">S</span>
+          <span class="wu-compass-label s">J</span>
+          <span class="wu-compass-label e">V</span>
+          <span class="wu-compass-label w">Z</span>
+          <div class="wu-detail-arrow">
+            <svg width="44" height="44" viewBox="-22 -22 44 44">
+              <polygon points="0,-19 3,7 0,3 -3,7" fill="#ef4444" transform="rotate(${deg})"/>
+              <polygon points="0,19 3,-7 0,-3 -3,-7" fill="#94a3b8" transform="rotate(${deg})"/>
+              <circle cx="0" cy="0" r="2.5" fill="var(--text)"/>
+            </svg>
+          </div>
+        </div>
+        <div style="font-size:.72rem;font-weight:600;text-align:center">${windVal}</div>
+        <div style="font-size:.6rem;color:var(--muted);text-align:center">${dirStr}</div>
+      </div>` : ""}
+      <div>
+        ${s.feels != null ? `<div style="font-size:.72rem;color:var(--muted)">pocitová ${s.feels}°C</div>` : ""}
+        <div style="font-size:.72rem;color:var(--muted)">${beaufortLabel(s.wind_kmh)}</div>
+      </div>
+    </div>
+    <div class="wu-detail-grid">
+      ${cells.map(c => `<div class="wu-detail-cell">
+        <div class="wu-detail-cell-label">${c.label}</div>
+        <div class="wu-detail-cell-val">${c.val}</div>
+      </div>`).join("")}
+    </div>`;
+  overlay.classList.add("open");
+}
+
+function closeWuDetail() {
+  document.getElementById("wu-detail-overlay").classList.remove("open");
 }
 
 function renderWuMarkers() {
