@@ -825,8 +825,9 @@ let CHMI_STATS = null;  // historická data
 
 // Globální radar (RainViewer)
 let globalMode = false;
-let rvFrames   = [];   // [{time, path, layer}]
+let rvFrames   = [];   // [{time, path, isNowcast}]  — BEZ layer, jen metadata
 let rvT0idx    = 0;
+let rvLayer    = null; // JEDINÝ tile layer pro RainViewer (URL se mění při přepnutí snímku)
 
 // Aktuálně vybrané místo — pro refresh
 let _currentLat = null, _currentLon = null, _currentLabel = null;
@@ -1750,18 +1751,22 @@ async function loadRainViewerFrames() {
     // Skryj ČHMÚ overlay
     radarOverlay.setOpacity(0);
 
-    // Vytvoř tile layers pro každý snímek
+    // Ulož metadata snímků (bez tile layers)
     destroyRainViewerFrames();
     rvT0idx = past.length - 1;
 
     rvFrames = all.map(f => ({
-      time: f.time,
+      time:      f.time,
+      url:       `${host}${f.path}/256/{z}/{x}/{y}/2/1_1.png`,
       isNowcast: !past.includes(f),
-      layer: L.tileLayer(
-        `${host}${f.path}/256/{z}/{x}/{y}/2/1_1.png`,
-        { opacity: 0, zIndex: 201, attribution: "RainViewer" }
-      ).addTo(map),
     }));
+
+    // Vytvoř JEDINÝ tile layer — URL se bude měnit při přepnutí snímku
+    rvLayer = L.tileLayer(rvFrames[rvT0idx].url, {
+      opacity: radarOpacity, zIndex: 201,
+      attribution: "RainViewer",
+      maxNativeZoom: 8, maxZoom: 19,
+    }).addTo(map);
 
     // Nastav timeline
     const slider = document.getElementById("timeline");
@@ -1788,7 +1793,7 @@ async function loadRainViewerFrames() {
 }
 
 function destroyRainViewerFrames() {
-  rvFrames.forEach(f => { if (f.layer) map.removeLayer(f.layer); });
+  if (rvLayer) { map.removeLayer(rvLayer); rvLayer = null; }
   rvFrames = [];
 }
 
@@ -1850,8 +1855,10 @@ function _showFrameCZ(idx) {
 function _showFrameRV(idx) {
   currentFrame = Math.max(0, Math.min(idx, rvFrames.length - 1));
 
-  // Zobraz jen aktivní snímek
-  rvFrames.forEach((f, i) => f.layer.setOpacity(i === currentFrame ? radarOpacity : 0));
+  if (rvLayer) {
+    rvLayer.setUrl(rvFrames[currentFrame].url);
+    rvLayer.setOpacity(radarOpacity);
+  }
 
   document.getElementById("timeline").value = currentFrame;
 
@@ -2547,12 +2554,14 @@ function applyManifestUI() {
   // Refresh time s barvou dle stáří dat
   updateRefreshTime(gen);
 
-  // Timeline
-  document.getElementById("timeline").max = nf - 1;
-  const t0pct = (MANIFEST.t0_index / (nf - 1)) * 100;
-  document.getElementById("t0-tick").style.left   = t0pct + "%";
-  document.getElementById("t0-marker").style.left = t0pct + "%";
-  showFrame(MANIFEST.t0_index);
+  // Timeline — v globalMode nepřepisujeme slider (RainViewer má vlastní rozsah)
+  if (!globalMode) {
+    document.getElementById("timeline").max = nf - 1;
+    const t0pct = (MANIFEST.t0_index / (nf - 1)) * 100;
+    document.getElementById("t0-tick").style.left   = t0pct + "%";
+    document.getElementById("t0-marker").style.left = t0pct + "%";
+    showFrame(MANIFEST.t0_index);
+  }
 }
 
 // ── Oblíbená místa (localStorage) ─────────────────────────────────────────────
@@ -2848,7 +2857,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     radarOpacity = +e.target.value / 100;
     document.getElementById("opacity-val").textContent = e.target.value + " %";
     if (globalMode) {
-      rvFrames.forEach((f, i) => f.layer.setOpacity(i === currentFrame ? radarOpacity : 0));
+      if (rvLayer) rvLayer.setOpacity(radarOpacity);
     } else {
       radarOverlay.setOpacity(radarOpacity);
     }
