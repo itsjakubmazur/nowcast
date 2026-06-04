@@ -276,6 +276,33 @@
     .wu-detail-cell-val { font-size:.88rem; font-weight:700; }
     #fc-now { padding:.5rem .85rem .65rem; border-top:1px solid var(--border); }
 
+    /* ── Station detail cards (pocasimeteo style) ─────────────────────── */
+    .sd-hero { padding:.8rem .9rem .65rem; border-bottom:1px solid var(--border); }
+    .sd-hero-temp { font-size:3.2rem; font-weight:900; line-height:.95; letter-spacing:-.04em; }
+    .sd-hero-row { display:flex; gap:.6rem; flex-wrap:wrap; font-size:.75rem; color:var(--muted); margin-top:.35rem; }
+    .sd-hero-row b { color:var(--text); }
+    .sd-section { padding:.65rem .9rem .5rem; }
+    .sd-section-label { font-size:.58rem; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--muted); margin-bottom:.55rem; }
+    .sd-grid2 { display:grid; grid-template-columns:1fr 1fr; gap:.45rem; }
+    .sd-card {
+      background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.07);
+      border-radius:14px; padding:.65rem .7rem .4rem; overflow:hidden;
+    }
+    .sd-card-lbl { font-size:.62rem; color:var(--muted); margin-bottom:.2rem; display:flex; align-items:center; gap:.25rem; }
+    .sd-val { font-size:1.55rem; font-weight:800; line-height:1; margin-bottom:.28rem; }
+    .sd-val-unit { font-size:.68rem; font-weight:500; color:var(--muted); margin-left:.1rem; }
+    .sd-bar-track { height:3px; background:rgba(255,255,255,.1); border-radius:2px; margin-bottom:.25rem; }
+    .sd-bar-fill  { height:100%; border-radius:2px; transition:width .4s; }
+    .sd-minmax { font-size:.58rem; color:var(--muted); display:flex; gap:.5rem; margin-bottom:.3rem; }
+    .sd-spark { display:block; width:100%; overflow:visible; }
+    /* full-width chart card */
+    .sd-chart { background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.07);
+      border-radius:14px; padding:.75rem .85rem .6rem; margin:.45rem .9rem 0; }
+    .sd-chart-head { display:flex; justify-content:space-between; align-items:baseline;
+      font-size:.75rem; font-weight:700; margin-bottom:.5rem; }
+    .sd-chart-unit { font-size:.65rem; font-weight:400; color:var(--muted); }
+    .sd-chart canvas { display:block; }
+
     /* legacy wu-card */
     .wu-card { flex:1; min-width:130px; background:rgba(255,255,255,.05); border-radius:10px; padding:.5rem .7rem; display:flex; flex-direction:column; gap:.12rem; border-left:3px solid #f59e0b; }
     .wu-card-name { font-size:.68rem; font-weight:700; color:#f59e0b; text-transform:uppercase; letter-spacing:.03em; }
@@ -1110,6 +1137,53 @@ function renderChmiMarkers() {
   });
 }
 
+// ── Station detail helpers ────────────────────────────────────────────────────
+let _sdSparkId = 0;
+function makeSpark(vals, color, h) {
+  h = h || 38;
+  const v = vals.filter(x => x != null);
+  if (v.length < 2) return "";
+  const mn = Math.min(...v), mx = Math.max(...v), rng = mx - mn || 1;
+  const W = 200, H = h, pad = H * 0.1;
+  const toY = val => H - pad - ((val - mn) / rng) * (H - pad * 2);
+  const points = vals.map((val, i) => {
+    if (val == null) return null;
+    return (i / (vals.length - 1) * W).toFixed(1) + "," + toY(val).toFixed(1);
+  }).filter(Boolean).join(" ");
+  const poly = "0," + H + " " + vals.map((val, i) => {
+    const x = (i / (vals.length - 1) * W).toFixed(1);
+    const y = val != null ? toY(val).toFixed(1) : H;
+    return x + "," + y;
+  }).join(" ") + " " + W + "," + H;
+  const gid = "sg" + (++_sdSparkId);
+  return `<svg class="sd-spark" viewBox="0 0 ${W} ${H}" height="${H}" preserveAspectRatio="none">
+    <defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="${color}" stop-opacity=".4"/>
+      <stop offset="100%" stop-color="${color}" stop-opacity="0"/>
+    </linearGradient></defs>
+    <polygon points="${poly}" fill="url(#${gid})"/>
+    <polyline points="${points}" fill="none" stroke="${color}" stroke-width="1.8"
+      stroke-linejoin="round" stroke-linecap="round"/>
+  </svg>`;
+}
+
+function sdCard(key, label, icon, color, unit, fmtFn, series) {
+  const vals = series.map(r => r[key] ?? null);
+  const valid = vals.filter(v => v != null);
+  if (!valid.length) return "";
+  const cur = valid[valid.length - 1];
+  const mn  = Math.min(...valid);
+  const mx  = Math.max(...valid);
+  const pct = ((cur - mn) / (mx - mn || 1) * 100).toFixed(1);
+  return `<div class="sd-card">
+    <div class="sd-card-lbl">${icon} ${label}</div>
+    <div class="sd-val">${fmtFn(cur)}<span class="sd-val-unit">${unit}</span></div>
+    <div class="sd-bar-track"><div class="sd-bar-fill" style="width:${pct}%;background:${color}"></div></div>
+    <div class="sd-minmax"><span>MIN <b>${fmtFn(mn)}</b></span><span>MAX <b>${fmtFn(mx)}</b></span></div>
+    ${makeSpark(vals, color)}
+  </div>`;
+}
+
 // ── ČHMÚ detail panel ─────────────────────────────────────────────────────────
 let _chmiSeriesCache = null;
 let _chmiCharts = [];
@@ -1158,50 +1232,158 @@ function _renderTabDnes(body, stationId) {
     body.innerHTML = `<div style="color:var(--muted);padding:1rem">Časové řady nejsou k dispozici.</div>`;
     return;
   }
-  const series = station.series;
-
-  // Souhrnný řádek z aktuálního pozorování (CHMI stations)
-  const obs = CHMI?.stations?.find(x => x.id === stationId);
-  if (obs) {
-    const items = [
-      obs.precip_1h  != null ? `🌧️ ${obs.precip_1h.toFixed(1)} mm/hod` : null,
-      obs.precip_24h != null ? `📅 ${obs.precip_24h.toFixed(1)} mm/24h` : null,
-      obs.snow_cm    != null && obs.snow_cm > 0 ? `❄️ sníh ${Math.round(obs.snow_cm)} cm` : null,
-      obs.visibility_m != null ? `👁️ ${obs.visibility_m >= 1000 ? (obs.visibility_m/1000).toFixed(1) + " km" : Math.round(obs.visibility_m) + " m"}` : null,
-    ].filter(Boolean);
-    if (items.length) {
-      const div = document.createElement("div");
-      div.style.cssText = "display:flex;flex-wrap:wrap;gap:.4rem;margin-bottom:.75rem;font-size:.8rem";
-      div.innerHTML = items.map(i => `<span style="padding:.2rem .5rem;background:var(--bg);border:1px solid var(--border);border-radius:5px">${i}</span>`).join("");
-      body.appendChild(div);
-    }
-  }
-  const labels = series.map(r => {
+  const series  = station.series;
+  const obs     = CHMI?.stations?.find(x => x.id === stationId);
+  const labels  = series.map(r => {
     const d = new Date(r.dt);
-    return d.toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Prague" });
+    return d.toLocaleTimeString("cs-CZ", { hour:"2-digit", minute:"2-digit", timeZone:"Europe/Prague" });
   });
+
   body.innerHTML = "";
+
+  // ── Hero ──────────────────────────────────────────────────────────────────
+  if (obs) {
+    const tempVals = series.map(r => r.temp ?? null).filter(v => v != null);
+    const tMax = tempVals.length ? Math.max(...tempVals).toFixed(1) : null;
+    const tMin = tempVals.length ? Math.min(...tempVals).toFixed(1) : null;
+    const age  = obs.time_utc ? ageMinutes(obs.time_utc) : null;
+    const hero = document.createElement("div");
+    hero.className = "sd-hero";
+    hero.innerHTML = `
+      <div class="sd-hero-temp" style="color:#f87171">${obs.temp != null ? obs.temp + "°C" : "—"}</div>
+      <div class="sd-hero-row">
+        ${tMax ? `<span>▲ <b>${tMax}°</b></span>` : ""}
+        ${tMin ? `<span>▼ <b>${tMin}°</b></span>` : ""}
+        ${obs.humidity   != null ? `<span>💧 <b>${obs.humidity} %</b></span>` : ""}
+        ${obs.wind_kmh   != null ? `<span>🌬 <b>${obs.wind_kmh} km/h</b></span>` : ""}
+        ${obs.pressure   != null ? `<span>⏱ <b>${obs.pressure} hPa</b></span>` : ""}
+        ${obs.precip_24h != null ? `<span>🌧 <b>${obs.precip_24h} mm/24h</b></span>` : ""}
+        ${age != null ? `<span style="margin-left:auto">před ${age} min</span>` : ""}
+      </div>`;
+    body.appendChild(hero);
+  }
+
+  // ── Sensor cards ──────────────────────────────────────────────────────────
+  const fmt1 = v => v != null ? v.toFixed(1) : "—";
+  const fmt0 = v => v != null ? Math.round(v) : "—";
+
+  const cards = [
+    sdCard("temp",         "Teplota",         "🌡",  "#f87171", "°C",    fmt1,  series),
+    sdCard("humidity",     "Vlhkost",         "💧",  "#22c55e", "%",     fmt0,  series),
+    sdCard("dewpoint",     "Rosný bod",       "🌫",  "#a78bfa", "°C",    fmt1,  series),
+    sdCard("pressure",     "Tlak",            "⏱",  "#a855f7", "hPa",   fmt0,  series),
+    sdCard("wind_kmh",     "Vítr",            "🌬",  "#06b6d4", "km/h",  fmt0,  series),
+    sdCard("gust_kmh",     "Nárazy",          "💨",  "#38bdf8", "km/h",  fmt0,  series),
+    sdCard("precip_1h",    "Srážky/hod",      "🌧",  "#3b82f6", "mm",    fmt1,  series),
+    sdCard("snow_cm",      "Sníh",            "❄",  "#bae6fd", "cm",    fmt0,  series),
+    sdCard("solar",        "Záření",          "☀",  "#f59e0b", "W/m²",  fmt0,  series),
+    sdCard("visibility_m", "Viditelnost",     "👁",  "#94a3b8", "m",     fmt0,  series),
+  ].filter(Boolean);
+
+  if (cards.length) {
+    const sec = document.createElement("div");
+    sec.className = "sd-section";
+    sec.innerHTML = `<div class="sd-section-label">Aktuální hodnoty · 24h přehled</div>
+      <div class="sd-grid2">${cards.join("")}</div>`;
+    body.appendChild(sec);
+  }
+
+  // ── Full-width charts ─────────────────────────────────────────────────────
   const chartCfgs = [
-    { key: "temp",         label: "Teplota (°C)",           color: "#f59e0b", fill: true,  unit: "°C" },
-    { key: "dewpoint",     label: "Rosný bod (°C)",          color: "#a78bfa", fill: false, unit: "°C" },
-    { key: "humidity",     label: "Vlhkost (%)",             color: "#3b82f6", fill: false, unit: "%" },
-    { key: "pressure",     label: "Tlak (hPa)",              color: "#8b5cf6", fill: false, unit: "hPa" },
-    { key: "wind_kmh",     label: "Rychlost větru (km/h)",   color: "#10b981", fill: true,  unit: "km/h" },
-    { key: "gust_kmh",     label: "Nárazy větru (km/h)",     color: "#ef4444", fill: false, unit: "km/h" },
-    { key: "precip_1h",    label: "Srážky / hod (mm)",       color: "#06b6d4", fill: true,  unit: "mm", bar: true },
-    { key: "precip_10m",   label: "Srážky / 10min (mm)",     color: "#0ea5e9", fill: true,  unit: "mm", bar: true },
-    { key: "snow_cm",      label: "Výška sněhu (cm)",        color: "#bae6fd", fill: true,  unit: "cm" },
-    { key: "solar",        label: "Záření (W/m²)",           color: "#fbbf24", fill: true,  unit: "W/m²" },
-    { key: "visibility_m", label: "Viditelnost (m)",         color: "#94a3b8", fill: false, unit: "m" },
+    { key:"temp",         label:"Teplota",              color:"#f87171", fill:true,  unit:"°C",    bar:false },
+    { key:"humidity",     label:"Vlhkost vzduchu",      color:"#22c55e", fill:true,  unit:"%",     bar:false },
+    { key:"pressure",     label:"Tlak",                 color:"#a855f7", fill:false, unit:"hPa",   bar:false },
+    { key:"wind_kmh",     label:"Vítr",                 color:"#06b6d4", fill:true,  unit:"km/h",  bar:false, key2:"gust_kmh", color2:"#38bdf8", label2:"Nárazy" },
+    { key:"precip_1h",    label:"Srážky / hod",         color:"#3b82f6", fill:true,  unit:"mm",    bar:true  },
+    { key:"solar",        label:"Sluneční záření",      color:"#f59e0b", fill:true,  unit:"W/m²",  bar:false },
   ];
+
   for (const cfg of chartCfgs) {
     const vals = series.map(r => r[cfg.key] ?? null);
     if (vals.every(v => v === null)) continue;
-    const block = document.createElement("div");
-    block.className = "chmi-chart-block";
-    block.innerHTML = `<h4>${cfg.label}</h4><canvas></canvas>`;
-    body.appendChild(block);
-    _makeChart(block.querySelector("canvas"), cfg.bar ? "bar" : "line", labels, vals, cfg.color, cfg.fill ?? false, cfg.unit);
+
+    const wrap = document.createElement("div");
+    wrap.className = "sd-chart";
+    const canvasId = "sdc_" + cfg.key;
+    wrap.innerHTML = `<div class="sd-chart-head">${cfg.label} <span class="sd-chart-unit">${cfg.unit}</span></div>
+      <canvas id="${canvasId}" height="90"></canvas>`;
+    body.appendChild(wrap);
+
+    const isDark = document.documentElement.getAttribute("data-theme") !== "light";
+    const gc = isDark ? "rgba(255,255,255,.07)" : "rgba(0,0,0,.07)";
+    const tc = isDark ? "#6b7280" : "#9ca3af";
+
+    const valid = vals.filter(v => v != null);
+    const vMin = valid.length ? Math.min(...valid) : 0;
+    const vMax = valid.length ? Math.max(...valid) : 1;
+
+    const datasets = [{
+      data: vals,
+      borderColor: cfg.color,
+      backgroundColor: cfg.fill ? cfg.color + "25" : "transparent",
+      borderWidth: cfg.bar ? 0 : 1.8,
+      fill: cfg.fill && !cfg.bar,
+      tension: cfg.bar ? 0 : 0.35,
+      spanGaps: true,
+      pointRadius: 0,
+      ...(cfg.bar ? { backgroundColor: cfg.color + "bb", barPercentage: 1, categoryPercentage: 1 } : {}),
+    }];
+
+    // Second dataset (wind gust)
+    if (cfg.key2) {
+      const vals2 = series.map(r => r[cfg.key2] ?? null);
+      if (vals2.some(v => v != null)) {
+        datasets.push({
+          label: cfg.label2,
+          data: vals2,
+          borderColor: cfg.color2,
+          backgroundColor: "transparent",
+          borderWidth: 1.5,
+          borderDash: [3, 3],
+          fill: false,
+          tension: 0.3,
+          spanGaps: true,
+          pointRadius: 0,
+        });
+      }
+    }
+
+    // Min/Max dashed lines
+    if (valid.length) {
+      datasets.push({ data: Array(vals.length).fill(vMax), borderColor: cfg.color + "55",
+        borderWidth: 1, borderDash: [4,4], pointRadius: 0, fill: false, tension: 0, spanGaps: true });
+      datasets.push({ data: Array(vals.length).fill(vMin), borderColor: cfg.color + "55",
+        borderWidth: 1, borderDash: [4,4], pointRadius: 0, fill: false, tension: 0, spanGaps: true });
+    }
+
+    const chart = new Chart(document.getElementById(canvasId), {
+      type: cfg.bar ? "bar" : "line",
+      data: { labels, datasets },
+      options: {
+        animation: false, responsive: true, maintainAspectRatio: false,
+        interaction: { mode: "index", intersect: false },
+        plugins: {
+          legend: { display: !!cfg.key2, labels: { color: tc, font: { size: 10 }, boxWidth: 12, padding: 8 } },
+          tooltip: {
+            callbacks: {
+              afterBody: ctx => {
+                const v = ctx[0]?.parsed?.y;
+                if (v == null || !valid.length) return "";
+                const lines = [];
+                if (Math.abs(v - vMax) < 0.01) lines.push("▲ maximum");
+                if (Math.abs(v - vMin) < 0.01) lines.push("▼ minimum");
+                return lines;
+              }
+            }
+          }
+        },
+        scales: {
+          x: { ticks: { maxTicksLimit: 6, color: tc, font: { size: 10 } }, grid: { color: gc } },
+          y: { ticks: { color: tc, font: { size: 10 } }, grid: { color: gc } },
+        },
+      },
+    });
+    _chmiCharts.push(chart);
   }
 }
 
