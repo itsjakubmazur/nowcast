@@ -28,10 +28,6 @@ NOW_META      = f"{BASE}/now/metadata/"
 RECENT_HOURLY = f"{BASE}/recent/data/1hour/"
 RECENT_META   = f"{BASE}/recent/metadata/"
 
-# Střední Evropa — ČR + okolní státy (~200 km za hranice)
-CZ_LAT = (47.0, 52.5)
-CZ_LON = (10.5, 20.5)
-
 HOURS_SERIES = 25   # kolik hodin zpětně uchovávat v series
 
 HEADERS = {
@@ -118,12 +114,12 @@ def parse_meta1(values: list) -> dict[str, dict]:
     Parsuje meta1-*.json: flat tabulka.
     Sloupce: WSI, GH_ID, FULL_NAME, GEOGR1, GEOGR2, ELEVATION, ...
     GEOGR1/GEOGR2 mohou být lon/lat nebo lat/lon — auto-detekce.
-    Vrátí jen stanice v bounding boxu ČR.
+    Vrátí všechny stanice (bez geografického filtru).
     """
     if not values:
         return {}
 
-    # Auto-detekce: zjisti z prvních 20 řádků, která z col3/col4 je lat (48–51) a která lon (12–19)
+    # Auto-detekce lat/lon sloupce: col3 je lat pokud průměr leží v rozumném lat rozsahu
     col3_vals = []
     col4_vals = []
     for row in values[:20]:
@@ -135,12 +131,13 @@ def parse_meta1(values: list) -> dict[str, dict]:
         except (TypeError, ValueError):
             pass
 
-    # col3 je lat pokud průměr leží v CZ lat rozsahu; jinak col3 = lon
     avg3 = sum(col3_vals) / len(col3_vals) if col3_vals else 0
-    if CZ_LAT[0] <= avg3 <= CZ_LAT[1]:
-        lat_col, lon_col = 3, 4   # GEOGR1=lat, GEOGR2=lon
+    avg4 = sum(col4_vals) / len(col4_vals) if col4_vals else 0
+    # lat je typicky 40-60 pro Evropu, lon 10-20 — vyber sloupec s hodnotou blíže 50
+    if abs(avg3 - 50) < abs(avg4 - 50):
+        lat_col, lon_col = 3, 4
     else:
-        lat_col, lon_col = 4, 3   # GEOGR1=lon, GEOGR2=lat (původní předpoklad)
+        lat_col, lon_col = 4, 3
 
     meta = {}
     for row in values:
@@ -153,7 +150,7 @@ def parse_meta1(values: list) -> dict[str, dict]:
             lon = float(row[lon_col])
         except (TypeError, ValueError):
             continue
-        if not (CZ_LAT[0] <= lat <= CZ_LAT[1] and CZ_LON[0] <= lon <= CZ_LON[1]):
+        if not (-90 <= lat <= 90 and -180 <= lon <= 180):
             continue
         m = re.search(r'(\d+)$', wsi)
         if not m:
@@ -230,15 +227,15 @@ def list_now_ids(today: str, yesterday: str) -> list[str]:
     return result
 
 
-def list_recent_ids(yyyymm: str, prev_yyyymm: str) -> list[str]:
+def list_recent_ids(today: str, yesterday: str) -> list[str]:
     """Vrátí numerická ID stanic z recent/data/1hour/."""
     r = fetch(RECENT_HOURLY)
     if not r:
         return []
     text = r.text
     ids = set()
-    for ym in (yyyymm, prev_yyyymm):
-        p = re.compile(rf'1h-0-20000-0-(\d+)-{ym}\.json')
+    for d in (today, yesterday):
+        p = re.compile(rf'1h-0-20000-0-(\d+)-{d}\.json')
         ids.update(p.findall(text))
     result = list(ids)
     print(f"  recent/1hour/: {len(result)} stanic", file=sys.stderr)
@@ -407,21 +404,21 @@ def main():
 
     # 2. Seznam stanic
     now_ids    = list_now_ids(today, yesterday)
-    recent_ids = list_recent_ids(yyyymm, prev_yyyymm)
+    recent_ids = list_recent_ids(today, yesterday)
 
     # Klíčová oprava: directory listing na recent/ vrací 403 → recent_ids = [].
     # Proto použij VŠECHNY stanice z metadat jako základ pro recent/ stahování.
     # now/ directory listing funguje (40 synoptických), metadata pokrývají 300+ CZ stanic.
     meta_ids = list(metadata.keys())
 
-    # Sjednocení — now/ + metadata (recent/ bude zkušebně staženo pro všechny)
+    # Všechny stanice z metadat + now/ (žádný geografický filtr)
     all_sids = list(dict.fromkeys(now_ids + meta_ids))
-    cz_sids  = [sid for sid in all_sids if sid in metadata]
-    print(f"  Celkem unikátních CZ stanic: {len(cz_sids)} "
+    all_sids = [sid for sid in all_sids if sid in metadata]
+    print(f"  Celkem stanic: {len(all_sids)} "
           f"(now={len(now_ids)}, recent_dir={len(recent_ids)}, meta={len(meta_ids)})", file=sys.stderr)
 
-    if not cz_sids:
-        _save_empty("Žádné CZ stanice nenalezeny")
+    if not all_sids:
+        _save_empty("Žádné stanice nenalezeny")
         return
 
     # 3. Paralelní stahování dat
@@ -437,11 +434,11 @@ def main():
         for sid in now_ids if sid in metadata
         for d in (today, yesterday)
     ]
-    # recent/data/1hour/: 1h soubory pro všechny CZ+okolní stanice z metadat
+    # recent/data/1hour/: 1h soubory — daily format YYYYMMDD (PDF dokumentace)
     rec_1h_urls = [
-        (f"1h_rec_{sid}_{ym}", f"{RECENT_HOURLY}1h-0-20000-0-{sid}-{ym}.json")
-        for sid in cz_sids
-        for ym in (yyyymm, prev_yyyymm)
+        (f"1h_rec_{sid}_{d}", f"{RECENT_HOURLY}1h-0-20000-0-{sid}-{d}.json")
+        for sid in all_sids
+        for d in (today, yesterday)
     ]
 
     all_urls = now_10m_urls + now_1h_urls + rec_1h_urls
@@ -462,10 +459,10 @@ def main():
     all_series = {}
     ok = err   = 0
 
-    for sid in cz_sids:
+    for sid in all_sids:
         data_10m       = best("10m", sid, (today, yesterday))
         data_1h_now    = best("1h_now", sid, (today, yesterday))
-        data_1h_recent = best("1h_rec", sid, (yyyymm, prev_yyyymm))
+        data_1h_recent = best("1h_rec", sid, (today, yesterday))
 
         if not any([data_10m, data_1h_now, data_1h_recent]):
             err += 1

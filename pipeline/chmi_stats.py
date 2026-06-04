@@ -4,7 +4,7 @@
 Stahuje z opendata.chmi.cz:
   recent/data/daily/    → denní souhrny aktuálního měsíce (dly-{WSI}-{YYYYMM}.json)
   recent/data/monthly/  → měsíční souhrny posledních let  (mly-{WSI}.json)
-  historical/data/daily/   → denní data od 2018           (dly-{WSI}-{YYYY}.json)
+  historical/data/daily/   → denní data od 2018           (dly-{WSI}.json — jeden soubor)
   historical/data/monthly/ → měsíční data od 2018         (mly-{WSI}.json)
 
 Výstup: data/chmi_stats.json  — per stanice: rekordy, klimatologické normály, roční trend
@@ -223,15 +223,13 @@ def main():
         # Denní data aktuálního měsíce (recent)
         daily_recent = fetch_json(f"{RECENT}/daily/dly-{wsi_suffix}-{yyyymm}.json")
 
-        # Historická denní data — po rocích (od 2018)
+        # Historická denní data — jeden soubor na stanici se všemi roky (PDF dokumentace)
         hist_daily_combined: dict[str, list] = {v: [] for v in DAILY_ELEMENTS.values()}
-        current_year = now_utc.year
-        for year in range(2018, current_year + 1):
-            hd = fetch_json(f"{HIST}/daily/dly-{wsi_suffix}-{year}.json")
-            if hd:
-                extracted = extract_values(hd, DAILY_ELEMENTS)
-                for key, pairs in extracted.items():
-                    hist_daily_combined[key].extend(pairs)
+        hd = fetch_json(f"{HIST}/daily/dly-{wsi_suffix}.json")
+        if hd:
+            extracted = extract_values(hd, DAILY_ELEMENTS)
+            for key, pairs in extracted.items():
+                hist_daily_combined[key].extend(pairs)
 
         # Doplň aktuální měsíc
         if daily_recent:
