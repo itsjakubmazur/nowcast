@@ -64,6 +64,9 @@ jobs:
         env:
           WU_API_KEY: ${{ secrets.WU_API_KEY }}
 
+      - name: Probe ČHMÚ URL formáty (diagnostika)
+        run: python pipeline/chmi_probe.py || echo "probe selhalo"
+
       - name: Run chmi (ČHMÚ stanice)
         run: python pipeline/chmi.py || echo "chmi.py selhalo, pokračuji"
 
