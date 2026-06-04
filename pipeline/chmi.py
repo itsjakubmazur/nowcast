@@ -28,9 +28,9 @@ NOW_META      = f"{BASE}/now/metadata/"
 RECENT_HOURLY = f"{BASE}/recent/data/hourly/"
 RECENT_META   = f"{BASE}/recent/metadata/"
 
-# Česká republika — bounding box (loosely)
-CZ_LAT = (48.4, 51.3)
-CZ_LON = (11.9, 19.0)
+# Střední Evropa — ČR + okolní státy (~200 km za hranice)
+CZ_LAT = (47.0, 52.5)
+CZ_LON = (10.5, 20.5)
 
 HOURS_SERIES = 25   # kolik hodin zpětně uchovávat v series
 
