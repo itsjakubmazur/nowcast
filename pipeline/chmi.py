@@ -409,11 +409,16 @@ def main():
     now_ids    = list_now_ids(today, yesterday)
     recent_ids = list_recent_ids(yyyymm, prev_yyyymm)
 
-    # Sjednocení — filtr na stanice s metadaty v CZ
-    all_sids = list(dict.fromkeys(now_ids + recent_ids))
+    # Klíčová oprava: directory listing na recent/ vrací 403 → recent_ids = [].
+    # Proto použij VŠECHNY stanice z metadat jako základ pro recent/ stahování.
+    # now/ directory listing funguje (40 synoptických), metadata pokrývají 300+ CZ stanic.
+    meta_ids = list(metadata.keys())
+
+    # Sjednocení — now/ + metadata (recent/ bude zkušebně staženo pro všechny)
+    all_sids = list(dict.fromkeys(now_ids + meta_ids))
     cz_sids  = [sid for sid in all_sids if sid in metadata]
     print(f"  Celkem unikátních CZ stanic: {len(cz_sids)} "
-          f"(now={len(now_ids)}, recent={len(recent_ids)})", file=sys.stderr)
+          f"(now={len(now_ids)}, recent_dir={len(recent_ids)}, meta={len(meta_ids)})", file=sys.stderr)
 
     if not cz_sids:
         _save_empty("Žádné CZ stanice nenalezeny")
