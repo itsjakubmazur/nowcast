@@ -25,7 +25,7 @@ MAX_WORKERS = 24   # paralelní HTTP requesty
 BASE          = "https://opendata.chmi.cz/meteorology/climate"
 NOW_DATA      = f"{BASE}/now/data/"
 NOW_META      = f"{BASE}/now/metadata/"
-RECENT_HOURLY = f"{BASE}/recent/data/hourly/"
+RECENT_HOURLY = f"{BASE}/recent/data/1hour/"
 RECENT_META   = f"{BASE}/recent/metadata/"
 
 # Střední Evropa — ČR + okolní státy (~200 km za hranice)
@@ -231,7 +231,7 @@ def list_now_ids(today: str, yesterday: str) -> list[str]:
 
 
 def list_recent_ids(yyyymm: str, prev_yyyymm: str) -> list[str]:
-    """Vrátí numerická ID stanic z recent/data/hourly/."""
+    """Vrátí numerická ID stanic z recent/data/1hour/."""
     r = fetch(RECENT_HOURLY)
     if not r:
         return []
@@ -241,7 +241,7 @@ def list_recent_ids(yyyymm: str, prev_yyyymm: str) -> list[str]:
         p = re.compile(rf'1h-0-20000-0-(\d+)-{ym}\.json')
         ids.update(p.findall(text))
     result = list(ids)
-    print(f"  recent/hourly/: {len(result)} stanic", file=sys.stderr)
+    print(f"  recent/1hour/: {len(result)} stanic", file=sys.stderr)
     return result
 
 
@@ -437,11 +437,10 @@ def main():
         for sid in now_ids if sid in metadata
         for d in (today, yesterday)
     ]
-    # recent/hourly/: 1h soubory — pouze pro synoptické stanice z now/ (meta-only stanice tam nemají data)
-    rec_1h_sids = [sid for sid in now_ids if sid in metadata]
+    # recent/data/1hour/: 1h soubory pro všechny CZ+okolní stanice z metadat
     rec_1h_urls = [
         (f"1h_rec_{sid}_{ym}", f"{RECENT_HOURLY}1h-0-20000-0-{sid}-{ym}.json")
-        for sid in rec_1h_sids
+        for sid in cz_sids
         for ym in (yyyymm, prev_yyyymm)
     ]
 
