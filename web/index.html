@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Meteo Nowcast CZ</title>
+  <title>nowcast</title>
   <meta name="theme-color" content="#4f8ef7" />
   <link rel="manifest" href="manifest.json" />
   <link rel="apple-touch-icon" href="icon.svg" />
@@ -181,6 +181,17 @@
     .place { font-size: .78rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; display: flex; align-items: center; gap: .3rem; }
     .dist  { display: none; }
     .verdict-text { font-size: .82rem; line-height: 1.55; color: var(--text); margin-top: .5rem; }
+    #refresh-time.age-ok  { color: #10b981; }
+    #refresh-time.age-warn { color: #f59e0b; }
+    #refresh-time.age-old  { color: #ef4444; }
+    #storm-trend.approaching { color: #ef4444; }
+    #storm-trend.receding    { color: #10b981; }
+    .rain-badge { display:inline-flex; align-items:center; gap:.4rem; padding:.35rem .7rem;
+      border-radius: 8px; font-size: .8rem; font-weight: 600; margin-bottom: .5rem; }
+    .rain-badge.green  { background: rgba(16,185,129,.18); color: #10b981; border:1px solid rgba(16,185,129,.3); }
+    .rain-badge.yellow { background: rgba(245,158,11,.18); color: #f59e0b; border:1px solid rgba(245,158,11,.3); }
+    .rain-badge.orange { background: rgba(249,115,22,.18); color: #f97316; border:1px solid rgba(249,115,22,.3); }
+    .rain-badge.red    { background: rgba(239,68,68,.18);  color: #ef4444; border:1px solid rgba(239,68,68,.3); }
     .hint { color: var(--muted); font-size: .82rem; }
     .updated { color: var(--muted); font-size: .68rem; margin-top: .3rem; }
 
@@ -602,7 +613,6 @@
     <button class="glass-btn icon-only" id="btn-theme" title="Přepnout motiv">🌙</button>
     <button class="glass-btn" id="btn-refresh" title="Aktualizovat">↺</button>
     <span id="refresh-time"></span>
-    <span id="data-age-warn">⚠ Stará data</span>
   </div>
 </div>
 
@@ -623,6 +633,7 @@
         <div class="fc-feels" id="fc-feels"></div>
       </div>
     </div>
+    <div id="rain-badge-wrap"></div>
     <div class="verdict-text" id="verdict">
       <span class="hint">Vyhledejte obec, klikněte do mapy nebo použijte polohu.</span>
     </div>
@@ -667,6 +678,7 @@
 <div id="storm-bar">
   ⚡ Blesky: <span id="storm-dist">—</span>
   <span id="storm-dir"></span>
+  <span id="storm-trend" style="font-size:.75rem;margin-left:.3rem"></span>
   <span style="color:var(--muted);font-size:.75rem" id="storm-age"></span>
 </div>
 
@@ -1417,27 +1429,28 @@ function bearing(lat1, lon1, lat2, lon2) {
   return dirs[Math.round(b / 45) % 8];
 }
 
+let _prevStormDist = null;
 function updateStormDist(frameTime) {
-  // Vzdálenost bouřky = vzdálenost nejbližší aktivní bouřkové buňky
-  // Proxy: vzít centroid srážek ≥ 45 dBZ z aktuálního radar snímku
-  // Jednodušší: ukázat vzdálenost k nejbližší aktivní srážkové oblasti z GRID
   if (!GRID || _currentLat === null) return;
 
   let nearest = null, nearestDist = Infinity;
   GRID.pts.forEach((pt, i) => {
     const a = GRID.act[String(i)];
-    if (!a || a[2] < 5) return;  // jen intenzivnější srážky
+    if (!a || a[2] < 5) return;
     const d = haversine(_currentLat, _currentLon, pt[0], pt[1]);
     if (d < nearestDist) { nearestDist = d; nearest = pt; }
   });
 
-  const el   = document.getElementById("storm-dist");
-  const dirEl = document.getElementById("storm-dir");
+  const el       = document.getElementById("storm-dist");
+  const dirEl    = document.getElementById("storm-dir");
+  const trendEl  = document.getElementById("storm-trend");
 
   if (!nearest || nearestDist > 150) {
     el.textContent = "žádná bouřka v dosahu";
     el.className = "far";
     dirEl.textContent = "";
+    if (trendEl) trendEl.textContent = "";
+    _prevStormDist = null;
     return;
   }
 
@@ -1445,6 +1458,16 @@ function updateStormDist(frameTime) {
   el.textContent = `${Math.round(nearestDist)} km`;
   dirEl.textContent = `na ${dir}`;
   el.className = nearestDist < 15 ? "near" : nearestDist < 40 ? "medium" : "far";
+
+  if (trendEl) {
+    if (_prevStormDist !== null) {
+      const diff = nearestDist - _prevStormDist;
+      if (diff < -2)      { trendEl.textContent = "↘ přibližuje se"; trendEl.className = "approaching"; }
+      else if (diff > 2)  { trendEl.textContent = "↗ vzdaluje se";  trendEl.className = "receding"; }
+      else                { trendEl.textContent = "→ stacionární";   trendEl.className = ""; }
+    }
+    _prevStormDist = nearestDist;
+  }
 }
 
 // ── Globální radar (RainViewer tiles) ─────────────────────────────────────────
@@ -2196,6 +2219,7 @@ function renderLocationVerdict(fc, label) {
   const { chips } = (() => {
     try {
       const ptId = nearestPt(parseFloat(_currentLat ?? lat), parseFloat(_currentLon ?? lon)).id;
+      renderRainBadge(ptId);
       return templateVerdict(ptId);
     } catch { return { chips: "" }; }
   })();
@@ -2203,6 +2227,42 @@ function renderLocationVerdict(fc, label) {
   document.getElementById("verdict").innerHTML =
     (chips ? `<div style="margin-bottom:.4rem">${chips}</div>` : "") +
     `<div class="verdict-text">${text.replace(/\n\n/g, "<br><br>")}</div>`;
+}
+
+// ── Data freshness indicator ─────────────────────────────────────────────────
+function updateRefreshTime(genDate) {
+  const el = document.getElementById("refresh-time");
+  if (!el) return;
+  const ageMin = (Date.now() - genDate.getTime()) / 60000;
+  const hm = genDate.toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Prague" });
+  const rel = ageMin < 1 ? "právě teď"
+            : ageMin < 60 ? `před ${Math.round(ageMin)} min`
+            : `před ${Math.round(ageMin/60)} h`;
+  el.textContent = `${hm} (${rel})`;
+  el.className = ageMin <= 15 ? "age-ok" : ageMin <= 45 ? "age-warn" : "age-old";
+  // Skryj/zobraz staré-data warning přes třídu
+  if (ageMin > 45) el.textContent = "⚠ " + el.textContent;
+}
+
+// ── Rain status badge ──────────────────────────────────────────────────────────
+function renderRainBadge(ptId) {
+  const wrap = document.getElementById("rain-badge-wrap");
+  if (!wrap) return;
+  const a = GRID?.act?.[String(ptId)];
+  const warns = GRID?.warnings?.filter((w, wi) => w.global || (GRID.wmatch?.[String(ptId)] || []).includes(wi)) || [];
+  const hasThunder = warns.some(w => /bouř|thunder/i.test(w.event));
+  let cls = "green", icon = "🟢", msg = "Bez srážek v nejbližší době";
+  if (hasThunder) {
+    cls = "red"; icon = "🔴"; msg = "Výstraha: " + warns.find(w => /bouř/i.test(w.event))?.event;
+  } else if (a) {
+    const peak = a[2], when = stepToLocal(a[0]);
+    if (peak >= 7.5)      { cls = "red";    icon = "🔴"; msg = `Vydatný déšť od ${when}`; }
+    else if (peak >= 2.5) { cls = "orange"; icon = "🟠"; msg = `Déšť od ${when}`; }
+    else                  { cls = "yellow"; icon = "🟡"; msg = `Slabé srážky od ${when}`; }
+  } else if (warns.length) {
+    cls = "yellow"; icon = "🟡"; msg = warns[0].event;
+  }
+  wrap.innerHTML = `<div class="rain-badge ${cls}">${icon} ${msg}</div>`;
 }
 
 // ── Manifest UI: radar timestamps + stáří dat ────────────────────────────────
@@ -2237,9 +2297,8 @@ function applyManifestUI() {
       "Prognóza: " + new Date(GRID.generated_at_utc).toLocaleString("cs-CZ", { timeZone: "Europe/Prague" });
   }
 
-  // Refresh time
-  document.getElementById("refresh-time").textContent =
-    "aktualizováno " + new Date().toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Prague" });
+  // Refresh time s barvou dle stáří dat
+  updateRefreshTime(gen);
 
   // Timeline
   document.getElementById("timeline").max = nf - 1;
@@ -2425,6 +2484,7 @@ function showForecast(lat, lon, label) {
 
   const { id, dist } = nearestPt(lat, lon);
   const { chips } = templateVerdict(id);  // chips = výstrahové bubliny (sync)
+  renderRainBadge(id);
   const pt = GRID.pts[id];
 
   document.getElementById("place").textContent = label || "Vybrané místo";

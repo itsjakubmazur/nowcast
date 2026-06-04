@@ -116,9 +116,32 @@ def fetch_all(urls: list[tuple[str, str]]) -> dict[str, dict]:
 def parse_meta1(values: list) -> dict[str, dict]:
     """
     Parsuje meta1-*.json: flat tabulka.
-    Sloupce: WSI, GH_ID, FULL_NAME, GEOGR1(lon), GEOGR2(lat), ELEVATION, ...
+    Sloupce: WSI, GH_ID, FULL_NAME, GEOGR1, GEOGR2, ELEVATION, ...
+    GEOGR1/GEOGR2 mohou být lon/lat nebo lat/lon — auto-detekce.
     Vrátí jen stanice v bounding boxu ČR.
     """
+    if not values:
+        return {}
+
+    # Auto-detekce: zjisti z prvních 20 řádků, která z col3/col4 je lat (48–51) a která lon (12–19)
+    col3_vals = []
+    col4_vals = []
+    for row in values[:20]:
+        if len(row) < 5:
+            continue
+        try:
+            col3_vals.append(float(row[3]))
+            col4_vals.append(float(row[4]))
+        except (TypeError, ValueError):
+            pass
+
+    # col3 je lat pokud průměr leží v CZ lat rozsahu; jinak col3 = lon
+    avg3 = sum(col3_vals) / len(col3_vals) if col3_vals else 0
+    if CZ_LAT[0] <= avg3 <= CZ_LAT[1]:
+        lat_col, lon_col = 3, 4   # GEOGR1=lat, GEOGR2=lon
+    else:
+        lat_col, lon_col = 4, 3   # GEOGR1=lon, GEOGR2=lat (původní předpoklad)
+
     meta = {}
     for row in values:
         if len(row) < 5:
@@ -126,8 +149,8 @@ def parse_meta1(values: list) -> dict[str, dict]:
         wsi  = str(row[0])
         name = str(row[2]) if row[2] else None
         try:
-            lon = float(row[3])
-            lat = float(row[4])
+            lat = float(row[lat_col])
+            lon = float(row[lon_col])
         except (TypeError, ValueError):
             continue
         if not (CZ_LAT[0] <= lat <= CZ_LAT[1] and CZ_LON[0] <= lon <= CZ_LON[1]):
@@ -153,35 +176,40 @@ def parse_meta1(values: list) -> dict[str, dict]:
 
 def load_metadata() -> dict[str, dict]:
     """
-    Zkusí meta1 z recent/metadata/ (pokrývá více stanic), fallback na now/metadata/.
+    Sloučí meta1 ze všech dostupných zdrojů (recent má přednost nad now).
     Vrátí dict: numeric_sid → {name, lat, lon, elev}.
     """
     now_utc   = datetime.now(timezone.utc)
     today     = now_utc.strftime("%Y%m%d")
     yesterday = (now_utc - timedelta(days=1)).strftime("%Y%m%d")
 
+    # Pořadí: recent má více stanic a má přednost
     sources = [
-        f"{RECENT_META}meta1-{today}.json",
-        f"{RECENT_META}meta1-{yesterday}.json",
-        f"{NOW_META}meta1-{today}.json",
-        f"{NOW_META}meta1-{yesterday}.json",
+        (f"{RECENT_META}meta1-{today}.json",    "recent-today"),
+        (f"{RECENT_META}meta1-{yesterday}.json", "recent-yesterday"),
+        (f"{NOW_META}meta1-{today}.json",         "now-today"),
+        (f"{NOW_META}meta1-{yesterday}.json",     "now-yesterday"),
     ]
-    for url in sources:
+    merged: dict[str, dict] = {}
+    for url, label in sources:
         r = fetch(url)
         if not r:
+            print(f"  Metadata {label}: nedostupné", file=sys.stderr)
             continue
         try:
             data   = r.json()
             values = data["data"]["data"]["values"]
+            total  = len(values)
             meta   = parse_meta1(values)
-            if meta:
-                print(f"  Metadata: {len(meta)} CZ stanic z {url}", file=sys.stderr)
-                return meta
+            print(f"  Metadata {label}: {total} řádků → {len(meta)} CZ stanic", file=sys.stderr)
+            # Přidej nové stanice (recent má přednost — přidáváme jen pokud sid ještě není)
+            for sid, info in meta.items():
+                merged.setdefault(sid, info)
         except Exception as e:
-            print(f"  Metadata parse error ({url}): {e}", file=sys.stderr)
+            print(f"  Metadata parse error ({label} {url}): {e}", file=sys.stderr)
 
-    print("  Metadata nedostupná", file=sys.stderr)
-    return {}
+    print(f"  Metadata celkem: {len(merged)} unikátních CZ stanic", file=sys.stderr)
+    return merged
 
 
 # ── Directory listing ─────────────────────────────────────────────────────────
