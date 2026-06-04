@@ -426,10 +426,12 @@ def main():
     nowcast_path = DATA_DIR / "nowcast.json"
     om_path      = DATA_DIR / "openmeteo.json"
 
-    for p in (nowcast_path, om_path):
-        if not p.exists():
-            print(f"ERROR: {p} nenalezen — spusť nejdřív ingest.py + nowcast.py")
-            raise SystemExit(1)
+    if not nowcast_path.exists():
+        print(f"ERROR: {nowcast_path} nenalezen — spusť nejdřív ingest.py + nowcast.py")
+        raise SystemExit(1)
+    if not om_path.exists():
+        print("  WARN: openmeteo.json nenalezen — pokračuji bez NWP dat", file=sys.stderr)
+        om_path.write_text("{}")
 
     print("\n=== Fúze nowcast + NWP ===")
     forecast = fuse(nowcast_path, om_path, lat, lon)
