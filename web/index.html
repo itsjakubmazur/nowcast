@@ -660,6 +660,43 @@
 <!-- Fullscreen mapa — PRVNÍ, ostatní jsou přes ní -->
 <div id="map"></div>
 
+<!-- Radar bar — hned za mapou, aby byl na mobilu těsně pod ní -->
+<div id="radar-bar" style="display:none">
+  <!-- Řádek 1: slider na celou šířku -->
+  <div class="radar-row" style="margin-bottom:.6rem">
+    <div class="timeline-wrap" style="flex:1">
+      <input type="range" id="timeline" min="0" value="0" />
+      <div id="t0-tick"></div>
+      <div id="t0-marker">teď</div>
+    </div>
+  </div>
+  <!-- Řádek 2: ovládací tlačítka -->
+  <div class="radar-row">
+    <button class="ctrl" id="btn-prev" title="Předchozí snímek (←)">◀</button>
+    <button class="ctrl" id="btn-play" title="Přehrát/Pozastavit (mezerník)">▶</button>
+    <button class="ctrl" id="btn-next" title="Další snímek (→)">▶▶</button>
+    <div class="speed-group" title="Rychlost animace">
+      <button class="ctrl" id="speed-slow" data-ms="900">🐢</button>
+      <button class="ctrl active" id="speed-norm" data-ms="500">–</button>
+      <button class="ctrl" id="speed-fast" data-ms="200">⚡</button>
+    </div>
+    <div id="frame-time" style="min-width:60px;text-align:center">—</div>
+    <span id="radar-t0" style="font-size:.78rem;font-weight:600;color:var(--text)"></span>
+    <div style="margin-left:auto;display:flex;align-items:center;gap:.5rem">
+      <label style="font-size:.72rem;color:var(--muted)">Průhlednost</label>
+      <input type="range" id="opacity-slider" min="0" max="100" value="70" style="width:70px" />
+      <span id="opacity-val" style="font-size:.72rem;color:var(--muted);min-width:30px">70 %</span>
+    </div>
+    <button class="ctrl" id="btn-global" title="Globální radar (RainViewer)">🌍</button>
+    <button class="ctrl lightning-btn" id="btn-lightning" title="Zobrazit blesky (RainViewer)">⚡</button>
+    <span id="radar-updated" style="font-size:.68rem;color:var(--muted)"></span>
+  </div>
+  <div class="rain-spark-wrap" id="rain-spark-wrap" style="display:none">
+    <canvas id="rain-spark"></canvas>
+  </div>
+  <span id="radar-source" style="font-size:.65rem;color:var(--muted);font-style:italic;display:block;margin-top:.3rem"></span>
+</div>
+
 <!-- Topbar (floating, position:fixed, top:0) -->
 <div id="topbar">
   <div class="logo">
@@ -760,43 +797,6 @@
   <button class="layer-btn" data-layer="pressure">🔵 Tlak</button>
   <button class="layer-btn" data-layer="solar">☀️ Záření</button>
   <button class="layer-btn" data-layer="visibility_m">👁️ Viditelnost</button>
-</div>
-
-<!-- Radar bar (fixed bottom) -->
-<div id="radar-bar" style="display:none">
-  <!-- Řádek 1: slider na celou šířku -->
-  <div class="radar-row" style="margin-bottom:.6rem">
-    <div class="timeline-wrap" style="flex:1">
-      <input type="range" id="timeline" min="0" value="0" />
-      <div id="t0-tick"></div>
-      <div id="t0-marker">teď</div>
-    </div>
-  </div>
-  <!-- Řádek 2: ovládací tlačítka -->
-  <div class="radar-row">
-    <button class="ctrl" id="btn-prev" title="Předchozí snímek (←)">◀</button>
-    <button class="ctrl" id="btn-play" title="Přehrát/Pozastavit (mezerník)">▶</button>
-    <button class="ctrl" id="btn-next" title="Další snímek (→)">▶▶</button>
-    <div class="speed-group" title="Rychlost animace">
-      <button class="ctrl" id="speed-slow" data-ms="900">🐢</button>
-      <button class="ctrl active" id="speed-norm" data-ms="500">–</button>
-      <button class="ctrl" id="speed-fast" data-ms="200">⚡</button>
-    </div>
-    <div id="frame-time" style="min-width:60px;text-align:center">—</div>
-    <span id="radar-t0" style="font-size:.78rem;font-weight:600;color:var(--text)"></span>
-    <div style="margin-left:auto;display:flex;align-items:center;gap:.5rem">
-      <label style="font-size:.72rem;color:var(--muted)">Průhlednost</label>
-      <input type="range" id="opacity-slider" min="0" max="100" value="70" style="width:70px" />
-      <span id="opacity-val" style="font-size:.72rem;color:var(--muted);min-width:30px">70 %</span>
-    </div>
-    <button class="ctrl" id="btn-global" title="Globální radar (RainViewer)">🌍</button>
-    <button class="ctrl lightning-btn" id="btn-lightning" title="Zobrazit blesky (RainViewer)">⚡</button>
-    <span id="radar-updated" style="font-size:.68rem;color:var(--muted)"></span>
-  </div>
-  <div class="rain-spark-wrap" id="rain-spark-wrap" style="display:none">
-    <canvas id="rain-spark"></canvas>
-  </div>
-  <span id="radar-source" style="font-size:.65rem;color:var(--muted);font-style:italic;display:block;margin-top:.3rem"></span>
 </div>
 
 <footer>Data: ČHMÚ (CC BY) · Open-Meteo (CC BY) · Radar: RainViewer · Stanice: Weather Underground · Předpověď generovaná v prohlížeči</footer>
