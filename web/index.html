@@ -1780,9 +1780,6 @@ async function loadRainViewerFrames() {
     showFrame(rvT0idx);
     btn.textContent = "🌍 ČR";
 
-    // Auto-play
-    setTimeout(() => togglePlay(true), 300);
-
   } catch (e) {
     globalMode = false;
     btn.textContent = "🌍 Svět";
@@ -2922,9 +2919,6 @@ window.addEventListener("DOMContentLoaded", async () => {
   document.getElementById("btn-refresh").addEventListener("click", refreshAll);
   document.getElementById("btn-lightning").addEventListener("click", toggleLightning);
   document.getElementById("btn-global").addEventListener("click", toggleGlobalMode);
-
-  // Auto-play po 800ms (dá čas preloadu první vlně PNG)
-  setTimeout(() => togglePlay(true), 800);
 
   // Auto-refresh každých 5 minut (tiše na pozadí)
   setInterval(() => { refreshAll(); checkRainNotifications(); }, AUTO_REFRESH_MS);
