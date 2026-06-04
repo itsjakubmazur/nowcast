@@ -437,10 +437,11 @@ def main():
         for sid in now_ids if sid in metadata
         for d in (today, yesterday)
     ]
-    # recent/hourly/: 1h soubory pro všechny CZ stanice
+    # recent/hourly/: 1h soubory — pouze pro synoptické stanice z now/ (meta-only stanice tam nemají data)
+    rec_1h_sids = [sid for sid in now_ids if sid in metadata]
     rec_1h_urls = [
         (f"1h_rec_{sid}_{ym}", f"{RECENT_HOURLY}1h-0-20000-0-{sid}-{ym}.json")
-        for sid in cz_sids
+        for sid in rec_1h_sids
         for ym in (yyyymm, prev_yyyymm)
     ]
 
