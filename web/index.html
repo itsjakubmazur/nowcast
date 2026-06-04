@@ -2316,9 +2316,7 @@ function applyManifestUI() {
   document.getElementById("radar-updated").textContent =
     "generováno " + gen.toLocaleString("cs-CZ", { timeZone: "Europe/Prague" });
 
-  // Varování stáří — starší než 35 min je podezřelé
-  const warnEl = document.getElementById("data-age-warn");
-  warnEl.style.display = ageMin > 35 ? "inline" : "none";
+  // Varování stáří — zpracováno přes updateRefreshTime (element data-age-warn odstraněn)
 
   // Zdroj
   const srcEl = document.getElementById("radar-source");
