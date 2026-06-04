@@ -158,7 +158,9 @@ def fetch_open_meteo(lat: float, lon: float) -> dict:
     Stáhne krátkodobou předpověď z Open-Meteo.
     timezone=UTC — časy jsou vždy UTC, bez letního posunu.
     Převod na lokální čas se provádí až ve finálním verdiktu.
+    Retry 3× s exponenciálním backoffem při síťových chybách.
     """
+    import time
     params = {
         "latitude": lat,
         "longitude": lon,
@@ -181,9 +183,18 @@ def fetch_open_meteo(lat: float, lon: float) -> dict:
         "forecast_days": 1,
         "models": "icon_d2",
     }
-    resp = requests.get(OPEN_METEO_URL, params=params, timeout=30)
-    resp.raise_for_status()
-    return resp.json()
+    last_err = None
+    for attempt in range(3):
+        if attempt > 0:
+            time.sleep(2 ** attempt)
+        try:
+            resp = requests.get(OPEN_METEO_URL, params=params, timeout=60)
+            resp.raise_for_status()
+            return resp.json()
+        except Exception as e:
+            last_err = e
+            print(f"  Open-Meteo pokus {attempt+1}/3 selhal: {e}", file=sys.stderr)
+    raise last_err
 
 
 def fetch_merge(radar_dir: Path, n: int) -> list[Path]:
@@ -274,10 +285,20 @@ def main():
 
     # ── 2. Open-Meteo (UTC) ────────────────────────────────────────────────────
     print(f"\n=== Open-Meteo ingest (lat={lat}, lon={lon}, timezone=UTC, models=icon_d2) ===")
-    om_data = fetch_open_meteo(lat, lon)
     om_path = DATA_DIR / "openmeteo.json"
-    with open(om_path, "w") as f:
-        json.dump(om_data, f, indent=2)
+    try:
+        om_data = fetch_open_meteo(lat, lon)
+        with open(om_path, "w") as f:
+            json.dump(om_data, f, indent=2)
+    except Exception as e:
+        print(f"  !! Open-Meteo selhal po 3 pokusech: {e}", file=sys.stderr)
+        if om_path.exists():
+            print("  Používám starou cache openmeteo.json", file=sys.stderr)
+            with open(om_path) as f:
+                om_data = json.load(f)
+        else:
+            print("  Žádná cache — přeskakuji Open-Meteo data", file=sys.stderr)
+            om_data = {}
 
     m15    = om_data.get("minutely_15", {})
     hourly = om_data.get("hourly", {})
