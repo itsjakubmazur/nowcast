@@ -64,14 +64,8 @@ jobs:
         env:
           WU_API_KEY: ${{ secrets.WU_API_KEY }}
 
-      - name: Probe ČHMÚ URL formáty (diagnostika)
-        run: python pipeline/chmi_probe.py || echo "probe selhalo"
-
-      - name: Run chmi (ČHMÚ stanice)
+      - name: Run chmi (ČHMÚ stanice + akumulace historie)
         run: python pipeline/chmi.py || echo "chmi.py selhalo, pokračuji"
-
-      - name: Run chmi_stats (ČHMÚ historická data, cache 6h)
-        run: python pipeline/chmi_stats.py || echo "chmi_stats.py selhalo, pokračuji"
 
       - name: Upload data artifacts
         uses: actions/upload-artifact@v4
