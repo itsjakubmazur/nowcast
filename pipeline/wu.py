@@ -1,13 +1,14 @@
 """
 Weather Underground PWS — aktuální data ze soukromých stanic.
 Stahuje pozorování pro vlastní stanice (IBRNO445, IVENDR18) a okolní stanice.
-Výstup: data/wu_stations.json
+Každý běh akumuluje historii do wu_history.json (načte z Pages, přidá, uloží).
+Výstup: data/wu_stations.json, data/wu_history.json
 """
 
 import json
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 import requests
@@ -18,6 +19,10 @@ from ingest import DATA_DIR
 API_KEY  = os.environ.get("WU_API_KEY", "")
 BASE_URL = "https://api.weather.com"
 TIMEOUT  = (5, 20)
+HEADERS  = {"User-Agent": "Mozilla/5.0 (compatible; NowcastBot/1.0)"}
+
+PAGES_BASE    = "https://itsjakubmazur.github.io/nowcast"
+HISTORY_HOURS = 48
 
 # Vlastní stanice
 OWN_STATIONS = ["IBRNO445", "IVENDR18"]
@@ -103,6 +108,53 @@ def parse_obs(o: dict, own: bool = False) -> dict | None:
     }
 
 
+def load_wu_history() -> dict:
+    local = DATA_DIR / "wu_history.json"
+    try:
+        r = requests.get(f"{PAGES_BASE}/data/wu_history.json",
+                         headers=HEADERS, timeout=10)
+        if r.ok:
+            data = r.json()
+            total = sum(len(s.get("series", [])) for s in data.get("stations", {}).values())
+            print(f"  WU historie z Pages: {total} záznamů", file=sys.stderr)
+            return data
+    except Exception as e:
+        print(f"  WU Pages historie nedostupná: {e}", file=sys.stderr)
+    if local.exists():
+        try:
+            return json.loads(local.read_text())
+        except Exception:
+            pass
+    return {"stations": {}}
+
+
+def append_wu_history(history: dict, stations: list, cutoff_dt: str) -> dict:
+    for obs in stations:
+        sid = obs["id"]
+        if not obs.get("time_utc"):
+            continue
+        if sid not in history["stations"]:
+            history["stations"][sid] = {
+                "name":   obs["name"],
+                "own":    obs.get("own", False),
+                "lat":    obs["lat"],
+                "lon":    obs["lon"],
+                "series": [],
+            }
+        entry = {"dt": obs["time_utc"]}
+        for key in ("temp", "humidity", "pressure", "wind_kmh", "gust_kmh",
+                    "wind_dir", "precip_rate", "precip_total", "solar_radiation", "uv"):
+            if obs.get(key) is not None:
+                entry[key] = obs[key]
+        series = history["stations"][sid]["series"]
+        if not series or series[-1].get("dt") != entry["dt"]:
+            series.append(entry)
+        history["stations"][sid]["series"] = [
+            e for e in series if e.get("dt", "") >= cutoff_dt
+        ]
+    return history
+
+
 def main():
     print("\n=== WU PWS — stahování dat ze soukromých stanic ===")
 
@@ -151,16 +203,27 @@ def main():
                 count += 1
         print(f"  Okolní stanice: {count}")
 
+    now_utc   = datetime.now(timezone.utc)
+    cutoff_dt = (now_utc - timedelta(hours=HISTORY_HOURS)).isoformat(timespec="minutes")
+
     out = {
-        "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+        "generated_at_utc": now_utc.isoformat(),
         "stations": stations,
     }
     path = DATA_DIR / "wu_stations.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w") as f:
         json.dump(out, f, indent=2, ensure_ascii=False)
-
     print(f"✓ WU OK — {len(stations)} stanic → {path}")
+
+    # Historie
+    history = load_wu_history()
+    history = append_wu_history(history, stations, cutoff_dt)
+    history["updated_at_utc"] = now_utc.isoformat()
+    total = sum(len(s.get("series", [])) for s in history["stations"].values())
+    hist_path = DATA_DIR / "wu_history.json"
+    hist_path.write_text(json.dumps(history, ensure_ascii=False))
+    print(f"  ✓ wu_history.json — {total} záznamů", file=sys.stderr)
 
 
 if __name__ == "__main__":
