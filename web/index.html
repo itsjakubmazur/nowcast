@@ -410,6 +410,13 @@
       padding: .5rem .55rem; display: flex; flex-direction: column; gap: .12rem;
       min-width: 100px; flex-shrink: 0; scroll-snap-align: start;
     }
+    @media (min-width: 769px) {
+      .fc7-grid {
+        display: grid; grid-template-columns: repeat(2, 1fr);
+        overflow-x: visible; scroll-snap-type: none;
+      }
+      .fc7-day { min-width: unset; flex-shrink: unset; }
+    }
     .fc7-day-name { font-size: .73rem; font-weight: 700; color: var(--text); }
     .fc7-day-date { font-size: .65rem; color: var(--muted); }
     .fc7-day-icon { font-size: 1.5rem; line-height: 1.3; margin: .12rem 0; }
@@ -815,6 +822,7 @@ let preloadedImgs = [];
 
 // WU stanice
 let WU = null;
+let WU_HISTORY = null;
 let wuMarkers = [];
 
 // ČHMÚ stanice
@@ -840,10 +848,11 @@ const AUTO_REFRESH_MS   = 5 * 60 * 1000;
 async function loadData() {
   const v    = `?v=${Date.now()}`;
   const opts = { cache: "no-store" };
-  const [m, g, wu, fc, chmi, stats] = await Promise.all([
+  const [m, g, wu, wuh, fc, chmi, stats] = await Promise.all([
     fetch(`data/radar_manifest.json${v}`, opts).then(r => r.json()),
     fetch(`data/forecast_grid.json${v}`,  opts).then(r => r.json()),
     fetch(`data/wu_stations.json${v}`,    opts).then(r => r.json()).catch(() => null),
+    fetch(`data/wu_history.json${v}`,     opts).then(r => r.json()).catch(() => null),
     fetch(`data/forecast.json${v}`,       opts).then(r => r.json()).catch(() => null),
     fetch(`data/chmi_stations.json${v}`,  opts).then(r => r.json()).catch(() => null),
     fetch(`data/chmi_stats.json${v}`,     opts).then(r => r.json()).catch(() => null),
@@ -851,6 +860,7 @@ async function loadData() {
   MANIFEST    = m;
   GRID        = g;
   WU          = wu;
+  WU_HISTORY  = wuh;
   FORECAST    = fc;
   CHMI        = chmi;
   CHMI_STATS  = stats;
@@ -966,12 +976,91 @@ function openWuDetail(stationId) {
         <div class="wu-detail-cell-label">${c.label}</div>
         <div class="wu-detail-cell-val">${c.val}</div>
       </div>`).join("")}
-    </div>`;
+    </div>
+    <div id="wu-history-charts"></div>`;
   overlay.classList.add("open");
+  _renderWuHistory(stationId);
 }
 
 function closeWuDetail() {
   document.getElementById("wu-detail-overlay").classList.remove("open");
+}
+
+function _renderWuHistory(stationId) {
+  const container = document.getElementById("wu-history-charts");
+  if (!container) return;
+  const hist = WU_HISTORY?.stations?.[stationId];
+  if (!hist?.series?.length) {
+    container.innerHTML = `<div style="color:var(--muted);font-size:.72rem;margin-top:.75rem">Historie stanic není k dispozici.</div>`;
+    return;
+  }
+  const series = hist.series;
+  const isDark = document.documentElement.getAttribute("data-theme") !== "light";
+  const gc = isDark ? "rgba(255,255,255,.07)" : "rgba(0,0,0,.07)";
+  const tc = isDark ? "#6b7280" : "#9ca3af";
+
+  const firstDt = new Date(series[0].dt);
+  const lastDt  = new Date(series[series.length - 1].dt);
+  const multiDay = firstDt.toDateString() !== lastDt.toDateString();
+  const labels = series.map(r => {
+    const d = new Date(r.dt);
+    const t = d.toLocaleTimeString("cs-CZ", { hour:"2-digit", minute:"2-digit", timeZone:"Europe/Prague" });
+    if (!multiDay) return t;
+    return d.toLocaleDateString("cs-CZ", { day:"numeric", month:"numeric", timeZone:"Europe/Prague" }) + " " + t;
+  });
+
+  const chartCfgs = [
+    { key:"temp",      label:"Teplota",       color:"#f87171", unit:"°C",   bar:false },
+    { key:"humidity",  label:"Vlhkost",       color:"#22c55e", unit:"%",    bar:false },
+    { key:"pressure",  label:"Tlak",          color:"#a855f7", unit:"hPa",  bar:false },
+    { key:"wind_kmh",  label:"Vítr",          color:"#06b6d4", unit:"km/h", bar:false, key2:"gust_kmh", color2:"#38bdf8", label2:"Nárazy" },
+    { key:"precip_rate", label:"Srážky/hod",  color:"#3b82f6", unit:"mm",   bar:true  },
+  ];
+
+  let html = `<div style="font-size:.72rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-top:1rem;margin-bottom:.5rem">Historie · ${series.length} záznamů</div>`;
+  container.innerHTML = html;
+
+  for (const cfg of chartCfgs) {
+    const vals = series.map(r => r[cfg.key] ?? null);
+    if (vals.every(v => v === null)) continue;
+    const wrap = document.createElement("div");
+    wrap.className = "sd-chart";
+    const canvasId = "wuh_" + cfg.key;
+    wrap.innerHTML = `<div class="sd-chart-head">${cfg.label} <span class="sd-chart-unit">${cfg.unit}</span></div>
+      <div class="sd-chart-canvas-wrap"><canvas id="${canvasId}"></canvas></div>`;
+    container.appendChild(wrap);
+
+    const datasets = [{
+      data: vals, borderColor: cfg.color,
+      backgroundColor: cfg.bar ? cfg.color + "bb" : cfg.color + "25",
+      borderWidth: cfg.bar ? 0 : 1.8, fill: !cfg.bar, tension: cfg.bar ? 0 : 0.35,
+      spanGaps: true, pointRadius: 0,
+      ...(cfg.bar ? { barPercentage: 1, categoryPercentage: 1 } : {}),
+    }];
+    if (cfg.key2) {
+      const vals2 = series.map(r => r[cfg.key2] ?? null);
+      if (vals2.some(v => v != null)) datasets.push({
+        label: cfg.label2, data: vals2, borderColor: cfg.color2,
+        backgroundColor: "transparent", borderWidth: 1.5, borderDash: [3,3],
+        fill: false, tension: 0.3, spanGaps: true, pointRadius: 0,
+      });
+    }
+    new Chart(document.getElementById(canvasId), {
+      type: cfg.bar ? "bar" : "line",
+      data: { labels, datasets },
+      options: {
+        animation: false, responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { display: !!cfg.key2, labels: { color: tc, font: { size: 10 }, boxWidth: 12, padding: 8 } },
+          tooltip: { mode: "index", intersect: false },
+        },
+        scales: {
+          x: { ticks: { maxTicksLimit: 6, color: tc, font: { size: 10 } }, grid: { color: gc } },
+          y: { ticks: { color: tc, font: { size: 10 } }, grid: { color: gc } },
+        },
+      },
+    });
+  }
 }
 
 function renderWuMarkers() {
@@ -1257,9 +1346,15 @@ function _renderTabDnes(body, stationId) {
   }
   const series  = station.series;
   const obs     = CHMI?.stations?.find(x => x.id === stationId);
+  const firstDt = series.length ? new Date(series[0].dt) : null;
+  const lastDt  = series.length ? new Date(series[series.length - 1].dt) : null;
+  const multiDay = firstDt && lastDt && firstDt.toDateString() !== lastDt.toDateString();
   const labels  = series.map(r => {
     const d = new Date(r.dt);
-    return d.toLocaleTimeString("cs-CZ", { hour:"2-digit", minute:"2-digit", timeZone:"Europe/Prague" });
+    const t = d.toLocaleTimeString("cs-CZ", { hour:"2-digit", minute:"2-digit", timeZone:"Europe/Prague" });
+    if (!multiDay) return t;
+    const day = d.toLocaleDateString("cs-CZ", { day:"numeric", month:"numeric", timeZone:"Europe/Prague" });
+    return `${day} ${t}`;
   });
 
   body.innerHTML = "";
