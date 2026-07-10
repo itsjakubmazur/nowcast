@@ -1,0 +1,90 @@
+name: Stale data check
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Check data freshness
+        id: check
+        run: |
+          set +e
+          URL="https://itsjakubmazur.github.io/nowcast/data/radar_manifest.json"
+          BODY=$(curl -fsS "$URL")
+          if [ -z "$BODY" ]; then
+            echo "stale=true" >> "$GITHUB_OUTPUT"
+            echo "reason=Manifest se nepodařilo stáhnout z $URL" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          GEN=$(echo "$BODY" | python3 -c "import json,sys; print(json.load(sys.stdin)['generated_at_utc'])" 2>/dev/null)
+          if [ -z "$GEN" ]; then
+            echo "stale=true" >> "$GITHUB_OUTPUT"
+            echo "reason=generated_at_utc chybí v manifestu" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          AGE_MIN=$(python3 -c "
+from datetime import datetime, timezone
+gen = datetime.fromisoformat('$GEN'.replace('Z','+00:00'))
+now = datetime.now(timezone.utc)
+print(int((now-gen).total_seconds()//60))
+")
+          echo "Stáří dat: $AGE_MIN minut"
+          if [ "$AGE_MIN" -gt 60 ]; then
+            echo "stale=true" >> "$GITHUB_OUTPUT"
+            echo "reason=Data stará $AGE_MIN minut (limit 60)" >> "$GITHUB_OUTPUT"
+          else
+            echo "stale=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Open/update issue on stale data
+        if: steps.check.outputs.stale == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const reason = `${{ steps.check.outputs.reason }}`;
+            const title = "⚠️ Nowcast data jsou zastaralá";
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner, repo: context.repo.repo,
+              state: "open", labels: "stale-data",
+            });
+            const body = `Pipeline zjevně přestala publikovat čerstvá data.\n\n${reason}\n\n` +
+              "Zkontroluj poslední běh workflow `nowcast.yml` — GitHub Actions vypíná " +
+              "naplánované workflow po ~60 dnech neaktivity repa a cron na free tieru " +
+              "se může opozdit nebo přestat spouštět úplně.";
+            if (issues.length === 0) {
+              await github.rest.issues.create({
+                owner: context.repo.owner, repo: context.repo.repo,
+                title, body, labels: ["stale-data"],
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: issues[0].number, body,
+              });
+            }
+
+      - name: Close stale issue if data fresh again
+        if: steps.check.outputs.stale == 'false'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner, repo: context.repo.repo,
+              state: "open", labels: "stale-data",
+            });
+            for (const issue of issues) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: issue.number, body: "✅ Data jsou opět čerstvá.",
+              });
+              await github.rest.issues.update({
+                owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: issue.number, state: "closed",
+              });
+            }

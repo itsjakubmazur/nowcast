@@ -14,6 +14,8 @@ concurrency:
 jobs:
   run-pipeline:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write   # potřeba pro commit-back pipeline/state/ (verify.py historie)
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -59,6 +61,12 @@ jobs:
       - name: Run render (Fáze 4c)
         run: python pipeline/render.py
 
+      - name: Run verify (zpětná validace přesnosti nowcastu)
+        run: python pipeline/verify.py || echo "verify.py selhalo, pokračuji bez accuracy.json"
+        env:
+          NOWCAST_LAT: '50.08'
+          NOWCAST_LON: '14.42'
+
       - name: Run wu (WU PWS stanice)
         run: python pipeline/wu.py || echo "wu.py selhalo (WU_API_KEY?), pokračuji"
         env:
@@ -66,6 +74,9 @@ jobs:
 
       - name: Run chmi (ČHMÚ stanice + akumulace historie)
         run: python pipeline/chmi.py || echo "chmi.py selhalo, pokračuji"
+
+      - name: Validate publikovaná data (poslední pojistka před deployem)
+        run: python pipeline/validate.py
 
       - name: Upload data artifacts
         uses: actions/upload-artifact@v4
@@ -78,6 +89,22 @@ jobs:
         run: |
           mkdir -p web/data
           cp -r data/* web/data/ 2>/dev/null || true
+
+      - name: Commit accuracy state (pokud se změnil)
+        run: |
+          if git diff --quiet -- pipeline/state/; then
+            echo "Bez změny ve state — přeskakuji commit."
+            exit 0
+          fi
+          git config user.name "nowcast-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add pipeline/state/
+          git commit -m "chore: aktualizace accuracy_history.json [skip ci]"
+          for i in 1 2 3; do
+            git pull --rebase origin "${GITHUB_REF_NAME}" && git push origin "HEAD:${GITHUB_REF_NAME}" && break
+            echo "Push pokus $i selhal, zkouším znovu za $((i*3))s"
+            sleep $((i * 3))
+          done
 
   deploy-pages:
     needs: run-pipeline

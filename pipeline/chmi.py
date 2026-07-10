@@ -387,12 +387,24 @@ def main():
     }, indent=2, ensure_ascii=False))
     print(f"  ✓ chmi_stations.json — {len(stations)} stanic", file=sys.stderr)
 
-    (DATA_DIR / "chmi_series.json").write_text(json.dumps({
+    # Per-stanice soubory — detail panel na webu stahuje jen tu jednu stanici,
+    # co uživatel otevřel, místo celého 40stanicového bloku.
+    series_dir = DATA_DIR / "chmi_series"
+    series_dir.mkdir(parents=True, exist_ok=True)
+    for sid, payload in all_series.items():
+        safe_name = sid.replace("/", "_")
+        (series_dir / f"{safe_name}.json").write_text(json.dumps({
+            "generated_at_utc": now_utc.isoformat(),
+            **payload,
+        }, ensure_ascii=False))
+    index = {
         "generated_at_utc": now_utc.isoformat(),
-        "stations": all_series,
-    }, ensure_ascii=False))
+        "stations": {sid: {"name": v["name"], "lat": v["lat"], "lon": v["lon"]}
+                     for sid, v in all_series.items()},
+    }
+    (DATA_DIR / "chmi_series_index.json").write_text(json.dumps(index, ensure_ascii=False))
     total_pts = sum(len(v["series"]) for v in all_series.values())
-    print(f"  ✓ chmi_series.json — {len(all_series)} stanic, {total_pts} bodů", file=sys.stderr)
+    print(f"  ✓ chmi_series/*.json — {len(all_series)} stanic, {total_pts} bodů (per-station)", file=sys.stderr)
 
 
 def _save_empty(error_msg):
@@ -401,7 +413,7 @@ def _save_empty(error_msg):
              "error": error_msg, "stations": []}
     (DATA_DIR / "chmi_stations.json").write_text(
         json.dumps(empty, indent=2, ensure_ascii=False))
-    (DATA_DIR / "chmi_series.json").write_text(
+    (DATA_DIR / "chmi_series_index.json").write_text(
         json.dumps({"generated_at_utc": empty["generated_at_utc"], "stations": {}},
                    ensure_ascii=False))
 

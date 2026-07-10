@@ -233,7 +233,7 @@ def main():
     grid = build_grid(meta, GRID_STEP_M)
     print(f"  Bodů v ČR uvnitř radaru: {len(grid)}")
 
-    pts, act = [], {}
+    pts, act, series_out = [], {}, {}
     active_count = 0
     for idx, (row, col, lat, lon) in enumerate(grid):
         pts.append([lat, lon])
@@ -246,6 +246,9 @@ def main():
                         if vals[i] >= RAIN_THRESHOLD_MM_H), -1)
             total = round(sum(vals) * (TIMESTEP_MIN / 60.0), 1)
             act[str(idx)] = [arr, end, round(peak, 1), total]
+            # Plná časová řada (jen aktivní body — drží JSON malý) — pro reálný
+            # tvar srážkové křivky na webu místo pouhé obálky start/end/peak.
+            series_out[str(idx)] = [round(v, 1) for v in vals]
             active_count += 1
     print(f"  Aktivních bodů (srážky ≥ {RAIN_THRESHOLD_MM_H} mm/h): {active_count}")
 
@@ -295,8 +298,20 @@ def main():
                   f"→ bez polygonu = celostátní (global=True, zobrazí se všude)")
 
     # Výstrahy bez polygonu = celostátní → flag global=True (JS je zobrazí všude)
+    # Polygony zjednodušíme (max SIMPLIFY_MAX_PTS bodů/ring) — pro mapovou vrstvu
+    # na webu stačí hrubý obrys, ne plná CAP přesnost, a drží JSON malý.
+    SIMPLIFY_MAX_PTS = 60
+
+    def _simplify_ring(ring: list) -> list:
+        if len(ring) <= SIMPLIFY_MAX_PTS:
+            return [[round(la, 4), round(lo, 4)] for la, lo in ring]
+        step = len(ring) / SIMPLIFY_MAX_PTS
+        out_ring = [ring[int(i * step)] for i in range(SIMPLIFY_MAX_PTS)]
+        return [[round(la, 4), round(lo, 4)] for la, lo in out_ring]
+
     warnings_out = []
     for w in warnings:
+        polys = w.get("polygons", [])
         warnings_out.append({
             "event":       w["event"],
             "color":       w["color"],
@@ -304,7 +319,9 @@ def main():
             "onset_utc":   w["onset_utc"],
             "expires_utc": w["expires_utc"],
             "areas":       w.get("areas", [])[:3],
-            "global":      not bool(w.get("polygons")),
+            "description": w.get("description", ""),
+            "global":      not bool(polys),
+            "polygons":    [_simplify_ring(p) for p in polys],
         })
 
     # ── 5. Ulož kompaktní JSON ───────────────────────────────────────────────────
@@ -318,6 +335,7 @@ def main():
         "nowcast_source":  rr_source,
         "pts":             pts,
         "act":             act,
+        "series":          series_out,
         "warnings":        warnings_out,
         "wmatch":          wmatch,
         "nwp": {
