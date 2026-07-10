@@ -5,6 +5,41 @@ Seřazeno podle dopadu; u každého bodu je i odhad pracnosti.
 
 ---
 
+## Stav implementace
+
+**Všechny body níže jsou implementované** (frontend přestavěn na moduly, pipeline
+rozšířena, worker přepsán, testy přidané — viz commity na této větvi). Než to
+poběží naživo, zbývají tři ruční kroky, které vyžadují přístup k účtům a
+nešly udělat z tohoto sandboxu:
+
+1. **Cloudflare KV namespace** pro Web Push subscriptions —
+   `wrangler kv namespace create SUBSCRIPTIONS` (+ `--preview`), vlož ID do
+   `workers/narrate/wrangler.toml` (viz `REPLACE_WITH_REAL_KV_*` placeholdery).
+2. **VAPID soukromý klíč** — `wrangler secret put VAPID_PRIVATE_KEY`. Skutečný
+   pár byl vygenerován offline v této session (nikdy necommitnutý); soukromá
+   polovina byla vypsaná v chatu — pokud se ztratila, vygeneruj nový pár a
+   uprav i `VAPID_PUBLIC_KEY` v `wrangler.toml` (musí být pár). Postup pro
+   nový pár je v `workers/narrate/README.md`.
+3. **Ověř `*.workers.dev` subdoménu** — `web/index.html` má
+   `<meta name="worker-base" content="...">` s odhadem
+   `nowcast-narrate.itsjakubmazur.workers.dev`; pokud se liší od skutečné CF
+   subdomény, uprav tu jednu meta hodnotu.
+
+Bez těchto kroků appka funguje normálně (AI verdikt i push se jen tiše
+nezapnou — vše má fallback), takže to není blokující pro merge.
+
+**Vědomý kompromis:** blesky (bod 1.2) jsem **nepřipojil na Blitzortung**.
+Jejich WebSocket protokol je neoficiální/reverse-engineered a nemám způsob,
+jak ho v tomto sandboxu (bez odchozího přístupu na jejich servery) ověřit —
+nasadit neotestovaný binární decoder by bylo horší než bug, který opravuje.
+Místo toho jsem opravil poctivost UI: vrstva se přejmenovala na „aktivní
+srážkové/konvekční jádro“ a počítá se z vlastního nowcastu (`GRID.act`),
+místo aby tvářila cizí radarová data jako blesky. Napojení na Blitzortung
+zůstává validní budoucí vylepšení, jen vyžaduje živé testování mimo tento
+sandbox.
+
+---
+
 ## TL;DR — top 10
 
 1. **AI verdikt se na webu vůbec nezobrazuje** — hlavní USP projektu je odpojené (viz 1.1). Zapojit worker per-location.
