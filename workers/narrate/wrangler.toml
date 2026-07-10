@@ -4,4 +4,27 @@ compatibility_date = "2024-01-01"
 account_id = "c9455070490a8890016fb336fdce2021"
 
 [vars]
-# GEMINI_API_KEY se nastaví jako secret přes wrangler secret put
+# GEMINI_API_KEY se nastaví jako secret přes: wrangler secret put GEMINI_API_KEY
+# VAPID_PRIVATE_KEY se nastaví jako secret přes: wrangler secret put VAPID_PRIVATE_KEY
+#   (NIKDY ho nedávej sem do [vars] — je to soukromý klíč pro Web Push podpisy)
+#
+# Veřejný VAPID klíč — bezpečné mít v repu, frontend ho potřebuje pro
+# pushManager.subscribe({ applicationServerKey: ... }). Pár byl vygenerován
+# lokálně (P-256, offline, nikdy neopustil sandbox) — soukromá polovina žije
+# JEN jako Cloudflare secret, viz README.md v tomto adresáři.
+VAPID_PUBLIC_KEY = "BM60k6heLK2a7KNELX05p5_Wpv1zhUbB2JFLMLVz13uirAVfjkCtoksQ7bdQIMd5hqvwUTwPUWUGfhFm0KkhF3Y"
+PAGES_BASE = "https://itsjakubmazur.github.io/nowcast"
+
+# Cron pro kontrolu oblíbených míst subscriberů (~stejná kadence jako pipeline)
+[triggers]
+crons = ["*/10 * * * *"]
+
+# KV namespace pro Web Push subscriptions.
+# JEDNORÁZOVÝ SETUP (viz README.md):
+#   wrangler kv namespace create SUBSCRIPTIONS
+#   wrangler kv namespace create SUBSCRIPTIONS --preview
+# a nahraď id/preview_id skutečnými hodnotami, které příkazy vypíšou.
+[[kv_namespaces]]
+binding = "SUBSCRIPTIONS"
+id = "REPLACE_WITH_REAL_KV_NAMESPACE_ID"
+preview_id = "REPLACE_WITH_REAL_KV_PREVIEW_NAMESPACE_ID"
