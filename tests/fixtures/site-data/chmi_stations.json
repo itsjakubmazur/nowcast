@@ -1,0 +1,20 @@
+{
+  "generated_at_utc": "2026-07-10T10:00:00+00:00",
+  "count": 2,
+  "stations": [
+    {
+      "id": "0-20000-0-11518", "name": "Praha-Ruzyně", "lat": 50.1, "lon": 14.26, "elev": 364,
+      "time_utc": "2026-07-10T10:00:00+00:00",
+      "temp": 21.4, "humidity": 58, "pressure": 1015, "wind_kmh": 12.0, "gust_kmh": 22.0,
+      "wind_dir": 230, "precip_1h": 0.0, "precip_24h": 1.2, "snow_cm": 0, "solar": 420,
+      "dewpoint": 12.8, "visibility_m": 20000, "own": false
+    },
+    {
+      "id": "0-20000-0-11520", "name": "Praha-Karlov", "lat": 50.06, "lon": 14.42, "elev": 261,
+      "time_utc": "2026-07-10T10:00:00+00:00",
+      "temp": 22.0, "humidity": 55, "pressure": 1014, "wind_kmh": 9.0, "gust_kmh": 15.0,
+      "wind_dir": 210, "precip_1h": 0.2, "precip_24h": 2.0, "snow_cm": 0, "solar": 410,
+      "dewpoint": 13.0, "visibility_m": 15000, "own": false
+    }
+  ]
+}

@@ -1,0 +1,374 @@
+// Smoke test — ověří, že přestavěný frontend (moduly + nová UI) skutečně
+// naběhne a klíčové featury fungují end-to-end, s fixture daty a stub
+// Leaflet/Chart.js (sandbox nemá odchozí přístup na unpkg/jsdelivr/Open-Meteo).
+//
+// Spuštění: NODE_PATH=/opt/node22/lib/node_modules node tests/smoke.mjs
+
+// V CI (npm ci) se "playwright" resolvuje normálně z node_modules/. V tomto
+// vývojovém sandboxu není npm install spustitelný (bez sítě), takže tam
+// spadneme zpět na globálně nainstalovaný balíček.
+let chromium;
+try {
+  ({ chromium } = await import("playwright"));
+} catch {
+  ({ chromium } = (await import("/opt/node22/lib/node_modules/playwright/index.js")).default);
+}
+import http from "node:http";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const REPO = path.resolve(__dirname, "..");
+const WEB = path.join(REPO, "web");
+const FIXTURES = path.join(__dirname, "fixtures");
+const SERVE = path.join(__dirname, ".serve-tmp");
+
+let failures = 0;
+function assertTrue(cond, msg) {
+  if (!cond) { failures++; console.error(`✗ FAIL: ${msg}`); }
+  else console.log(`✓ ${msg}`);
+}
+
+// ── Naivní lokální (Praha wall-clock) čas, bez DST komplikací — reprezentován
+// jako UTC Date, jehož UTC-getters čteme jako "místní" pole. ─────────────────
+function pragueNowAsNaive() {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Prague", year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
+  }).formatToParts(new Date());
+  const g = t => parts.find(p => p.type === t).value;
+  return new Date(Date.UTC(+g("year"), +g("month") - 1, +g("day"), +g("hour") === 24 ? 0 : +g("hour"), +g("minute"), +g("second")));
+}
+function fmtDateTime(d) {
+  const pad = n => String(n).padStart(2, "0");
+  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}T${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
+}
+function fmtDate(d) {
+  const pad = n => String(n).padStart(2, "0");
+  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
+}
+
+function buildOpenMeteoFixture() {
+  const nowHour = pragueNowAsNaive();
+  nowHour.setUTCMinutes(0, 0, 0);
+
+  const hourly = { time: [], weather_code: [], temperature_2m: [], apparent_temperature: [],
+    precipitation: [], precipitation_probability: [], wind_speed_10m: [], wind_gusts_10m: [],
+    wind_direction_10m: [], uv_index: [], cape: [], relative_humidity_2m: [], surface_pressure: [] };
+  for (let i = 0; i < 30; i++) {
+    const t = new Date(nowHour.getTime() + i * 3600000);
+    hourly.time.push(fmtDateTime(t));
+    hourly.weather_code.push(i < 3 ? 1 : i < 8 ? 61 : 2);
+    hourly.temperature_2m.push(20 + Math.sin(i / 4) * 4);
+    hourly.apparent_temperature.push(19 + Math.sin(i / 4) * 4);
+    hourly.precipitation.push(i >= 3 && i < 6 ? 1.2 : 0);
+    hourly.precipitation_probability.push(i >= 3 && i < 6 ? 70 : 5);
+    hourly.wind_speed_10m.push(10 + (i % 5));
+    hourly.wind_gusts_10m.push(18 + (i % 7) * 2);
+    hourly.wind_direction_10m.push(220);
+    hourly.uv_index.push(i < 10 ? Math.max(0, 6 - Math.abs(i - 5)) : 0);
+    hourly.cape.push(i >= 3 && i < 6 ? 650 : 100);
+    hourly.relative_humidity_2m.push(55);
+    hourly.surface_pressure.push(1013);
+  }
+
+  const m15 = { time: [], precipitation: [], rain: [], snowfall: [], windspeed_10m: [], windgusts_10m: [], winddirection_10m: [], cape: [] };
+  for (let i = 0; i < 40; i++) {
+    const t = new Date(nowHour.getTime() + i * 15 * 60000);
+    m15.time.push(fmtDateTime(t));
+    m15.precipitation.push(i >= 12 && i < 24 ? 1.5 : 0);
+    m15.rain.push(0); m15.snowfall.push(0);
+    m15.windspeed_10m.push(10); m15.windgusts_10m.push(20 + (i % 5));
+    m15.winddirection_10m.push(220); m15.cape.push(300);
+  }
+
+  const daily = { time: [], weather_code: [], temperature_2m_max: [], temperature_2m_min: [],
+    precipitation_sum: [], precipitation_probability_max: [], wind_gusts_10m_max: [], uv_index_max: [],
+    sunrise: [], sunset: [] };
+  const dayStart = pragueNowAsNaive();
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(dayStart.getTime() + i * 86400000);
+    daily.time.push(fmtDate(d));
+    daily.weather_code.push(i === 0 ? 61 : 2);
+    daily.temperature_2m_max.push(24 + i);
+    daily.temperature_2m_min.push(14 + i);
+    daily.precipitation_sum.push(i === 0 ? 4.2 : 0);
+    daily.precipitation_probability_max.push(i === 0 ? 70 : 10);
+    daily.wind_gusts_10m_max.push(35);
+    daily.uv_index_max.push(6);
+    daily.sunrise.push(fmtDateTime(new Date(d.getTime() + 5 * 3600000)));
+    daily.sunset.push(fmtDateTime(new Date(d.getTime() + 20 * 3600000)));
+  }
+
+  return { hourly, minutely_15: m15, daily, timezone: "Europe/Prague" };
+}
+
+function rmrf(p) { fs.rmSync(p, { recursive: true, force: true }); }
+
+function prepareServeDir() {
+  rmrf(SERVE);
+  fs.mkdirSync(SERVE, { recursive: true });
+  fs.cpSync(WEB, SERVE, { recursive: true });
+  fs.cpSync(path.join(FIXTURES, "site-data"), path.join(SERVE, "data"), { recursive: true });
+
+  // t0_utc/generated_at_utc musí být "teď" (v UTC), jinak by hero countdown
+  // počítal proti minulosti a radar age-warning by vždy hlásil staré dny.
+  const nowIso = new Date().toISOString();
+  for (const name of ["radar_manifest.json", "forecast_grid.json"]) {
+    const p = path.join(SERVE, "data", name);
+    const j = JSON.parse(fs.readFileSync(p, "utf8"));
+    j.t0_utc = nowIso;
+    j.generated_at_utc = nowIso;
+    fs.writeFileSync(p, JSON.stringify(j));
+  }
+}
+
+function startServer() {
+  const MIME = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css",
+    ".json": "application/json", ".png": "image/png", ".svg": "image/svg+xml" };
+  const server = http.createServer((req, res) => {
+    let p = decodeURIComponent(req.url.split("?")[0]);
+    if (p === "/") p = "/index.html";
+    const full = path.join(SERVE, p);
+    if (!full.startsWith(SERVE)) { res.writeHead(403); res.end(); return; }
+    fs.readFile(full, (err, data) => {
+      if (err) { res.writeHead(404); res.end("not found: " + p); return; }
+      res.writeHead(200, { "Content-Type": MIME[path.extname(full)] || "application/octet-stream" });
+      res.end(data);
+    });
+  });
+  return new Promise(resolve => server.listen(0, "127.0.0.1", () => resolve(server)));
+}
+
+async function main() {
+  prepareServeDir();
+  const server = await startServer();
+  const port = server.address().port;
+  const base = `http://127.0.0.1:${port}`;
+
+  const browser = await chromium.launch();
+  const context = await browser.newContext();
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]).catch(() => {});
+  const page = await context.newPage();
+
+  const consoleErrors = [];
+  page.on("console", msg => {
+    if (process.env.DEBUG) console.log(`[console:${msg.type()}]`, msg.text());
+    if (msg.type() === "error") consoleErrors.push(msg.text());
+  });
+  page.on("pageerror", err => {
+    if (process.env.DEBUG) console.log("[pageerror]", err.message, err.stack);
+    consoleErrors.push("pageerror: " + err.message);
+  });
+  page.on("requestfailed", req => {
+    if (process.env.DEBUG) console.log("[requestfailed]", req.url(), req.failure()?.errorText);
+  });
+  page.on("response", async res => {
+    if (process.env.DEBUG) console.log("[response]", res.status(), res.headers()["content-type"], res.url());
+  });
+
+  // ── Route interception: CDN vendor libs → lokální stuby ────────────────────
+  await page.route("https://unpkg.com/leaflet@1.9.4/dist/leaflet.js", route =>
+    route.fulfill({ path: path.join(FIXTURES, "leaflet-stub.js"), contentType: "text/javascript" }));
+  await page.route("https://unpkg.com/leaflet@1.9.4/dist/leaflet.css", route =>
+    route.fulfill({ body: "", contentType: "text/css" }));
+  await page.route("https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js", route =>
+    route.fulfill({ path: path.join(FIXTURES, "chart-stub.js"), contentType: "text/javascript" }));
+  await page.route("https://fonts.googleapis.com/**", route => route.fulfill({ body: "", contentType: "text/css" }));
+
+  // ── Route interception: externí API → fixture data ─────────────────────────
+  const omFixture = buildOpenMeteoFixture();
+  await page.route("https://api.open-meteo.com/v1/forecast**", route =>
+    route.fulfill({ body: JSON.stringify(omFixture), contentType: "application/json" }));
+  await page.route("https://air-quality-api.open-meteo.com/**", route =>
+    route.fulfill({ body: JSON.stringify({
+      current: { pm10: 12.3, pm2_5: 8.1, ozone: 55, nitrogen_dioxide: 10, european_aqi: 22 },
+      hourly: { time: [omFixture.hourly.time[0]], birch_pollen: [3], grass_pollen: [15], alder_pollen: [0], ragweed_pollen: [0] },
+    }), contentType: "application/json" }));
+  await page.route("https://geocoding-api.open-meteo.com/**", route =>
+    route.fulfill({ body: JSON.stringify({ results: [
+      { name: "Brno", admin1: "Jihomoravský kraj", latitude: 49.1951, longitude: 16.6068 },
+      { name: "Brno-Bystrc", admin1: "Jihomoravský kraj", latitude: 49.22, longitude: 16.53 },
+    ] }), contentType: "application/json" }));
+  await page.route("https://api.rainviewer.com/**", route =>
+    route.fulfill({ body: JSON.stringify({ host: "https://tilecache.rainviewer.com", radar: { past: [{ time: 1, path: "/v2/radar/1" }], nowcast: [] } }), contentType: "application/json" }));
+  await page.route("https://*.workers.dev/vapid-public-key**", route =>
+    route.fulfill({ body: JSON.stringify({ publicKey: "BM60k6heLK2a7KNELX05p5_Wpv1zhUbB2JFLMLVz13uirAVfjkCtoksQ7bdQIMd5hqvwUTwPUWUGfhFm0KkhF3Y" }), contentType: "application/json" }));
+  await page.route("https://*.workers.dev/verdict**", route =>
+    route.fulfill({ body: JSON.stringify({ text: "Testovací AI verdikt: dnes odpoledne přeháňky, jinak teplo." }), contentType: "application/json" }));
+
+  await page.goto(`${base}/?lat=50.09&lon=14.40&q=TestObec`, { waitUntil: "load" });
+
+  // ── Základní načtení ─────────────────────────────────────────────────────
+  await page.waitForFunction(() => document.getElementById("place")?.textContent?.includes("TestObec"), { timeout: 8000 });
+  assertTrue(true, "stránka se načetla a zvolila místo z URL parametrů");
+
+  // ── Hero countdown ("Déšť za X min") ─────────────────────────────────────
+  await page.waitForSelector("#rain-countdown.show", { timeout: 5000 });
+  const rcClasses = await page.getAttribute("#rain-countdown", "class");
+  const rcTitle = await page.textContent("#rc-title");
+  assertTrue(rcClasses.includes("imminent"), `hero countdown je v imminent stavu (class="${rcClasses}")`);
+  assertTrue(/Déšť za/.test(rcTitle), `hero countdown ukazuje odpočet ("${rcTitle}")`);
+
+  // ── Výstražné chipy (z GRID.warnings + wmatch) ───────────────────────────
+  await page.waitForSelector(".warn-chip", { timeout: 5000 });
+  const chipText = await page.textContent(".warn-chip");
+  assertTrue(chipText.includes("Bouřky"), `výstražný chip "Bouřky" se zobrazil (obsah: "${chipText}")`);
+
+  // ── AI verdikt (progressive enhancement přes worker) ─────────────────────
+  await page.waitForSelector(".verdict-ai-badge", { timeout: 8000 }).catch(() => {});
+  const verdictHtml = await page.innerHTML("#verdict");
+  assertTrue(verdictHtml.includes("Testovací AI verdikt"), "AI verdikt z workeru nahradil šablonu");
+
+  // ── Přesnost nowcastu ─────────────────────────────────────────────────────
+  await page.waitForSelector("#accuracy-line.show", { timeout: 5000 });
+  const accText = await page.textContent("#accuracy-line");
+  assertTrue(accText.includes("91.3"), `accuracy.json se zobrazil (obsah: "${accText.trim()}")`);
+
+  // ── 24h strip + meteogram + AQ + 7denní výhled ───────────────────────────
+  await page.waitForSelector("#fc24-scroll .fc24-col", { timeout: 8000 });
+  const fc24cols = await page.locator(".fc24-col").count();
+  assertTrue(fc24cols > 0, `fc24 strip vykreslil ${fc24cols} sloupců`);
+
+  await page.waitForSelector("#meteo-block.show canvas#meteo-canvas", { timeout: 5000 });
+  assertTrue(true, "meteogram se vykreslil (canvas existuje)");
+
+  await page.waitForSelector(".fc7-day", { timeout: 5000 });
+  const fc7days = await page.locator(".fc7-day").count();
+  assertTrue(fc7days === 7, `7denní výhled má 7 dní (má ${fc7days})`);
+
+  await page.waitForSelector("#aq-panel.show", { timeout: 5000 });
+  const aqText = await page.textContent("#aq-panel");
+  assertTrue(aqText.includes("PM2.5"), "panel kvality ovzduší se vykreslil");
+
+  // ── WU vlastní stanice ────────────────────────────────────────────────────
+  const wuRows = await page.locator(".wu-mini-row").count();
+  assertTrue(wuRows === 1, `WU vlastní stanice panel má 1 řádek (má ${wuRows})`);
+
+  // ── Radar ovládání ────────────────────────────────────────────────────────
+  await page.click("#btn-play");
+  await page.waitForSelector("#btn-play.active", { timeout: 3000 });
+  assertTrue(true, "play tlačítko se aktivovalo");
+  await page.click("#btn-play");
+  await page.waitForFunction(() => !document.getElementById("btn-play").classList.contains("active"), { timeout: 3000 });
+  assertTrue(true, "pauza tlačítko funguje");
+
+  const frameBefore = await page.textContent("#frame-time");
+  await page.click("#btn-prev");
+  await page.waitForTimeout(150);
+  const frameAfter = await page.textContent("#frame-time");
+  assertTrue(typeof frameAfter === "string", `radar frame krokování neshodilo appku (před="${frameBefore.trim()}" po="${frameAfter.trim()}")`);
+
+  // ── Legenda radaru ────────────────────────────────────────────────────────
+  await page.waitForSelector("#radar-legend.show", { timeout: 3000 });
+  assertTrue(true, "legenda radaru se zobrazila");
+
+  // ── Vrstvový selektor ČHMÚ ────────────────────────────────────────────────
+  await page.click('.layer-btn[data-layer="wind_kmh"]');
+  const activeLayer = await page.getAttribute('.layer-btn[data-layer="wind_kmh"]', "class");
+  assertTrue(activeLayer.includes("active"), "přepnutí vrstvy ČHMÚ markerů funguje");
+
+  // ── Vyhledávání s klávesovou navigací ─────────────────────────────────────
+  await page.fill("#search", "Brno");
+  await page.waitForSelector("#suggestions li", { timeout: 3000 });
+  await page.keyboard.press("ArrowDown");
+  const selected = await page.getAttribute("#suggestions li:nth-child(1)", "aria-selected");
+  assertTrue(selected === "true", "klávesová navigace v našeptávači zvýrazní první položku");
+
+  // ── Motiv ─────────────────────────────────────────────────────────────────
+  const themeBefore = await page.getAttribute("html", "data-theme");
+  await page.click("#btn-theme");
+  await page.waitForTimeout(100);
+  const themeAfter = await page.getAttribute("html", "data-theme");
+  assertTrue(themeBefore !== themeAfter, `přepnutí motivu funguje (${themeBefore} → ${themeAfter})`);
+
+  // ── Sdílení ───────────────────────────────────────────────────────────────
+  await page.click("#btn-share");
+  await page.waitForTimeout(300);
+  assertTrue(true, "kliknutí na sdílet neshodilo appku");
+
+  // ── Push tlačítko (jen kontrola dostupnosti, ne reálný subscribe) ─────────
+  await page.waitForTimeout(500);
+  const pushBtnClass = await page.getAttribute("#btn-push", "class").catch(() => "");
+  assertTrue((pushBtnClass || "").includes("available"), "push tlačítko rozpoznalo podporu prohlížeče");
+
+  // ── Embed mód ─────────────────────────────────────────────────────────────
+  await page.goto(`${base}/?lat=50.09&lon=14.40&q=TestObec&embed=1`, { waitUntil: "load" });
+  await page.waitForTimeout(300);
+  const bodyClass = await page.getAttribute("body", "class");
+  assertTrue((bodyClass || "").includes("embed"), "embed mód nastaví body.embed");
+
+  // ── Žádné neočekávané JS chyby po celou dobu ─────────────────────────────
+  const realErrors = consoleErrors.filter(e => !/favicon/i.test(e));
+  assertTrue(realErrors.length === 0, `žádné console/page chyby (nalezeno ${realErrors.length})`);
+  if (realErrors.length) realErrors.forEach(e => console.error("  · " + e));
+
+  // ── ČHMÚ detail panel (série + rekordy/klimatologie/roční trend) ─────────
+  // Marker popupy jsou v Leaflet stubu nefunkční (nekreslí se do DOM), takže
+  // otevřeme detail přímo přes modul — appka ho stejně jen volá z popup tlačítka.
+  await page.evaluate(async () => {
+    const mod = await import("./js/stations.js");
+    await mod.openChmiDetail("0-20000-0-11518");
+  });
+  await page.waitForSelector("#chmi-detail.open .sd-hero", { timeout: 5000 });
+  assertTrue(true, "ČHMÚ detail panel se otevřel a načetl 24h sérii");
+  await page.click('.chmi-tab-btn[data-tab="rekordy"]');
+  await page.waitForFunction(() => document.getElementById("chmi-tab-content")?.textContent?.includes("38.5"), { timeout: 3000 });
+  assertTrue(true, "záložka Rekordy vykreslila chmi_stats.json data");
+  await page.click("#chmi-detail-close");
+
+  // ── Auto-obnova posledního místa (bez URL parametrů) ─────────────────────
+  const page2 = await context.newPage();
+  await page2.route("https://unpkg.com/leaflet@1.9.4/dist/leaflet.js", route => route.fulfill({ path: path.join(FIXTURES, "leaflet-stub.js"), contentType: "text/javascript" }));
+  await page2.route("https://unpkg.com/leaflet@1.9.4/dist/leaflet.css", route => route.fulfill({ body: "", contentType: "text/css" }));
+  await page2.route("https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js", route => route.fulfill({ path: path.join(FIXTURES, "chart-stub.js"), contentType: "text/javascript" }));
+  await page2.route("https://fonts.googleapis.com/**", route => route.fulfill({ body: "", contentType: "text/css" }));
+  await page2.route("https://api.open-meteo.com/v1/forecast**", route =>
+    route.fulfill({ body: JSON.stringify(omFixture), contentType: "application/json" }));
+  await page2.route("https://air-quality-api.open-meteo.com/**", route => route.fulfill({ body: "{}", contentType: "application/json" }));
+  await page2.route("https://*.workers.dev/**", route => route.fulfill({ body: "{}", contentType: "application/json" }));
+  const errors2 = [];
+  page2.on("pageerror", e => { errors2.push(e.message); if (process.env.DEBUG) console.log("[page2:pageerror]", e.message); });
+  page2.on("console", msg => { if (process.env.DEBUG) console.log(`[page2:console:${msg.type()}]`, msg.text()); });
+  await page2.goto(`${base}/`, { waitUntil: "load" });
+  if (process.env.DEBUG) {
+    const ls = await page2.evaluate(() => localStorage.getItem("nowcast_last_location"));
+    console.log("[page2] localStorage nowcast_last_location =", ls);
+  }
+  await page2.waitForFunction(() => document.getElementById("place")?.textContent?.includes("TestObec"), { timeout: 8000 });
+  assertTrue(true, "bez URL parametrů appka obnovila poslední navštívené místo (localStorage)");
+  assertTrue(errors2.length === 0, `žádné JS chyby při auto-obnově místa (nalezeno ${errors2.length})`);
+  await page2.close();
+
+  // ── Mobilní šířka ─────────────────────────────────────────────────────────
+  const mobile = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const pageM = await mobile.newPage();
+  const errorsM = [];
+  pageM.on("pageerror", e => errorsM.push(e.message));
+  await pageM.route("https://unpkg.com/leaflet@1.9.4/dist/leaflet.js", route => route.fulfill({ path: path.join(FIXTURES, "leaflet-stub.js"), contentType: "text/javascript" }));
+  await pageM.route("https://unpkg.com/leaflet@1.9.4/dist/leaflet.css", route => route.fulfill({ body: "", contentType: "text/css" }));
+  await pageM.route("https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js", route => route.fulfill({ path: path.join(FIXTURES, "chart-stub.js"), contentType: "text/javascript" }));
+  await pageM.route("https://fonts.googleapis.com/**", route => route.fulfill({ body: "", contentType: "text/css" }));
+  await pageM.route("https://api.open-meteo.com/v1/forecast**", route => route.fulfill({ body: JSON.stringify(omFixture), contentType: "application/json" }));
+  await pageM.route("https://air-quality-api.open-meteo.com/**", route => route.fulfill({ body: "{}", contentType: "application/json" }));
+  await pageM.route("https://*.workers.dev/**", route => route.fulfill({ body: "{}", contentType: "application/json" }));
+  await pageM.goto(`${base}/?lat=50.09&lon=14.40&q=TestObec`, { waitUntil: "load" });
+  await pageM.waitForSelector("#rain-countdown.show", { timeout: 8000 });
+  const ctrlBox = await pageM.locator("#btn-play").boundingBox();
+  assertTrue(ctrlBox && ctrlBox.height >= 40, `radar ovládací tlačítka mají dost velký dotykový cíl na mobilu (výška=${ctrlBox?.height})`);
+  assertTrue(errorsM.length === 0, `žádné JS chyby na mobilní šířce (nalezeno ${errorsM.length})`);
+  await mobile.close();
+
+  await browser.close();
+  server.close();
+  rmrf(SERVE);
+
+  console.log(`\n${failures === 0 ? "✅ VŠECHNY TESTY PROŠLY" : `❌ ${failures} SELHÁNÍ`}`);
+  process.exit(failures === 0 ? 0 : 1);
+}
+
+main().catch(e => {
+  console.error("Smoke test spadl s výjimkou:", e);
+  process.exit(1);
+});

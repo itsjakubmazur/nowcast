@@ -1,0 +1,12 @@
+{
+  "location": { "lat": 50.08, "lon": 14.42 },
+  "t0_utc": "2026-07-10T10:00:00+00:00",
+  "cutoff_utc": "2026-07-10T12:00:00+00:00",
+  "generated_at_utc": "2026-07-10T10:00:30+00:00",
+  "nowcast_source": { "motion_product": "MAX_Z (lucaskanade)", "precip_product": "merge:test.hdf" },
+  "timeseries": [
+    { "time_utc": "2026-07-10T10:10:00+00:00", "source": "nowcast", "confidence": "high", "precip_mm_h": 0.0 }
+  ],
+  "warnings": [],
+  "verdict": null
+}

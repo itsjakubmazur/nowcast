@@ -48,12 +48,10 @@ jobs:
           NOWCAST_LAT: '50.08'
           NOWCAST_LON: '14.42'
 
-      - name: Run narrate (Fáze 3b)
-        run: python pipeline/narrate.py || echo "narrate.py selhalo (Gemini API?), pokračuji bez narace"
-        env:
-          NOWCAST_LAT: '50.08'
-          NOWCAST_LON: '14.42'
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      # Fáze 3b (AI narace) záměrně chybí — AI verdikt se teď generuje
+      # per-location on-demand ve workers/narrate (Cloudflare Worker), volaný
+      # přímo z frontendu pro zvolené místo a cachovaný na edge. Fixní narace
+      # jedné domovské lokace tady by byla jen zbytečné volání Gemini navíc.
 
       - name: Run grid (Fáze 4a)
         run: python pipeline/grid.py

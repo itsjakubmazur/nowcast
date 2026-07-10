@@ -1,0 +1,28 @@
+name: Frontend smoke test
+
+on:
+  push:
+    branches: [main]
+    paths: ["web/**", "tests/**", "package.json"]
+  pull_request:
+    paths: ["web/**", "tests/**", "package.json"]
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run smoke test
+        run: npm run test:smoke

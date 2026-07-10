@@ -1,0 +1,12 @@
+{
+  "name": "nowcast",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Testovací tooling pro web/ (frontend samotný je bez build stepu, viz claude.md)",
+  "scripts": {
+    "test:smoke": "node tests/smoke.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.56.1"
+  }
+}

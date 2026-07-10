@@ -1,23 +1,42 @@
-const STATIC_CACHE  = "nowcast-static-v1";
-const DATA_CACHE    = "nowcast-data-v1";
+const CACHE_VERSION = "v2";
+const STATIC_CACHE = `nowcast-static-${CACHE_VERSION}`;
+const DATA_CACHE = `nowcast-data-${CACHE_VERSION}`;
 
+// Relativní cesty — funguje jak v rootu domény, tak na GitHub Pages project
+// subpath (např. /nowcast/). Absolutní "/index.html" by se tam netrefilo do
+// stejné cesty a instalace by tiše selhala (cache.addAll je all-or-nothing).
 const STATIC_ASSETS = [
-  "/",
-  "/index.html",
-  "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css",
-  "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js",
+  "./",
+  "./index.html",
+  "./css/app.css",
+  "./js/app.js",
+  "./js/state.js",
+  "./js/utils.js",
+  "./js/icons.js",
+  "./js/theme.js",
+  "./js/toast.js",
+  "./js/map.js",
+  "./js/radar.js",
+  "./js/warnings.js",
+  "./js/stations.js",
+  "./js/forecast.js",
+  "./js/verdict.js",
+  "./js/favorites.js",
+  "./js/search.js",
+  "./js/share.js",
+  "./icon.svg",
+  "./manifest.json",
 ];
 
-// Instalace — předkešuj statiku
 self.addEventListener("install", e => {
   e.waitUntil(
     caches.open(STATIC_CACHE)
       .then(c => c.addAll(STATIC_ASSETS))
       .then(() => self.skipWaiting())
+      .catch(err => console.warn("SW install precache selhal:", err))
   );
 });
 
-// Aktivace — smaž staré cache
 self.addEventListener("activate", e => {
   e.waitUntil(
     caches.keys().then(keys =>
@@ -32,17 +51,12 @@ self.addEventListener("activate", e => {
 self.addEventListener("fetch", e => {
   const url = new URL(e.request.url);
 
-  // Open-Meteo API — network-only (živá data, nechceme kešovat)
-  if (url.hostname.includes("open-meteo.com")) {
-    e.respondWith(fetch(e.request).catch(() =>
-      new Response(JSON.stringify({ error: "offline" }), {
-        headers: { "Content-Type": "application/json" }
-      })
-    ));
-    return;
+  // Externí API (Open-Meteo, RainViewer, geocoding, worker) — network-only.
+  if (url.origin !== self.location.origin) {
+    return; // necháváme prohlížeči, žádný respondWith = normální síťový fetch
   }
 
-  // Radar PNG snímky a JSON data — network-first, fallback na cache
+  // Radar PNG snímky a JSON data — network-first, fallback na cache (offline).
   if (url.pathname.includes("/data/")) {
     e.respondWith(
       fetch(e.request)
@@ -58,7 +72,7 @@ self.addEventListener("fetch", e => {
     return;
   }
 
-  // Statické soubory — cache-first
+  // Statické soubory appky — cache-first.
   e.respondWith(
     caches.match(e.request).then(cached => {
       if (cached) return cached;
@@ -69,6 +83,34 @@ self.addEventListener("fetch", e => {
         }
         return res;
       });
+    })
+  );
+});
+
+// ── Web Push ──────────────────────────────────────────────────────────────────
+// Push přijde BEZ payloadu (viz workers/narrate — VAPID bez ECE šifrace), takže
+// zobrazíme obecné oznámení; klik otevře appku, která si sama dotáhne aktuální
+// stav pro dané místo.
+self.addEventListener("push", e => {
+  const title = "🌧️ nowcast";
+  const options = {
+    body: "Kontrola oblíbených míst — možná se blíží déšť nebo platí výstraha.",
+    icon: "./icon.svg",
+    badge: "./icon.svg",
+    tag: "nowcast-rain-check",
+    renotify: true,
+  };
+  e.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener("notificationclick", e => {
+  e.notification.close();
+  e.waitUntil(
+    clients.matchAll({ type: "window", includeUncontrolled: true }).then(list => {
+      for (const client of list) {
+        if ("focus" in client) return client.focus();
+      }
+      if (clients.openWindow) return clients.openWindow("./");
     })
   );
 });

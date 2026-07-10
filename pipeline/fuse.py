@@ -412,7 +412,11 @@ def fuse(nowcast_path: Path, om_path: Path, lat: float, lon: float) -> dict:
         "nowcast_source":  nc.get("source", {}),
         "timeseries":      timeseries,
         "warnings":        [],   # doplní fetch_cap_warnings
-        "verdict":         None, # doplní narrate.py
+        "verdict":         None, # AI verdikt se teď generuje per-location on-demand
+                                  # ve workers/narrate (Cloudflare Worker), ne tady —
+                                  # frontend ho volá přímo pro zvolené místo a cachuje
+                                  # na edge; fixní verdikt pro jednu domovskou lokaci
+                                  # by byl jen zbytečné volání Gemini navíc.
     }
 
 

@@ -3,3 +3,5 @@ __pycache__/
 *.pyo
 data/
 *.npy
+node_modules/
+tests/.serve-tmp/

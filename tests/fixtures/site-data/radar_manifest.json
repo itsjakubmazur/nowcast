@@ -1,0 +1,38 @@
+{
+  "generated_at_utc": "2026-07-10T10:00:00+00:00",
+  "t0_utc": "2026-07-10T10:00:00+00:00",
+  "t0_index": 5,
+  "step_min": 10,
+  "source": "maxz_reflectivity_dbz",
+  "source_label": "Radarová odrazivost (dBZ) — orientační intenzita srážek",
+  "scale_dbz": { "min": 5.0, "max": 65.0 },
+  "palette": [
+    [5.0, "#000000"],
+    [20.0, "#1e78e6"],
+    [35.0, "#50d200"],
+    [45.0, "#ffb400"],
+    [55.0, "#dc0000"],
+    [65.0, "#640078"]
+  ],
+  "bounds": [[48.5, 12.0], [51.1, 18.9]],
+  "frames": [
+    { "file": "frame_00.png", "time_utc": "2026-07-10T09:10:00+00:00", "time_local": "11:10", "type": "past", "source": "maxz", "dbz_min": 5.0, "dbz_max": 20.0 },
+    { "file": "frame_01.png", "time_utc": "2026-07-10T09:20:00+00:00", "time_local": "11:20", "type": "past", "source": "maxz", "dbz_min": 5.0, "dbz_max": 22.0 },
+    { "file": "frame_02.png", "time_utc": "2026-07-10T09:30:00+00:00", "time_local": "11:30", "type": "past", "source": "maxz", "dbz_min": 5.0, "dbz_max": 25.0 },
+    { "file": "frame_03.png", "time_utc": "2026-07-10T09:40:00+00:00", "time_local": "11:40", "type": "past", "source": "maxz", "dbz_min": 5.0, "dbz_max": 28.0 },
+    { "file": "frame_04.png", "time_utc": "2026-07-10T09:50:00+00:00", "time_local": "11:50", "type": "past", "source": "maxz", "dbz_min": 5.0, "dbz_max": 30.0 },
+    { "file": "frame_05.png", "time_utc": "2026-07-10T10:00:00+00:00", "time_local": "12:00", "type": "t0", "source": "maxz", "dbz_min": 5.0, "dbz_max": 32.0 },
+    { "file": "frame_06.png", "time_utc": "2026-07-10T10:10:00+00:00", "time_local": "12:10", "type": "nowcast", "source": "maxz_extrap", "dbz_min": 5.0, "dbz_max": 33.0 },
+    { "file": "frame_07.png", "time_utc": "2026-07-10T10:20:00+00:00", "time_local": "12:20", "type": "nowcast", "source": "maxz_extrap", "dbz_min": 5.0, "dbz_max": 34.0 },
+    { "file": "frame_08.png", "time_utc": "2026-07-10T10:30:00+00:00", "time_local": "12:30", "type": "nowcast", "source": "maxz_extrap", "dbz_min": 5.0, "dbz_max": 35.0 },
+    { "file": "frame_09.png", "time_utc": "2026-07-10T10:40:00+00:00", "time_local": "12:40", "type": "nowcast", "source": "maxz_extrap", "dbz_min": 5.0, "dbz_max": 30.0 },
+    { "file": "frame_10.png", "time_utc": "2026-07-10T10:50:00+00:00", "time_local": "12:50", "type": "nowcast", "source": "maxz_extrap", "dbz_min": 5.0, "dbz_max": 28.0 },
+    { "file": "frame_11.png", "time_utc": "2026-07-10T11:00:00+00:00", "time_local": "13:00", "type": "nowcast", "source": "maxz_extrap", "dbz_min": 5.0, "dbz_max": 20.0 },
+    { "file": "frame_12.png", "time_utc": "2026-07-10T11:10:00+00:00", "time_local": "13:10", "type": "nowcast", "source": "maxz_extrap", "dbz_min": 0.0, "dbz_max": 0.0 },
+    { "file": "frame_13.png", "time_utc": "2026-07-10T11:20:00+00:00", "time_local": "13:20", "type": "nowcast", "source": "maxz_extrap", "dbz_min": 0.0, "dbz_max": 0.0 },
+    { "file": "frame_14.png", "time_utc": "2026-07-10T11:30:00+00:00", "time_local": "13:30", "type": "nowcast", "source": "maxz_extrap", "dbz_min": 0.0, "dbz_max": 0.0 },
+    { "file": "frame_15.png", "time_utc": "2026-07-10T11:40:00+00:00", "time_local": "13:40", "type": "nowcast", "source": "maxz_extrap", "dbz_min": 0.0, "dbz_max": 0.0 },
+    { "file": "frame_16.png", "time_utc": "2026-07-10T11:50:00+00:00", "time_local": "13:50", "type": "nowcast", "source": "maxz_extrap", "dbz_min": 0.0, "dbz_max": 0.0 },
+    { "file": "frame_17.png", "time_utc": "2026-07-10T12:00:00+00:00", "time_local": "14:00", "type": "nowcast", "source": "maxz_extrap", "dbz_min": 0.0, "dbz_max": 0.0 }
+  ]
+}
