@@ -7,26 +7,14 @@ Seřazeno podle dopadu; u každého bodu je i odhad pracnosti.
 
 ## Stav implementace
 
-**Všechny body níže jsou implementované** (frontend přestavěn na moduly, pipeline
-rozšířena, worker přepsán, testy přidané — viz commity na této větvi). Než to
-poběží naživo, zbývají tři ruční kroky, které vyžadují přístup k účtům a
-nešly udělat z tohoto sandboxu:
+**Vše implementované a nasazené.** Worker `nowcast-narrate` běží na
+`https://nowcast-narrate.kubajzek.workers.dev` (ne `itsjakubmazur.workers.dev`,
+jak jsem původně odhadl — `web/index.html`/`web/js/state.js` teď mají
+správnou hodnotu). KV namespace pro Web Push i VAPID klíč jsou nastavené,
+`wrangler deploy` prochází, cron trigger (`*/10 * * * *`) je zaregistrovaný.
 
-1. **Cloudflare KV namespace** pro Web Push subscriptions —
-   `wrangler kv namespace create SUBSCRIPTIONS` (+ `--preview`), vlož ID do
-   `workers/narrate/wrangler.toml` (viz `REPLACE_WITH_REAL_KV_*` placeholdery).
-2. **VAPID soukromý klíč** — `wrangler secret put VAPID_PRIVATE_KEY`. Skutečný
-   pár byl vygenerován offline v této session (nikdy necommitnutý); soukromá
-   polovina byla vypsaná v chatu — pokud se ztratila, vygeneruj nový pár a
-   uprav i `VAPID_PUBLIC_KEY` v `wrangler.toml` (musí být pár). Postup pro
-   nový pár je v `workers/narrate/README.md`.
-3. **Ověř `*.workers.dev` subdoménu** — `web/index.html` má
-   `<meta name="worker-base" content="...">` s odhadem
-   `nowcast-narrate.itsjakubmazur.workers.dev`; pokud se liší od skutečné CF
-   subdomény, uprav tu jednu meta hodnotu.
-
-Bez těchto kroků appka funguje normálně (AI verdikt i push se jen tiše
-nezapnou — vše má fallback), takže to není blokující pro merge.
+Historie ladění (pro budoucí referenci): `CF_API_TOKEN` v GitHub Secrets
+původně obsahoval Account ID místo skutečného tokenu — opraveno.
 
 **Vědomý kompromis:** blesky (bod 1.2) jsem **nepřipojil na Blitzortung**.
 Jejich WebSocket protokol je neoficiální/reverse-engineered a nemám způsob,

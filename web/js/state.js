@@ -35,4 +35,4 @@ export const AUTO_REFRESH_MS = 5 * 60 * 1000;
 // CF účet a nedá se odvodit ze jména workeru samotného — pokud se liší,over
 // oprav (nebo přepiš přes <meta name="worker-base" content="...">, viz níže).
 const metaWorkerBase = document.querySelector('meta[name="worker-base"]')?.content;
-export const WORKER_BASE = metaWorkerBase || "https://nowcast-narrate.itsjakubmazur.workers.dev";
+export const WORKER_BASE = metaWorkerBase || "https://nowcast-narrate.kubajzek.workers.dev";
