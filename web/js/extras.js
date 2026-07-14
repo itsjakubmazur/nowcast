@@ -4,6 +4,7 @@
 
 import { state } from "./state.js";
 import { esc } from "./utils.js";
+import { moonIconImg, wImg } from "./icons.js";
 
 function nowPragueStr() {
   const s = new Date().toLocaleString("sv-SE", { timeZone: "Europe/Prague" });
@@ -145,9 +146,8 @@ function moonInfo() {
   const age = moonAge();
   const illum = (1 - Math.cos(2 * Math.PI * age / SYNODIC)) / 2;
   const idx = Math.round(age / SYNODIC * 8) % 8;
-  const emoji = ["🌑", "🌒", "🌓", "🌔", "🌕", "🌖", "🌗", "🌘"][idx];
   const name = ["nov", "dorůstající srpek", "první čtvrť", "dorůstající", "úplněk", "couvající", "poslední čtvrť", "couvající srpek"][idx];
-  return { age, illum, emoji, name };
+  return { age, illum, frac: age / SYNODIC, name };
 }
 function addMin(hm, mins) {
   if (!hm) return null;
@@ -183,9 +183,9 @@ export function renderAstro(data, fc) {
   }
 
   body.innerHTML = `
-    <div class="astro-row"><span class="a-k">Slunce</span><span class="a-v">↑ ${esc(rise)} → ↓ ${esc(set_)}</span><span class="a-d">den ${esc(dayLen)}</span></div>
+    <div class="astro-row"><span class="a-k">Slunce</span><span class="a-v">${wImg("sunrise", "wicon winline")} ${esc(rise)} → ${wImg("sunset", "wicon winline")} ${esc(set_)}</span><span class="a-d">den ${esc(dayLen)}</span></div>
     <div class="astro-row"><span class="a-k">Zlatá h.</span><span class="a-v">${esc(addMin(set_, -45))}–${esc(set_)}</span><span class="a-d">ráno ${esc(rise)}–${esc(addMin(rise, 45))}</span></div>
-    <div class="astro-row"><span class="a-k">Měsíc</span><span class="a-v">${moon.emoji} ${esc(moon.name)}</span><span class="a-d">svit ${Math.round(moon.illum * 100)} %</span></div>
+    <div class="astro-row"><span class="a-k">Měsíc</span><span class="a-v">${moonIconImg(moon.frac).replace("wicon", "wicon winline")} ${esc(moon.name)}</span><span class="a-d">svit ${Math.round(moon.illum * 100)} %</span></div>
     ${nightQ ? `<div class="astro-row"><span class="a-k">Noc</span><span class="a-v">pozorování: ${esc(nightQ)}</span><span class="a-d">oblačnost ~${Math.round(nightCloud)} %</span></div>` : ""}`;
   panel.classList.add("show");
 }

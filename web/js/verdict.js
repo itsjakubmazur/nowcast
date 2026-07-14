@@ -1,4 +1,5 @@
 import { state, WORKER_BASE } from "./state.js";
+import { wImg } from "./icons.js";
 import { haversine, localHM, esc } from "./utils.js";
 
 // ── Geo lookup v GRID ─────────────────────────────────────────────────────────
@@ -124,7 +125,7 @@ export function renderRainCountdown(ptId) {
     const nwp = nearestNwp(state.GRID.pts[ptId][0], state.GRID.pts[ptId][1]);
     el.classList.add("show", "clear");
     el.classList.remove("imminent");
-    document.getElementById("rc-icon").textContent = "☀️";
+    document.getElementById("rc-icon").innerHTML = wImg("clear-day");
     document.getElementById("rc-title").textContent = "Nejbližší 2 h bez srážek";
     document.getElementById("rc-sub").textContent = nwp && nwp[2]
       ? `Model naznačuje déšť později, přibližně od ${localHM(nwp[2])}.`
@@ -139,7 +140,7 @@ function _tickCountdown() {
   const { startMs, endMs, peak, total } = _countdownTarget;
   el.classList.add("show", "imminent");
   el.classList.remove("clear");
-  document.getElementById("rc-icon").textContent = "🌧️";
+  document.getElementById("rc-icon").innerHTML = wImg("rain");
 
   if (now < startMs) {
     const minsAway = Math.round((startMs - now) / 60000);
@@ -158,7 +159,7 @@ function _tickCountdown() {
     document.getElementById("rc-sub").textContent = `Úhrn ~${total} mm · další výhled v modelu`;
     el.classList.remove("imminent");
     el.classList.add("clear");
-    document.getElementById("rc-icon").textContent = "🌦️";
+    document.getElementById("rc-icon").innerHTML = wImg("partly-cloudy-day-rain");
     clearInterval(_countdownTimer);
   }
 }

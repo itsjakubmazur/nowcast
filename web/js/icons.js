@@ -1,85 +1,36 @@
-// Vlastní inline SVG sada počasí — žádná externí závislost (na rozdíl od emoji,
-// vykreslí se identicky na všech OS/prohlížečích). Mapováno z WMO weather_code.
+// Ikony počasí — Meteocons (Bas Milius, MIT), plnobarevná "fill" sada,
+// jemně animovaná (SMIL uvnitř SVG — animace běží i v <img>). Soubory jsou
+// self-hostované v icons/weather/, mapované z WMO weather_code s variantami
+// den/noc. Vracíme <img> místo inline SVG — Meteocons používají <defs> s
+// generickými ID gradientů, inline by na stránce kolidovaly.
 
-const SUN = `<circle cx="12" cy="12" r="4.4" fill="#f5a524"/>
-  <g stroke="#f5a524" stroke-width="1.6" stroke-linecap="round">
-    <path d="M12 2.5v2.4M12 19.1v2.4M21.5 12h-2.4M4.9 12H2.5"/>
-    <path d="M18.4 5.6l-1.7 1.7M7.3 16.7l-1.7 1.7M18.4 18.4l-1.7-1.7M7.3 7.3L5.6 5.6"/>
-  </g>`;
+const W_PATH = "icons/weather/";
 
-const MOON = `<path d="M20 14.2A8.2 8.2 0 1 1 9.8 4a6.4 6.4 0 0 0 10.2 10.2Z" fill="#94a3b8"/>`;
-
-const CLOUD = (fill = "#94a3b8") =>
-  `<path d="M7.5 18.5a4.3 4.3 0 0 1-.4-8.6 5.4 5.4 0 0 1 10.4-1.7 3.9 3.9 0 0 1-.7 10.3Z" fill="${fill}"/>`;
-
-function cloudSun() {
-  return `<g transform="translate(-2,-2) scale(0.72)"><g transform="translate(3,1)">${SUN}</g></g>
-    <g transform="translate(3,6) scale(0.86)">${CLOUD("#cbd5e1")}</g>`;
-}
-function cloudMoon() {
-  return `<g transform="translate(2,0) scale(0.68)">${MOON}</g>
-    <g transform="translate(3,7) scale(0.86)">${CLOUD("#94a3b8")}</g>`;
-}
-function rainDrops(n = 3, color = "#4f8ef7") {
-  const xs = [7.5, 12, 16.5].slice(0, n);
-  return xs.map((x, i) =>
-    `<path d="M${x} 18.5c0 1.1-.9 2-1.6 2s-1.6-.9-1.6-2c0-1.2 1.6-3.4 1.6-3.4s1.6 2.2 1.6 3.4Z" fill="${color}"/>`
-  ).join("");
-}
-function snowFlakes(n = 3) {
-  const xs = [7.5, 12, 16.5].slice(0, n);
-  return xs.map(x =>
-    `<g stroke="#bae6fd" stroke-width="1.3" stroke-linecap="round" transform="translate(${x},19)">
-      <path d="M-1.8 0h3.6M0-1.8v3.6M-1.3-1.3l2.6 2.6M1.3-1.3l-2.6 2.6"/>
-    </g>`
-  ).join("");
-}
-function bolt() {
-  return `<path d="M13 12.5h-3l1.6-4.5-4.6 6h3l-1.6 4.5 4.6-6Z" fill="#f5a524"/>`;
-}
-function fogLines() {
-  return `<g stroke="#9ca3af" stroke-width="1.6" stroke-linecap="round">
-    <path d="M5 17h14M6.5 20h11"/>
-  </g>`;
+export function wImg(name, cls = "wicon") {
+  return `<img class="${cls}" src="${W_PATH}${name}.svg" alt="" decoding="async">`;
 }
 
-// (svgBody, viewBoxY) — trocha inline transformace pro sladění mraku+doplňků
-function icon(body) {
-  return `<svg viewBox="0 0 24 24" width="1em" height="1em" aria-hidden="true">${body}</svg>`;
-}
-
-const ICONS = {
-  clearDay:    () => icon(SUN),
-  clearNight:  () => icon(MOON),
-  pcloudyDay:  () => icon(cloudSun()),
-  pcloudyNight:() => icon(cloudMoon()),
-  cloudy:      () => icon(CLOUD()),
-  fog:         () => icon(CLOUD("#a8b3c4") + fogLines()),
-  drizzle:     () => icon(CLOUD() + rainDrops(2)),
-  rain:        () => icon(CLOUD() + rainDrops(3)),
-  rainHeavy:   () => icon(CLOUD("#64748b") + rainDrops(3, "#2563eb")),
-  sleet:       () => icon(CLOUD() + rainDrops(1) + snowFlakes(1)),
-  snow:        () => icon(CLOUD("#cbd5e1") + snowFlakes(3)),
-  thunder:     () => icon(CLOUD("#64748b") + bolt()),
-  thunderHail: () => icon(CLOUD("#64748b") + bolt() + snowFlakes(1)),
-  unknown:     () => icon(CLOUD()),
-};
-
-// WMO weather_code → ikona (den)
-const WC_ICON_DAY = {
-  0: "clearDay", 1: "pcloudyDay", 2: "pcloudyDay", 3: "cloudy",
-  45: "fog", 48: "fog",
+// WMO weather_code → název souboru (denní varianta)
+const WC_DAY = {
+  0: "clear-day", 1: "partly-cloudy-day", 2: "partly-cloudy-day", 3: "overcast-day",
+  45: "fog-day", 48: "fog-day",
   51: "drizzle", 53: "drizzle", 55: "drizzle",
   56: "sleet", 57: "sleet",
-  61: "rain", 63: "rain", 65: "rainHeavy",
+  61: "rain", 63: "rain", 65: "extreme-day-rain",
   66: "sleet", 67: "sleet",
   71: "snow", 73: "snow", 75: "snow", 77: "snow",
-  80: "drizzle", 81: "rain", 82: "rainHeavy",
-  85: "snow", 86: "snow",
-  95: "thunder", 96: "thunderHail", 99: "thunderHail",
+  80: "partly-cloudy-day-rain", 81: "rain", 82: "extreme-day-rain",
+  85: "partly-cloudy-day-snow", 86: "snow",
+  95: "thunderstorms-day", 96: "thunderstorms-day-rain", 99: "thunderstorms-rain",
 };
-// Noční varianty jen pro jasno/polojasno — zbytek stejný ve dne v noci
-const WC_ICON_NIGHT = { ...WC_ICON_DAY, 0: "clearNight", 1: "pcloudyNight", 2: "pcloudyNight" };
+// Noční varianty — jen tam, kde se den/noc liší
+const WC_NIGHT_OVERRIDE = {
+  0: "clear-night", 1: "partly-cloudy-night", 2: "partly-cloudy-night", 3: "overcast-night",
+  45: "fog-night", 48: "fog-night",
+  65: "extreme-night-rain", 80: "partly-cloudy-night-rain", 82: "extreme-night-rain",
+  85: "partly-cloudy-night-snow",
+  95: "thunderstorms-night", 96: "thunderstorms-night-rain",
+};
 
 const WC_LABEL = {
   0: "Jasno", 1: "Převážně jasno", 2: "Polojasno", 3: "Zataženo",
@@ -97,9 +48,19 @@ export function wcLabel(wc) { return WC_LABEL[wc] ?? ""; }
 
 export function wcIconSvg(wc, hour) {
   const night = hour != null && (hour < 6 || hour >= 21);
-  const table = night ? WC_ICON_NIGHT : WC_ICON_DAY;
-  const key = wc != null ? (table[wc] ?? "unknown") : "unknown";
-  return (ICONS[key] || ICONS.unknown)();
+  let name = wc != null ? WC_DAY[wc] : null;
+  if (night && wc != null && WC_NIGHT_OVERRIDE[wc]) name = WC_NIGHT_OVERRIDE[wc];
+  return wImg(name || "cloudy");
+}
+
+// Fáze měsíce (0–1 věku synodického měsíce → 8 fází)
+const MOON_PHASES = [
+  "moon-new", "moon-waxing-crescent", "moon-first-quarter", "moon-waxing-gibbous",
+  "moon-full", "moon-waning-gibbous", "moon-last-quarter", "moon-waning-crescent",
+];
+export function moonIconImg(phaseFrac) {
+  const idx = Math.round(phaseFrac * 8) % 8;
+  return wImg(MOON_PHASES[idx]);
 }
 
 const WC_SEV = {

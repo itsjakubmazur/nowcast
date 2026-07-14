@@ -1,5 +1,5 @@
 import { state } from "./state.js";
-import { wcIconSvg, wcLabel, mostSevere } from "./icons.js";
+import { wcIconSvg, wcLabel, mostSevere, wImg } from "./icons.js";
 import { uvClass, esc } from "./utils.js";
 import { isDarkTheme } from "./theme.js";
 
@@ -248,9 +248,9 @@ export function renderFc7(data, label) {
       ? `<span>${Math.round(tmax)}°</span> <span class="tmin">${Math.round(tmin)}°</span>` : "—";
     const precStr = (prob > 0 || prec > 0)
       ? `<span class="prec">${prob != null ? prob + "%" : ""}${prec > 0 ? " " + Math.round(prec * 10) / 10 + "mm" : ""}</span>` : "";
-    const gustStr = gust != null && gust >= 30 ? `<span>💨 ${Math.round(gust)} km/h</span>` : "";
+    const gustStr = gust != null && gust >= 30 ? `<span>${wImg("wind", "wicon winline")} ${Math.round(gust)} km/h</span>` : "";
     const uvStr = uv != null && uv >= 1 ? `<span class="${uvClass(uv)}">UV${Math.round(uv)}</span>` : "";
-    const sunStr = (rise && set_) ? `<span>🌅${esc(rise)} 🌇${esc(set_)}</span>` : "";
+    const sunStr = (rise && set_) ? `<span>${wImg("sunrise", "wicon winline")}${esc(rise)} ${wImg("sunset", "wicon winline")}${esc(set_)}</span>` : "";
 
     const day = document.createElement("div");
     day.className = "fc7-day" + (isToday ? " fc7-today" : "");

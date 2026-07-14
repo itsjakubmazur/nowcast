@@ -100,6 +100,15 @@ button, input { font-family: inherit; }
   overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0;
 }
 
+/* ── Ikony počasí (Meteocons fill) ──────────────────────────────────────── */
+:root { --wicon-shadow: drop-shadow(0 2px 4px rgba(0,0,0,.4)); }
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) { --wicon-shadow: drop-shadow(0 1.5px 3px rgba(14,26,43,.3)); }
+}
+[data-theme="light"] { --wicon-shadow: drop-shadow(0 1.5px 3px rgba(14,26,43,.3)); }
+img.wicon { filter: var(--wicon-shadow); vertical-align: middle; }
+.winline { width: 15px; height: 15px; vertical-align: -3px; }
+
 /* ── Glass mixin — sdílený vzhled všech plovoucích vrstev ───────────────── */
 #left-card, #right-panel, #radar-bar-inner, #storm-bar, #radar-legend,
 .layer-btn, button.glass-btn, .search-wrap, #suggestions, .logo,
@@ -256,7 +265,7 @@ button.glass-btn svg { width: 17px; height: 17px; display: block; }
   box-shadow: inset 0 1px 0 var(--spec), inset 0 0 0 1px color-mix(in srgb, var(--green) 30%, var(--gring));
 }
 .rc-icon { font-size: 1.9rem; line-height: 1; flex-shrink: 0; }
-.rc-icon svg { width: 34px; height: 34px; display: block; }
+.rc-icon svg, .rc-icon img { width: 38px; height: 38px; display: block; }
 .rc-body { min-width: 0; }
 .rc-title { font-size: .92rem; font-weight: 800; letter-spacing: -.01em; }
 .rc-sub { font-size: .72rem; color: var(--muted); margin-top: .15rem; }
@@ -308,10 +317,10 @@ button.glass-btn svg { width: 17px; height: 17px; display: block; }
   background: linear-gradient(135deg, #7DC4F0, #38bdf8, #818cf8);
   -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
 }
-.fc-hero-icon svg { width: 44px; height: 44px; }
+.fc-hero-icon svg, .fc-hero-icon img { width: 48px; height: 48px; display: block; }
 .fc-hero-right { display: flex; flex-direction: column; gap: .2rem; padding-bottom: .35rem; }
 .fc-desc { font-size: .92rem; font-weight: 700; display: flex; align-items: center; gap: .35rem; }
-.fc-desc svg { width: 20px; height: 20px; flex-shrink: 0; }
+.fc-desc svg, .fc-desc img { width: 22px; height: 22px; flex-shrink: 0; }
 .fc-feels { font-size: .72rem; color: var(--muted); }
 
 /* včera vs dnes + klimatická odchylka */
@@ -609,7 +618,7 @@ button.glass-btn svg { width: 17px; height: 17px; display: block; }
 .fc24-col.fc24-block { min-width: 82px; max-width: 98px; }
 .fc24-time    { font-size: .68rem; color: var(--muted); margin-bottom: .15rem; font-variant-numeric: tabular-nums; }
 .fc24-icon    { font-size: 1.6rem; line-height: 1.2; }
-.fc24-icon svg { width: 24px; height: 24px; }
+.fc24-icon svg, .fc24-icon img { width: 30px; height: 30px; }
 .wc-emoji     { font-style: normal; line-height: 1; }
 .fc24-temp    { font-size: .84rem; font-weight: 700; margin-top: .12rem; color: var(--text); font-variant-numeric: tabular-nums; }
 .uv-low    { color: var(--green); }
@@ -650,7 +659,7 @@ button.glass-btn svg { width: 17px; height: 17px; display: block; }
 .fc7-day-name { font-size: .75rem; font-weight: 700; color: var(--text); }
 .fc7-day-date { font-size: .66rem; color: var(--muted); font-variant-numeric: tabular-nums; }
 .fc7-day-icon { font-size: 1.5rem; line-height: 1.3; margin: .12rem 0; }
-.fc7-day-icon svg { width: 28px; height: 28px; }
+.fc7-day-icon svg, .fc7-day-icon img { width: 34px; height: 34px; }
 .fc7-day-temp { font-size: .78rem; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
 .fc7-day-temp .tmin { color: var(--muted); }
 .fc7-day-sub  { font-size: .66rem; color: var(--muted); display: flex; flex-wrap: wrap; gap: .28rem; font-variant-numeric: tabular-nums; }
