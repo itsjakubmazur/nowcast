@@ -1,0 +1,31 @@
+name: (Dočasné) Vytvoř KV namespace pro Web Push
+
+# Jednorázový pomocný workflow — vytvoří Cloudflare KV namespace potřebný
+# pro Web Push subscriptions a vypíše jeho ID do logu, ať ho nemusí nikdo
+# spouštět lokálně přes wrangler CLI. Po použití se smaže.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  create-kv:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: workers/narrate
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Vytvoř produkční KV namespace
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CF_API_TOKEN }}
+          workingDirectory: workers/narrate
+          command: kv namespace create SUBSCRIPTIONS
+
+      - name: Vytvoř preview KV namespace
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CF_API_TOKEN }}
+          workingDirectory: workers/narrate
+          command: kv namespace create SUBSCRIPTIONS --preview
