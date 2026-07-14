@@ -26,5 +26,5 @@ crons = ["*/10 * * * *"]
 # a nahraď id/preview_id skutečnými hodnotami, které příkazy vypíšou.
 [[kv_namespaces]]
 binding = "SUBSCRIPTIONS"
-id = "REPLACE_WITH_REAL_KV_NAMESPACE_ID"
-preview_id = "REPLACE_WITH_REAL_KV_PREVIEW_NAMESPACE_ID"
+id = "495af53927bb44f49b72cfe8e959bfc4"
+preview_id = "32a804ea829b47acb548774bbb1a06f2"
