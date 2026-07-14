@@ -57,6 +57,9 @@ export default {
       if (url.pathname === "/verdict" && request.method === "GET") {
         return await handleVerdict(request, url, env, ctx);
       }
+      if (url.pathname === "/ask" && request.method === "GET") {
+        return await handleAsk(url, env);
+      }
       if (url.pathname === "/vapid-public-key" && request.method === "GET") {
         return json({ publicKey: env.VAPID_PUBLIC_KEY || null });
       }
@@ -120,6 +123,75 @@ async function handleVerdict(request, url, env, ctx) {
   toCache.headers.set("Cache-Control", `public, max-age=${CACHE_TTL_S}`);
   ctx.waitUntil(cache.put(cacheKey, toCache));
   return res;
+}
+
+// ── /ask — „zeptej se na počasí" (Q&A nad hodinovými daty) ───────────────────
+const ASK_PROMPT = `Jsi meteorolog. Dostaneš JSON s hodinovými daty o počasí pro konkrétní místo
+a otázku uživatele. Odpověz česky, stručně (1–3 věty), POUZE z dat v JSON — nic si nevymýšlej.
+Když se otázka netýká počasí nebo na ni data neodpovídají, řekni to na rovinu jednou větou.
+Časy jsou místní (Europe/Prague). Vítr uváděj v nárazech km/h, srážky v mm, teploty celé °C.`;
+
+async function handleAsk(url, env) {
+  const lat = parseFloat(url.searchParams.get("lat"));
+  const lon = parseFloat(url.searchParams.get("lon"));
+  const label = url.searchParams.get("label") || "";
+  const q = (url.searchParams.get("q") || "").slice(0, 200).trim();
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return json({ error: "lat/lon required" }, 400);
+  if (!q) return json({ error: "q required" }, 400);
+  const apiKey = env.GEMINI_API_KEY;
+  if (!apiKey) return json({ error: "GEMINI_API_KEY not configured" }, 500);
+
+  let omData;
+  try {
+    const omUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}`
+      + `&hourly=weather_code,temperature_2m,apparent_temperature,precipitation,precipitation_probability,wind_gusts_10m,cape,uv_index,cloud_cover`
+      + `&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,sunrise,sunset`
+      + `&timezone=Europe%2FPrague&forecast_days=3`;
+    const r = await fetch(omUrl);
+    if (!r.ok) throw new Error(`OM HTTP ${r.status}`);
+    omData = await r.json();
+  } catch (e) {
+    return json({ error: `Open-Meteo fetch failed: ${e.message}` }, 502);
+  }
+
+  const prompt = JSON.stringify({
+    misto: label || `${lat.toFixed(2)}°N ${lon.toFixed(2)}°E`,
+    otazka: q,
+    data: { hourly: compactHourly(omData), daily: omData.daily },
+  });
+  try {
+    const body = {
+      system_instruction: { parts: [{ text: ASK_PROMPT }] },
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: { maxOutputTokens: 400, temperature: 0.2, thinkingConfig: { thinkingBudget: 0 } },
+    };
+    const r = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
+    );
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const data = await r.json();
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
+    return json({ text });
+  } catch (e) {
+    return json({ error: `Gemini failed: ${e.message}` }, 502);
+  }
+}
+
+// Kompaktní hodinovka pro /ask — jen každá 2. hodina, ať prompt není obří
+function compactHourly(om) {
+  const h = om.hourly || {};
+  const out = [];
+  for (let i = 0; i < (h.time || []).length; i += 2) {
+    out.push({
+      t: h.time[i],
+      T: h.temperature_2m?.[i], poc: h.apparent_temperature?.[i],
+      mm: h.precipitation?.[i], pct: h.precipitation_probability?.[i],
+      naraz: h.wind_gusts_10m?.[i], cape: h.cape?.[i], uv: h.uv_index?.[i],
+      obl: h.cloud_cover?.[i],
+    });
+  }
+  return out;
 }
 
 async function handleVerdictLegacyPost(request, env) {
@@ -315,6 +387,11 @@ async function runPushCheck(env) {
     return;
   }
 
+  // Ranní briefing — jednou denně v okně 7:00–7:09 místního času
+  const pragueNow = new Date().toLocaleString("sv-SE", { timeZone: "Europe/Prague" });
+  const briefingDue = pragueNow.slice(11, 13) === "07" && +pragueNow.slice(14, 16) < 10;
+  const todayStr = pragueNow.slice(0, 10);
+
   let cursor;
   let checked = 0, notified = 0, expired = 0;
   do {
@@ -323,6 +400,11 @@ async function runPushCheck(env) {
       checked++;
       const record = await env.SUBSCRIPTIONS.get(k.name, "json");
       if (!record) continue;
+      if (briefingDue && record.lastBriefing !== todayStr) {
+        const out = await sendMorningBriefing(k.name, record, todayStr, env);
+        if (out === "expired") { expired++; continue; }
+        if (out === "notified") notified++;
+      }
       const outcome = await checkAndNotify(k.name, record, grid, env);
       if (outcome === "notified") notified++;
       if (outcome === "expired") expired++;
@@ -333,10 +415,63 @@ async function runPushCheck(env) {
   console.log(`runPushCheck: checked=${checked} notified=${notified} expired=${expired}`);
 }
 
+// ── Ranní briefing (7:00) — shrnutí dne pro první oblíbené místo ─────────────
+async function sendMorningBriefing(key, record, todayStr, env) {
+  const fav = record.favorites?.[0];
+  if (!fav) return "skip";
+  let body = "Tvůj přehled počasí na dnešek je připravený.";
+  try {
+    const r = await fetch(
+      `https://api.open-meteo.com/v1/forecast?latitude=${fav.lat.toFixed(4)}&longitude=${fav.lon.toFixed(4)}`
+      + `&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,wind_gusts_10m_max`
+      + `&timezone=Europe%2FPrague&forecast_days=1`);
+    if (r.ok) {
+      const d = (await r.json()).daily || {};
+      const tmax = Math.round(d.temperature_2m_max?.[0]);
+      const tmin = Math.round(d.temperature_2m_min?.[0]);
+      const prob = d.precipitation_probability_max?.[0];
+      const sum = d.precipitation_sum?.[0];
+      const gust = Math.round(d.wind_gusts_10m_max?.[0]);
+      const parts = [`${tmin}–${tmax} °C`];
+      if (prob != null) parts.push(sum >= 0.5 ? `srážky ${prob} % (~${Math.round(sum)} mm)` : `srážky ${prob} %`);
+      if (gust >= 30) parts.push(`nárazy až ${gust} km/h`);
+      body = `Dnes ${parts.join(" · ")}.`;
+    }
+  } catch { /* generický text */ }
+
+  const resp = await sendPush(record.subscription, env, {
+    title: `🌅 Ranní přehled — ${fav.label || "tvoje místo"}`,
+    body,
+    tag: "briefing",
+  }).catch(() => null);
+  if (resp && (resp.status === 404 || resp.status === 410)) {
+    await env.SUBSCRIPTIONS.delete(key);
+    return "expired";
+  }
+  record.lastBriefing = todayStr;
+  await env.SUBSCRIPTIONS.put(key, JSON.stringify(record), { expirationTtl: 60 * 60 * 24 * 60 });
+  return "notified";
+}
+
+function localHM(iso) {
+  return new Date(iso).toLocaleTimeString("cs-CZ", {
+    timeZone: "Europe/Prague", hour: "2-digit", minute: "2-digit",
+  });
+}
+function rainWords(peak) {
+  if (peak < 0.5) return "slabé přeháňky";
+  if (peak < 2.5) return "slabý déšť";
+  if (peak < 7.5) return "mírný déšť";
+  return "vydatný déšť";
+}
+
 async function checkAndNotify(key, record, grid, env) {
   const now = Date.now();
   let shouldNotify = false;
   let reason = "";
+  let notifPayload = null;
+  const stepMin = grid.step_min || 10;
+  const t0ms = Date.parse(grid.t0_utc || 0);
 
   for (const fav of record.favorites || []) {
     const favKey = `${fav.lat.toFixed(2)},${fav.lon.toFixed(2)}`;
@@ -352,6 +487,11 @@ async function checkAndNotify(key, record, grid, env) {
     if (activeWarn && now - lastNotified > WARN_SNOOZE_MS) {
       shouldNotify = true;
       reason = `warn:${favKey}`;
+      notifPayload = {
+        title: `⚠️ ${activeWarn.event}`,
+        body: `${fav.label || favKey}: výstraha ČHMÚ platí do ${localHM(activeWarn.expires_utc)}.`,
+        tag: `warn-${favKey}`,
+      };
       record.notified = record.notified || {};
       record.notified[favKey] = new Date(now).toISOString();
       continue;
@@ -365,6 +505,13 @@ async function checkAndNotify(key, record, grid, env) {
       if (rainVal >= RAIN_THRESHOLD_MM_H && startStep <= RAIN_LOOKAHEAD_STEPS) {
         shouldNotify = true;
         reason = `rain:${favKey}`;
+        const startMs = t0ms + (startStep + 1) * stepMin * 60000;
+        const minsAway = Math.max(Math.round((startMs - now) / 60000), 1);
+        notifPayload = {
+          title: `🌧️ Déšť za ~${minsAway} min`,
+          body: `${fav.label || favKey}: ${rainWords(rainVal)} přibližně od ${localHM(new Date(startMs).toISOString())}. Podle radaru.`,
+          tag: `rain-${favKey}`,
+        };
         record.notified = record.notified || {};
         record.notified[favKey] = new Date(now).toISOString();
       }
@@ -373,7 +520,7 @@ async function checkAndNotify(key, record, grid, env) {
 
   if (!shouldNotify) return "skip";
 
-  const resp = await sendPush(record.subscription, env).catch(() => null);
+  const resp = await sendPush(record.subscription, env, notifPayload).catch(() => null);
   if (resp && (resp.status === 404 || resp.status === 410)) {
     await env.SUBSCRIPTIONS.delete(key);
     return "expired";
@@ -402,18 +549,74 @@ function haversineKm(lat1, lon1, lat2, lon2) {
   return 2 * R * Math.asin(Math.sqrt(a));
 }
 
-// ── Web Push (VAPID, prázdný payload — RFC 8292, bez potřeby ECE šifrování) ──
+// ── Web Push (VAPID/RFC 8292 + šifrovaný payload aes128gcm/RFC 8291) ─────────
+// Payload nese title/body/tag — service worker tak umí zobrazit konkrétní
+// zprávu ("Déšť za 20 min v Podivíně"), ne jen generickou hlášku.
 
-async function sendPush(subscription, env, ttlSeconds = 300) {
+async function sendPush(subscription, env, payload = null, ttlSeconds = 600) {
   const auth = await buildVapidAuthHeader(subscription.endpoint, env);
-  return fetch(subscription.endpoint, {
-    method: "POST",
-    headers: {
-      Authorization: auth,
-      TTL: String(ttlSeconds),
-      "Content-Length": "0",
-    },
-  });
+  const headers = { Authorization: auth, TTL: String(ttlSeconds) };
+  let body = null;
+
+  if (payload && subscription.keys?.p256dh && subscription.keys?.auth) {
+    try {
+      body = await encryptPushPayload(subscription, JSON.stringify(payload));
+      headers["Content-Encoding"] = "aes128gcm";
+      headers["Content-Type"] = "application/octet-stream";
+    } catch (e) {
+      console.log(`ECE encrypt selhal (${e.message}) — posílám prázdný push`);
+      body = null;
+    }
+  }
+  if (!body) headers["Content-Length"] = "0";
+
+  return fetch(subscription.endpoint, { method: "POST", headers, body });
+}
+
+// RFC 8291: ECDH(P-256) → HKDF → AES-128-GCM, formát těla aes128gcm (RFC 8188)
+async function encryptPushPayload(subscription, payloadStr) {
+  const uaPub = b64urlToBytes(subscription.keys.p256dh);   // 65 B nekomprimovaný bod
+  const authSecret = b64urlToBytes(subscription.keys.auth); // 16 B
+
+  const asKeys = await crypto.subtle.generateKey(
+    { name: "ECDH", namedCurve: "P-256" }, true, ["deriveBits"]);
+  const uaKey = await crypto.subtle.importKey(
+    "raw", uaPub, { name: "ECDH", namedCurve: "P-256" }, false, []);
+  const ecdhSecret = new Uint8Array(await crypto.subtle.deriveBits(
+    { name: "ECDH", public: uaKey }, asKeys.privateKey, 256));
+  const asPub = new Uint8Array(await crypto.subtle.exportKey("raw", asKeys.publicKey));
+
+  const te = new TextEncoder();
+  const hkdf = async (salt, ikm, info, len) => {
+    const key = await crypto.subtle.importKey("raw", ikm, "HKDF", false, ["deriveBits"]);
+    return new Uint8Array(await crypto.subtle.deriveBits(
+      { name: "HKDF", hash: "SHA-256", salt, info }, key, len * 8));
+  };
+  const cat = (...arrs) => {
+    const out = new Uint8Array(arrs.reduce((s, a) => s + a.length, 0));
+    let o = 0; for (const a of arrs) { out.set(a, o); o += a.length; }
+    return out;
+  };
+
+  const keyInfo = cat(te.encode("WebPush: info\0"), uaPub, asPub);
+  const ikm = await hkdf(authSecret, ecdhSecret, keyInfo, 32);
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const cek = await hkdf(salt, ikm, te.encode("Content-Encoding: aes128gcm\0"), 16);
+  const nonce = await hkdf(salt, ikm, te.encode("Content-Encoding: nonce\0"), 12);
+
+  // jediný (poslední) záznam → padding delimiter 0x02
+  const plaintext = cat(te.encode(payloadStr), new Uint8Array([2]));
+  const aesKey = await crypto.subtle.importKey("raw", cek, "AES-GCM", false, ["encrypt"]);
+  const ciphertext = new Uint8Array(await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv: nonce }, aesKey, plaintext));
+
+  // hlavička aes128gcm: salt(16) | record_size(4) | idlen(1) | keyid(=as_pub, 65)
+  const header = new Uint8Array(16 + 4 + 1 + 65);
+  header.set(salt, 0);
+  new DataView(header.buffer).setUint32(16, 4096);
+  header[20] = 65;
+  header.set(asPub, 21);
+  return cat(header, ciphertext);
 }
 
 async function buildVapidAuthHeader(endpoint, env) {

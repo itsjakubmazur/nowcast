@@ -1,4 +1,4 @@
-const CACHE_VERSION = "v2";
+const CACHE_VERSION = "v3";
 const STATIC_CACHE = `nowcast-static-${CACHE_VERSION}`;
 const DATA_CACHE = `nowcast-data-${CACHE_VERSION}`;
 
@@ -24,7 +24,11 @@ const STATIC_ASSETS = [
   "./js/favorites.js",
   "./js/search.js",
   "./js/share.js",
+  "./js/extras.js",
+  "./js/climate.js",
+  "./js/lightning.js",
   "./icon.svg",
+  "./icons/icon-192.png",
   "./manifest.json",
 ];
 
@@ -88,16 +92,17 @@ self.addEventListener("fetch", e => {
 });
 
 // ── Web Push ──────────────────────────────────────────────────────────────────
-// Push přijde BEZ payloadu (viz workers/narrate — VAPID bez ECE šifrace), takže
-// zobrazíme obecné oznámení; klik otevře appku, která si sama dotáhne aktuální
-// stav pro dané místo.
+// Worker posílá šifrovaný JSON payload (RFC 8291): {title, body, tag}.
+// Fallback na generické oznámení, kdyby payload chyběl nebo se nešel přečíst.
 self.addEventListener("push", e => {
-  const title = "🌧️ nowcast";
+  let payload = null;
+  try { payload = e.data?.json(); } catch { /* prázdný/nečitelný payload */ }
+  const title = payload?.title || "🌧️ nowcast";
   const options = {
-    body: "Kontrola oblíbených míst — možná se blíží déšť nebo platí výstraha.",
-    icon: "./icon.svg",
-    badge: "./icon.svg",
-    tag: "nowcast-rain-check",
+    body: payload?.body || "Kontrola oblíbených míst — možná se blíží déšť nebo platí výstraha.",
+    icon: "./icons/icon-192.png",
+    badge: "./icons/icon-192.png",
+    tag: payload?.tag || "nowcast-rain-check",
     renotify: true,
   };
   e.waitUntil(self.registration.showNotification(title, options));

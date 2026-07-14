@@ -326,7 +326,9 @@ async function main() {
   assertTrue((bodyClass || "").includes("embed"), "embed mód nastaví body.embed");
 
   // ── Žádné neočekávané JS chyby po celou dobu ─────────────────────────────
-  const realErrors = consoleErrors.filter(e => !/favicon/i.test(e));
+  // blitzortung: živé blesky přes WebSocket — externí služba, v sandboxu
+  // (i leckde v produkci) nedostupná; appka na tom nezávisí a tiše degraduje
+  const realErrors = consoleErrors.filter(e => !/favicon|blitzortung/i.test(e));
   assertTrue(realErrors.length === 0, `žádné console/page chyby (nalezeno ${realErrors.length})`);
   if (realErrors.length) realErrors.forEach(e => console.error("  · " + e));
 

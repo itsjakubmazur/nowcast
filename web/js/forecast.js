@@ -29,6 +29,7 @@ export function parseFc24(data) {
   const cape = h.cape || [];
   const hum = h.relative_humidity_2m || [];
   const pres = h.surface_pressure || [];
+  const cloud = h.cloud_cover || [];
 
   let si = times.findIndex(t => t >= nowPrague);
   if (si < 0) si = 0;
@@ -55,6 +56,7 @@ export function parseFc24(data) {
       cape: cape[i] != null ? Math.round(cape[i]) : null,
       humidity: hum[i] != null ? Math.round(hum[i]) : null,
       pressure: pres[i] != null ? Math.round(pres[i]) : null,
+      cloud: cloud[i] != null ? Math.round(cloud[i]) : null,
     });
   }
 
@@ -362,6 +364,63 @@ export function renderMeteogram(fc, daily) {
   });
 }
 
+// ── Porovnání modelů — pásmo nejistoty ICON / ECMWF / GFS v meteogramu ──────
+// Druhý lehký fetch (jen teplota, 3 modely); do už vykresleného meteogramu
+// přidá tenké čáry ECMWF/GFS a vyplněné pásmo rozptylu mezi modely.
+export async function addModelSpread(lat, lon, fc) {
+  if (!_meteoChart) return;
+  const hourly = fc.hourlyFull || [];
+  if (!hourly.length) return;
+  try {
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}`
+      + `&hourly=temperature_2m&models=icon_seamless,ecmwf_ifs025,gfs_seamless`
+      + `&forecast_days=3&timezone=Europe%2FPrague`;
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 12000);
+    const r = await fetch(url, { signal: ctrl.signal });
+    clearTimeout(timer);
+    if (!r.ok) return;
+    const data = await r.json();
+    const h = data.hourly || {};
+    const idxByTime = new Map((h.time || []).map((t, i) => [t, i]));
+    const grab = key => hourly.map(x => {
+      const j = idxByTime.get(x.iso);
+      return j != null ? (h[key]?.[j] ?? null) : null;
+    });
+    const ec = grab("temperature_2m_ecmwf_ifs025");
+    const gf = grab("temperature_2m_gfs_seamless");
+    const ic = grab("temperature_2m_icon_seamless");
+    if (!ec.some(v => v != null) && !gf.some(v => v != null)) return;
+
+    const bandMax = hourly.map((x, i) => {
+      const vals = [x.tempRaw, ic[i], ec[i], gf[i]].filter(v => v != null);
+      return vals.length ? Math.max(...vals) : null;
+    });
+    const bandMin = hourly.map((x, i) => {
+      const vals = [x.tempRaw, ic[i], ec[i], gf[i]].filter(v => v != null);
+      return vals.length ? Math.min(...vals) : null;
+    });
+
+    if (!_meteoChart) return; // mezitím mohl uživatel přepnout místo
+    _meteoChart.data.datasets.push(
+      { type: "line", label: "ECMWF (°C)", data: ec, borderColor: "#30B0C7",
+        backgroundColor: "transparent", borderWidth: 1.1, borderDash: [4, 4],
+        pointRadius: 0, tension: 0.35, yAxisID: "y", order: 5 },
+      { type: "line", label: "GFS (°C)", data: gf, borderColor: "#BF5AF2",
+        backgroundColor: "transparent", borderWidth: 1.1, borderDash: [4, 4],
+        pointRadius: 0, tension: 0.35, yAxisID: "y", order: 6 },
+      { type: "line", label: "rozptyl modelů", data: bandMax, borderWidth: 0,
+        pointRadius: 0, tension: 0.35, yAxisID: "y", order: 7,
+        fill: "+1", backgroundColor: "rgba(10,132,255,.10)" },
+      { type: "line", label: "_bandmin", data: bandMin, borderWidth: 0,
+        pointRadius: 0, tension: 0.35, yAxisID: "y", order: 8 },
+    );
+    // "_bandmin" nepatří do legendy
+    _meteoChart.options.plugins.legend.labels.filter = item => item.text !== "_bandmin";
+    _meteoChart.update("none");
+  } catch { /* nejistota je bonus — bez ní meteogram funguje dál */ }
+}
+
 // ── Kvalita ovzduší + pyl (Open-Meteo Air Quality API) ───────────────────────
 const AQ_LEVELS = [
   [0, 20, "good", "Dobrá"], [20, 40, "fair", "Uspokojivá"], [40, 60, "moderate", "Zhoršená"],
@@ -428,10 +487,11 @@ function renderAQ(data) {
 
 export async function fetchOpenMeteo(lat, lon, signal) {
   const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}`
-    + `&hourly=weather_code,temperature_2m,apparent_temperature,precipitation,precipitation_probability,wind_speed_10m,wind_gusts_10m,wind_direction_10m,uv_index,cape,relative_humidity_2m,surface_pressure`
+    + `&hourly=weather_code,temperature_2m,apparent_temperature,precipitation,precipitation_probability,wind_speed_10m,wind_gusts_10m,wind_direction_10m,uv_index,cape,relative_humidity_2m,surface_pressure,cloud_cover,snowfall`
     + `&minutely_15=precipitation,rain,snowfall,windspeed_10m,windgusts_10m,winddirection_10m,cape`
     + `&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,wind_gusts_10m_max,uv_index_max,sunrise,sunset`
-    + `&forecast_days=7&timezone=Europe%2FPrague`;
+    // past_days=1 kvůli "o X° tepleji/chladněji než včera" (srovnání stejné hodiny)
+    + `&forecast_days=7&past_days=1&timezone=Europe%2FPrague`;
 
   // Bez vlastního timeoutu umí fetch na slabším mobilním signálu viset
   // donekonečna a volající strana (showFc24) pak zůstane navždy na
@@ -444,7 +504,19 @@ export async function fetchOpenMeteo(lat, lon, signal) {
   try {
     const r = await fetch(url, { signal: ctrl.signal });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    return await r.json();
+    const data = await r.json();
+    // past_days=1 posouvá i daily o den zpět — ořízni včerejšek, ať všichni
+    // konzumenti (fc7, meteogram, astro) dál dostávají [0] = dnešek
+    if (data.daily?.time?.length) {
+      const todayStr = new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Prague" });
+      const off = data.daily.time.findIndex(t => t >= todayStr);
+      if (off > 0) {
+        for (const k of Object.keys(data.daily)) {
+          if (Array.isArray(data.daily[k])) data.daily[k] = data.daily[k].slice(off);
+        }
+      }
+    }
+    return data;
   } finally {
     clearTimeout(timer);
     signal?.removeEventListener("abort", onAbort);

@@ -14,16 +14,22 @@ import {
 import {
   fetchOpenMeteo, parseFc24, parseMinutely15,
   renderFcHero, renderFcNow, renderFc24, renderFc7, renderMeteogram, fetchAndRenderAQ,
+  addModelSpread,
 } from "./forecast.js";
 import {
   nearestPt, templateVerdict, renderRainBadge, renderRainCountdown,
-  fetchAiVerdict, renderVerdictText, renderAccuracyLine,
+  fetchAiVerdict, renderVerdictText, renderAccuracyLine, initAiAsk, showAiAsk,
 } from "./verdict.js";
 import {
   loadFavs, renderFavRow, updateFavBtn, saveLastLocation, loadLastLocation,
   checkRainNotifications, clearRainSnooze, initPushButton,
 } from "./favorites.js";
 import { initSearch, reverseGeocode } from "./search.js";
+import {
+  renderMinutely, renderActivities, renderDeltaLine, renderAstro, renderWinter,
+} from "./extras.js";
+import { renderClimateAnomaly } from "./climate.js";
+import { initLightning } from "./lightning.js";
 import { shareCurrentView, copyEmbedLink, initEmbedMode } from "./share.js";
 import { esc } from "./utils.js";
 
@@ -81,6 +87,17 @@ async function showFc24(lat, lon, label) {
     renderMeteogram(fc, data.daily);
     renderLocationVerdict(fc, lat, lon, label);
     fetchAndRenderAQ(lat, lon);
+    // v2.0 doplňky — každý panel se sám schová, když pro něj nejsou data
+    try {
+      const ptId = state.GRID ? nearestPt(lat, lon).id : null;
+      renderAstro(data, fc);            // před aktivitami — nastavuje svit měsíce
+      renderMinutely(ptId, minutely);
+      renderActivities(fc, data);
+      renderDeltaLine(data);
+      renderWinter(fc, data);
+      addModelSpread(lat, lon, fc);           // async — pásmo nejistoty do meteogramu
+      renderClimateAnomaly(lat, lon, data);   // async — odchylka od normálu
+    } catch (e) { console.warn("v2 doplňky selhaly:", e); }
   } catch (e) {
     if (e.name === "AbortError") return;
     scroll.innerHTML = `<div style="padding:.6rem 1rem;color:var(--muted);font-size:.85rem">Předpověď se nepodařilo načíst (${esc(e.message)}).</div>`;
@@ -162,6 +179,7 @@ function showForecast(lat, lon, label) {
   document.getElementById("place").textContent = label || "Vybrané místo";
   document.getElementById("dist").textContent = `Nejbližší bod mřížky: ${dist.toFixed(1)} km`;
   updateFavBtn(lat, lon, label, () => renderFavRow(showForecast));
+  showAiAsk();
 
   renderVerdictText(chips, `<span style="color:var(--muted)">Načítám předpověď…</span>`, null);
 
@@ -178,6 +196,26 @@ function showForecast(lat, lon, label) {
   u.searchParams.set("lon", lon.toFixed(4));
   if (label) u.searchParams.set("q", label);
   history.replaceState(null, "", u);
+}
+
+// ── Offline badge — jasně říct, že koukáš na stará data ─────────────────────
+function initOfflineBadge() {
+  const badge = document.getElementById("offline-badge");
+  const text = document.getElementById("offline-text");
+  if (!badge) return;
+  const update = () => {
+    const off = !navigator.onLine;
+    badge.classList.toggle("show", off);
+    if (off && text) {
+      const gen = state.MANIFEST?.generated_at_utc;
+      text.textContent = gen
+        ? `Offline — data z ${new Date(gen).toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit" })}`
+        : "Offline — ukazuji poslední stažená data";
+    }
+  };
+  window.addEventListener("online", update);
+  window.addEventListener("offline", update);
+  update();
 }
 
 // ── Refresh ───────────────────────────────────────────────────────────────────
@@ -228,6 +266,9 @@ window.addEventListener("DOMContentLoaded", async () => {
   checkRainNotifications();
   initPushButton();
   initSearch(showForecast);
+  initAiAsk();
+  initLightning();
+  initOfflineBadge();
 
   // ── Radar ovládání ────────────────────────────────────────────────────────
   document.getElementById("timeline").addEventListener("input", e => {

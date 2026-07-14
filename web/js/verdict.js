@@ -234,7 +234,52 @@ export function renderVerdictText(chips, templateText, aiText) {
   const body = aiText
     ? `<div class="verdict-ai-badge">✨ AI meteorolog</div><div class="verdict-text">${esc(aiText).replace(/\n\n/g, "<br><br>")}</div>`
     : `<div class="verdict-text">${templateText}</div>`;
-  el.innerHTML = (chips ? `<div style="margin-bottom:.4rem">${chips}</div>` : "") + body;
+  el.innerHTML = body;
+
+  // Výstrahy patří na první pohled — do glass pruhu pod topbarem, ne dovnitř karty
+  const bar = document.getElementById("alert-bar");
+  if (bar) {
+    if (chips) { bar.innerHTML = chips; bar.classList.add("show"); }
+    else { bar.innerHTML = ""; bar.classList.remove("show"); }
+  }
+}
+
+// ── „Zeptej se na počasí" — chat nad daty přes worker /ask ──────────────────
+export function initAiAsk() {
+  const row = document.getElementById("ai-ask-row");
+  const input = document.getElementById("ai-ask");
+  const send = document.getElementById("ai-ask-send");
+  const answer = document.getElementById("ai-answer");
+  if (!row || !input || !send || !answer) return;
+
+  async function submit() {
+    const q = input.value.trim();
+    if (!q || state.currentLat == null) return;
+    answer.textContent = "Přemýšlím…";
+    answer.classList.add("show");
+    send.disabled = true;
+    try {
+      const url = `${WORKER_BASE}/ask?lat=${state.currentLat.toFixed(4)}&lon=${state.currentLon.toFixed(4)}`
+        + `&label=${encodeURIComponent(state.currentLabel || "")}&q=${encodeURIComponent(q)}`;
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 20000);
+      const r = await fetch(url, { signal: ctrl.signal });
+      clearTimeout(timer);
+      const data = await r.json().catch(() => ({}));
+      answer.textContent = data.text || "Odpověď se nepodařilo získat — zkus to za chvíli.";
+    } catch {
+      answer.textContent = "Odpověď se nepodařilo získat — zkus to za chvíli.";
+    } finally {
+      send.disabled = false;
+    }
+  }
+  send.addEventListener("click", submit);
+  input.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); submit(); } });
+}
+
+// Zobrazí chat řádek, jakmile je vybrané místo (volá se ze showForecast)
+export function showAiAsk() {
+  document.getElementById("ai-ask-row")?.classList.add("show");
 }
 
 // ── Přesnost nowcastu (accuracy.json) ────────────────────────────────────────

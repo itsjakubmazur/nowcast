@@ -23,7 +23,7 @@
     style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com;
     font-src https://fonts.gstatic.com;
     img-src 'self' data: blob: https://*.basemaps.cartocdn.com https://*.rainviewer.com https://unpkg.com;
-    connect-src 'self' https://api.open-meteo.com https://geocoding-api.open-meteo.com https://air-quality-api.open-meteo.com https://api.rainviewer.com https://*.rainviewer.com https://*.workers.dev;
+    connect-src 'self' https://api.open-meteo.com https://geocoding-api.open-meteo.com https://air-quality-api.open-meteo.com https://archive-api.open-meteo.com https://api.rainviewer.com https://*.rainviewer.com https://*.workers.dev https://nominatim.openstreetmap.org wss://*.blitzortung.org;
     manifest-src 'self';
     base-uri 'self';
   ">
@@ -44,8 +44,9 @@
 <!-- Fullscreen mapa — PRVNÍ, ostatní jsou přes ní -->
 <div id="map"></div>
 
-<!-- Radar bar -->
+<!-- Radar bar — plovoucí skleněný dok -->
 <div id="radar-bar" style="display:none">
+  <div id="radar-bar-inner">
   <div class="radar-row" style="margin-bottom:.6rem">
     <div class="timeline-wrap" style="flex:1">
       <input type="range" id="timeline" min="0" value="0" aria-label="Časová osa radaru" />
@@ -58,9 +59,9 @@
     <button class="ctrl" id="btn-play" title="Přehrát/Pozastavit (mezerník)" aria-label="Přehrát/Pozastavit">▶</button>
     <button class="ctrl" id="btn-next" title="Další snímek (→)" aria-label="Další snímek">▶▶</button>
     <div class="speed-group" title="Rychlost animace">
-      <button class="ctrl" id="speed-slow" data-ms="900">🐢</button>
-      <button class="ctrl active" id="speed-norm" data-ms="500">–</button>
-      <button class="ctrl" id="speed-fast" data-ms="200">⚡</button>
+      <button class="ctrl" id="speed-slow" data-ms="900">½×</button>
+      <button class="ctrl active" id="speed-norm" data-ms="500">1×</button>
+      <button class="ctrl" id="speed-fast" data-ms="200">2×</button>
     </div>
     <div id="frame-time" style="min-width:60px;text-align:center">—</div>
     <span id="radar-t0" style="font-size:.78rem;font-weight:600;color:var(--text)"></span>
@@ -76,26 +77,36 @@
     <canvas id="rain-spark"></canvas>
   </div>
   <span id="radar-source" style="font-size:.65rem;color:var(--muted);font-style:italic;display:block;margin-top:.3rem"></span>
+  </div>
 </div>
 
 <!-- Topbar -->
 <div id="topbar">
   <div class="logo">
-    <div class="logo-icon">⚡</div>
-    nowcast
+    <div class="logo-icon"><img src="icons/icon-192.png" alt="" width="27" height="27"></div>
+    <span class="logo-text">nowcast</span>
   </div>
   <div class="search-wrap suggest">
     <input id="search" type="text" placeholder="Hledat obec…" autocomplete="off" />
     <ul id="suggestions"></ul>
   </div>
   <div class="topbar-right">
-    <button class="glass-btn icon-only embed-hide" id="geo" title="Moje poloha" aria-label="Moje poloha">📍</button>
-    <button class="glass-btn icon-only embed-hide" id="btn-share" title="Sdílet" aria-label="Sdílet">🔗</button>
-    <button class="glass-btn icon-only" id="btn-theme" title="Přepnout motiv" aria-label="Přepnout motiv">🌙</button>
+    <button class="glass-btn icon-only embed-hide" id="geo" title="Moje poloha" aria-label="Moje poloha">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="3.2"/><circle cx="12" cy="12" r="8"/><path d="M12 1.8v3M12 19.2v3M1.8 12h3M19.2 12h3"/></svg>
+    </button>
+    <button class="glass-btn icon-only embed-hide" id="btn-share" title="Sdílet" aria-label="Sdílet">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3.5"/><path d="M8 7l4-3.5L16 7"/><path d="M5 11v8.5A1.5 1.5 0 0 0 6.5 21h11a1.5 1.5 0 0 0 1.5-1.5V11"/></svg>
+    </button>
+    <button class="glass-btn icon-only" id="btn-theme" title="Přepnout motiv" aria-label="Přepnout motiv">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.5a9.5 9.5 0 1 0 0 19V2.5Z"/><circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>
+    </button>
     <button class="glass-btn embed-hide" id="btn-refresh" title="Aktualizovat">↺</button>
     <span id="refresh-time" class="embed-hide"></span>
   </div>
 </div>
+
+<!-- Výstrahy ČHMÚ — první informace dne, vždy nahoře pod topbarem -->
+<div id="alert-bar" role="button" tabindex="0" aria-label="Aktivní výstrahy"></div>
 
 <!-- Levá floating karta -->
 <div id="left-card">
@@ -110,6 +121,13 @@
     </div>
   </div>
 
+  <!-- Minutový graf srážek 0–120 min (radar + model) -->
+  <div id="minutely-panel">
+    <div class="minutely-label"><span>Srážky · 120 minut</span><span id="minutely-src">radar + model</span></div>
+    <div class="minutely-bars" id="minutely-bars"></div>
+    <div class="minutely-axis"><span>teď</span><span>+30</span><span>+60</span><span>+90</span><span>+120</span></div>
+  </div>
+
   <div id="forecast-panel">
     <div class="place" id="place">📍 Zvolte místo</div>
     <div class="dist" id="dist"></div>
@@ -121,13 +139,27 @@
         <div class="fc-feels" id="fc-feels"></div>
       </div>
     </div>
+    <!-- včera vs dnes + odchylka od normálu -->
+    <div id="delta-line"></div>
     <div id="rain-badge-wrap"></div>
     <div class="verdict-text" id="verdict">
       <span class="hint">Vyhledejte obec, klikněte do mapy nebo použijte polohu.</span>
     </div>
+    <!-- AI chat — zeptej se na počasí -->
+    <div id="ai-ask-row">
+      <input id="ai-ask" type="text" placeholder="Zeptej se na počasí…" autocomplete="off" maxlength="200" />
+      <button id="ai-ask-send" title="Odeslat" aria-label="Odeslat dotaz">↵</button>
+    </div>
+    <div id="ai-answer"></div>
     <div class="updated" id="updated"></div>
     <div id="accuracy-line"></div>
     <div id="fc-now" style="display:none"></div>
+  </div>
+
+  <!-- Aktivitní indexy -->
+  <div id="activities-panel">
+    <div class="act-label"><span>Aktivity dnes</span><span>z hodinových dat</span></div>
+    <div class="act-grid" id="act-grid"></div>
   </div>
 
   <div id="fav-row"></div>
@@ -154,7 +186,23 @@
     <div class="fc7-grid" id="fc7-grid"></div>
   </div>
   <div class="aq-panel" id="aq-panel"></div>
+  <!-- Astro — slunce, měsíc, kvalita noci -->
+  <div id="astro-panel">
+    <div class="astro-title">Obloha &amp; astro</div>
+    <div id="astro-body"></div>
+  </div>
+  <!-- Zimní panel — jen v sezóně (sníh, náledí) -->
+  <div id="winter-panel">
+    <div class="astro-title">❄️ Zimní podmínky</div>
+    <div id="winter-body"></div>
+  </div>
 </div>
+
+<!-- Offline stav (service worker) -->
+<div id="offline-badge"><i></i><span id="offline-text">Offline — ukazuji poslední data</span></div>
+
+<!-- Blesky — nejbližší úder -->
+<div id="lightning-chip">⚡ poslední blesk <b id="lightning-dist">—</b>&nbsp;<span id="lightning-age" style="color:var(--muted)"></span></div>
 
 <!-- ČHMÚ detail panel -->
 <div id="chmi-detail">
