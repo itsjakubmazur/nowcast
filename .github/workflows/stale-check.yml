@@ -28,12 +28,7 @@ jobs:
             echo "reason=generated_at_utc chybí v manifestu" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          AGE_MIN=$(python3 -c "
-from datetime import datetime, timezone
-gen = datetime.fromisoformat('$GEN'.replace('Z','+00:00'))
-now = datetime.now(timezone.utc)
-print(int((now-gen).total_seconds()//60))
-")
+          AGE_MIN=$(python3 -c "from datetime import datetime, timezone; gen = datetime.fromisoformat('$GEN'.replace('Z','+00:00')); now = datetime.now(timezone.utc); print(int((now-gen).total_seconds()//60))")
           echo "Stáří dat: $AGE_MIN minut"
           if [ "$AGE_MIN" -gt 60 ]; then
             echo "stale=true" >> "$GITHUB_OUTPUT"
