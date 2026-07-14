@@ -447,27 +447,26 @@ button.glass-btn.icon-only { padding: 0; width: 32px; justify-content: center; }
 .fc24-scroll::-webkit-scrollbar { height: 3px; }
 .fc24-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
 .fc24-col {
-  flex: 0 0 auto; min-width: 56px; max-width: 68px;
+  flex: 0 0 auto; min-width: 60px; max-width: 74px;
   text-align: center; padding: .3rem .18rem;
   border-right: 1px solid var(--border);
+  overflow: hidden; /* pojistka — obsah nikdy nepřeteče do sousedního sloupce */
 }
 .fc24-col:last-child { border-right: none; }
-.fc24-col.fc24-block { min-width: 78px; max-width: 94px; }
+.fc24-col.fc24-block { min-width: 82px; max-width: 98px; }
 .fc24-time    { font-size: .7rem; color: var(--muted); margin-bottom: .15rem; }
 .fc24-icon    { font-size: 1.6rem; line-height: 1.2; }
-.fc24-icon svg { width: 26px; height: 26px; }
+.fc24-icon svg { width: 24px; height: 24px; }
 .wc-emoji     { font-style: normal; line-height: 1; }
-.fc24-temp    { font-size: .8rem; font-weight: 600; margin-top: .12rem; color: var(--text); }
-.fc24-feels   { font-size: .68rem; color: var(--muted); }
-.fc24-uv      { font-size: .68rem; font-weight: 600; }
+.fc24-temp    { font-size: .82rem; font-weight: 600; margin-top: .12rem; color: var(--text); }
 .uv-low    { color: #22c55e; }
 .uv-mod    { color: #f59e0b; }
 .uv-high   { color: #ef4444; }
 .uv-vhigh  { color: #7c3aed; }
 .fc24-range { font-size: .74rem; color: var(--muted); }
-.fc24-sub   { font-size: .68rem; color: var(--muted); margin-top: .08rem; white-space: nowrap; }
-.fc24-prec  { color: #4f8ef7; }
-.fc24-wind  { color: #7d8aa3; }
+.fc24-sub   { font-size: .68rem; color: var(--muted); margin-top: .12rem;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fc24-prec  { color: #4f8ef7; min-height: 1.1em; }
 .fc24-sep   { flex: 0 0 1px; align-self: stretch; background: var(--border); margin: 0 2px; display: flex; align-items: center; justify-content: center; }
 .fc24-sep-label { writing-mode: vertical-rl; font-size: .6rem; color: var(--border); white-space: nowrap; }
 

@@ -171,21 +171,21 @@ export function renderFc24(fc, label) {
   document.getElementById("fc24-place").textContent = label || "—";
   scroll.innerHTML = "";
 
+  // Kompaktní pruh úmyslně ukazuje JEN čas/ikonu/teplotu/srážky — vítr, UV a
+  // CAPE jsou k vidění v "Teď" statistikách a v meteogramu. Nacpat všechno
+  // do 56–68px sloupce dřív přetékalo mimo sloupec a překrývalo sousední
+  // hodiny (viz oprava — bylo nečitelné).
   for (const h of fc.hourly) {
     const col = document.createElement("div");
     col.className = "fc24-col";
-    const feelsStr = h.feelsDiff != null && Math.abs(h.feelsDiff) >= 2
-      ? `<span class="fc24-feels">(${h.feelsDiff > 0 ? "+" : ""}${h.feelsDiff}°)</span>` : "";
-    const uvStr = h.uv != null && h.uv >= 1
-      ? `<span class="fc24-uv ${uvClass(h.uv)}">UV${Math.round(h.uv)}</span>` : "";
-    const capeStr = h.cape != null && h.cape >= 200
-      ? `<span class="cape-badge ${h.cape >= 1000 ? "cape-high" : h.cape >= 500 ? "cape-mod" : "cape-low"}">⚡${h.cape >= 1000 ? "silné" : h.cape >= 500 ? "střední" : "nízké"}</span>` : "";
+    const precStr = h.precip > 0
+      ? `${h.precip}mm`
+      : h.prob >= 15 ? `${h.prob}%` : "";
     col.innerHTML = `
       <div class="fc24-time">${esc(h.t)}</div>
       <div class="fc24-icon">${wcIconSvg(h.wc, parseInt(h.t))}</div>
-      <div class="fc24-temp">${h.temp != null ? h.temp + "°" : "—"}${feelsStr}</div>
-      <div class="fc24-sub fc24-prec">${h.prob > 0 ? `<span>${h.prob}%</span>` : ""}${h.precip > 0 ? ` <span>${h.precip}mm</span>` : ""}</div>
-      <div class="fc24-sub fc24-wind">${h.wind > 0 ? `<span>${h.wind}km/h</span>` : ""}${uvStr}${capeStr}</div>`;
+      <div class="fc24-temp">${h.temp != null ? h.temp + "°" : "—"}</div>
+      <div class="fc24-sub fc24-prec">${esc(precStr)}</div>`;
     scroll.appendChild(col);
   }
 
@@ -199,12 +199,14 @@ export function renderFc24(fc, label) {
     const col = document.createElement("div");
     col.className = "fc24-col fc24-block";
     const tRange = b.tmin != null ? `${b.tmin}–${b.tmax}°` : "—";
+    const precStr = b.precip > 0
+      ? `${b.prob}% ${b.precip}mm`
+      : b.prob >= 15 ? `${b.prob}%` : "";
     col.innerHTML = `
       <div class="fc24-time">${esc(b.t)}</div>
       <div class="fc24-icon">${wcIconSvg(b.wc, parseInt(b.t))}</div>
       <div class="fc24-range">${esc(tRange)}</div>
-      <div class="fc24-sub">${b.prob > 0 ? `<span class="fc24-prec">${b.prob}%</span>` : ""}${b.precip > 0 ? ` <span class="fc24-prec">${b.precip}mm</span>` : ""}</div>
-      <div class="fc24-sub fc24-wind">${b.gust > 0 ? `<span>${b.gust}km/h</span>` : ""}</div>`;
+      <div class="fc24-sub fc24-prec">${esc(precStr)}</div>`;
     scroll.appendChild(col);
   }
 

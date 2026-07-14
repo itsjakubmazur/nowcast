@@ -231,6 +231,13 @@ async function main() {
   const fc24cols = await page.locator(".fc24-col").count();
   assertTrue(fc24cols > 0, `fc24 strip vykreslil ${fc24cols} sloupců`);
 
+  // Chytilo reálný bug: obsah sloupce (vítr+UV+CAPE na jednom řádku)
+  // přetékal mimo úzký sloupec a překrýval sousední hodiny.
+  const fc24Overflow = await page.evaluate(() =>
+    [...document.querySelectorAll(".fc24-col")].some(col => col.scrollWidth > col.clientWidth + 1)
+  );
+  assertTrue(!fc24Overflow, "obsah fc24 sloupců nepřetéká mimo sloupec");
+
   await page.waitForSelector("#meteo-block.show canvas#meteo-canvas", { timeout: 5000 });
   assertTrue(true, "meteogram se vykreslil (canvas existuje)");
 
