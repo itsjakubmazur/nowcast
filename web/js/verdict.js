@@ -164,7 +164,9 @@ function _tickCountdown() {
 }
 
 // ── AI verdikt (Cloudflare Worker, cachovaný) ────────────────────────────────
-const AI_CACHE_KEY = "nowcast_ai_verdict_cache";
+// Verzi zvyš při každé změně promptu/formátu na workeru — jinak stará
+// (třeba uťatá) odpověď přežije v localStorage i po opravě serveru.
+const AI_CACHE_KEY = "nowcast_ai_verdict_cache_v2";
 const AI_CACHE_TTL_MS = 15 * 60 * 1000;
 
 function aiCacheGet(key) {

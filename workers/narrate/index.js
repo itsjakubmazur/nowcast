@@ -33,6 +33,9 @@ STYL:
 - Teploty: celé °C, pocitovou jen pokud se liší o ≥3°C.`;
 
 const CACHE_TTL_S = 600;              // edge cache pro /verdict
+// Zvyš při každé změně SYSTEM_PROMPT / buildPrompt / generationConfig —
+// jinak stará (třeba uťatá) odpověď přežije v edge cache i nový deploy.
+const CACHE_VERSION = "v2";
 const PUSH_SNOOZE_MS = 30 * 60 * 1000;     // 30 min mezi upozorněními na stejné místo
 const WARN_SNOOZE_MS = 60 * 60 * 1000;     // 60 min pro výstrahy
 const RAIN_THRESHOLD_MM_H = 0.1;
@@ -89,7 +92,7 @@ async function handleVerdict(request, url, env, ctx) {
   const rlat = lat.toFixed(2);
   const rlon = lon.toFixed(2);
   const cacheKey = new Request(
-    `https://cache.internal/verdict?lat=${rlat}&lon=${rlon}`,
+    `https://cache.internal/verdict?v=${CACHE_VERSION}&lat=${rlat}&lon=${rlon}`,
     { method: "GET" }
   );
   const cache = caches.default;
