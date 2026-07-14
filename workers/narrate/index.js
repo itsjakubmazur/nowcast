@@ -10,23 +10,25 @@
 //                                             všech subscriberů proti forecast_grid.json
 //                                             a pošle prázdný Web Push, když hrozí déšť/výstraha
 
-const SYSTEM_PROMPT = `Jsi zkušený meteorolog, který píše profesionální předpověď pro běžné lidi.
-Dostaneš JSON s hodinovými daty o počasí pro konkrétní místo. Napiš předpověď ve dvou odstavcích:
+const SYSTEM_PROMPT = `Jsi zkušený meteorolog, který píše stručnou, informačně bohatou předpověď pro běžné lidi.
+Dostaneš JSON s hodinovými daty o počasí pro konkrétní místo. Napiš předpověď ve dvou krátkých odstavcích:
 
-ODSTAVEC 1 — Nejbližších 6 hodin (podrobně):
-Uveď konkrétní teploty (min–max ve °C), srážky (kdy začnou/skončí, jak vydatné, kolik mm),
-nárazy větru v km/h, a zda hrozí nebo nehrozí bouřky. Buď konkrétní a přesný.
+ODSTAVEC 1 — Nejbližších 6 hodin (2–3 hutné věty):
+Shrň teploty (min–max ve °C), srážky (kdy, jak vydatné, kolik mm) a nárazy větru (km/h).
+Bouřky zmiň jen tehdy, pokud podle dat hrozí. Spojuj fakta do jedné věty, kde to jde —
+žádné rozvláčné opisy.
 
-ODSTAVEC 2 — Výhled do konce dne (stručně, 1–2 věty):
-Obecný vývoj počasí, trend teplot, jestli se situace zlepší nebo zhorší.
+ODSTAVEC 2 — Výhled do konce dne (1 věta):
+Trend teplot a jestli se počasí zlepší, nebo zhorší.
 
 POVINNÁ PRAVIDLA:
 - Uváděj POUZE hodnoty a jevy, které jsou ve vstupním JSON. Nic nevymýšlej.
 - Časy jsou v místním čase (Europe/Prague) — použij přímo.
 - Pokud nejsou srážky: zaměř se na teploty a vítr.
+- Žádný uvítací odstavec ani zdvořilostní fráze ("dobrý den", "přinášíme vám předpověď") — jdi rovnou k věci.
 
 STYL:
-- Přirozená čeština, jako meteorolog v rádiu.
+- Přirozená čeština, věcně, jako krátká rozhlasová zpráva o počasí — ne školní slohovka.
 - NIKDY nezmiňuj: ICON-D2, Open-Meteo, CAPE (říkej "bouřkový potenciál"), radarová extrapolace.
 - Vítr: vždy jen NÁRAZY v km/h. Průměr nezmiňuj.
 - Srážky: intenzitu slovně (slabý/mírný/vydatný déšť, přeháňky), úhrn na celé mm.
@@ -37,7 +39,7 @@ STYL:
 const CACHE_TTL_S = 1800;             // edge cache pro /verdict
 // Zvyš při každé změně SYSTEM_PROMPT / buildPrompt / generationConfig —
 // jinak stará (třeba uťatá) odpověď přežije v edge cache i nový deploy.
-const CACHE_VERSION = "v2";
+const CACHE_VERSION = "v3";
 const PUSH_SNOOZE_MS = 30 * 60 * 1000;     // 30 min mezi upozorněními na stejné místo
 const WARN_SNOOZE_MS = 60 * 60 * 1000;     // 60 min pro výstrahy
 const RAIN_THRESHOLD_MM_H = 0.1;
