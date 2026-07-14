@@ -167,7 +167,7 @@ function _tickCountdown() {
 // Verzi zvyš při každé změně promptu/formátu na workeru — jinak stará
 // (třeba uťatá) odpověď přežije v localStorage i po opravě serveru.
 const AI_CACHE_KEY = "nowcast_ai_verdict_cache_v2";
-const AI_CACHE_TTL_MS = 15 * 60 * 1000;
+const AI_CACHE_TTL_MS = 30 * 60 * 1000; // ať odpovídá edge cache TTL na workeru
 
 function aiCacheGet(key) {
   try {
@@ -191,11 +191,7 @@ function aiCacheSet(key, text) {
   } catch { /* ignore */ }
 }
 
-export async function fetchAiVerdict(lat, lon, label) {
-  const key = `${lat.toFixed(2)},${lon.toFixed(2)}`;
-  const cached = aiCacheGet(key);
-  if (cached) return cached;
-
+async function fetchAiVerdictAttempt(lat, lon, label) {
   state.verdictCtrl?.abort();
   const ctrl = new AbortController();
   state.verdictCtrl = ctrl;
@@ -204,14 +200,33 @@ export async function fetchAiVerdict(lat, lon, label) {
     const url = `${WORKER_BASE}/verdict?lat=${lat.toFixed(4)}&lon=${lon.toFixed(4)}&label=${encodeURIComponent(label || "")}`;
     const r = await fetch(url, { signal: ctrl.signal });
     clearTimeout(timer);
-    if (!r.ok) return null;
+    if (!r.ok) {
+      console.warn(`AI verdikt: worker vrátil HTTP ${r.status}`, await r.text().catch(() => ""));
+      return null;
+    }
     const data = await r.json();
-    if (data.text) { aiCacheSet(key, data.text); return data.text; }
-    return null;
-  } catch {
+    return data.text || null;
+  } catch (e) {
     clearTimeout(timer);
+    if (e.name !== "AbortError") console.warn("AI verdikt: fetch selhal", e);
     return null;
   }
+}
+
+export async function fetchAiVerdict(lat, lon, label) {
+  const key = `${lat.toFixed(2)},${lon.toFixed(2)}`;
+  const cached = aiCacheGet(key);
+  if (cached) return cached;
+
+  // Free-tier Gemini kvóta občas hodí 429/5xx na jeden pokus — jeden rychlý
+  // retry to většinou spolehlivě zachrání, aniž by to uživatel poznal.
+  let text = await fetchAiVerdictAttempt(lat, lon, label);
+  if (!text) {
+    await new Promise(res => setTimeout(res, 1200));
+    text = await fetchAiVerdictAttempt(lat, lon, label);
+  }
+  if (text) aiCacheSet(key, text);
+  return text;
 }
 
 export function renderVerdictText(chips, templateText, aiText) {

@@ -23,7 +23,7 @@ import {
   loadFavs, renderFavRow, updateFavBtn, saveLastLocation, loadLastLocation,
   checkRainNotifications, clearRainSnooze, initPushButton,
 } from "./favorites.js";
-import { initSearch } from "./search.js";
+import { initSearch, reverseGeocode } from "./search.js";
 import { shareCurrentView, copyEmbedLink, initEmbedMode } from "./share.js";
 import { esc } from "./utils.js";
 
@@ -258,7 +258,16 @@ window.addEventListener("DOMContentLoaded", async () => {
     const btn = document.getElementById("geo");
     btn.textContent = "📍 Zjišťuji…"; btn.disabled = true;
     navigator.geolocation.getCurrentPosition(
-      p => { btn.textContent = "📍"; btn.disabled = false; showForecast(p.coords.latitude, p.coords.longitude, "Moje poloha"); },
+      async p => {
+        const { latitude, longitude } = p.coords;
+        let label = "Moje poloha";
+        try {
+          const name = await reverseGeocode(latitude, longitude);
+          if (name) label = name;
+        } catch { /* fallback na "Moje poloha" */ }
+        btn.textContent = "📍"; btn.disabled = false;
+        showForecast(latitude, longitude, label);
+      },
       () => { btn.textContent = "📍"; btn.disabled = false; showToast("Polohu se nepodařilo zjistit."); },
       { timeout: 10000 }
     );

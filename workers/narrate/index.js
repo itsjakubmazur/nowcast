@@ -32,7 +32,9 @@ STYL:
 - Srážky: intenzitu slovně (slabý/mírný/vydatný déšť, přeháňky), úhrn na celé mm.
 - Teploty: celé °C, pocitovou jen pokud se liší o ≥3°C.`;
 
-const CACHE_TTL_S = 600;              // edge cache pro /verdict
+// 30 min místo 10 — Gemini free-tier kvóta je denní/RPM limit, tak ať
+// stejné místo nespotřebovává nový request při každém druhém načtení.
+const CACHE_TTL_S = 1800;             // edge cache pro /verdict
 // Zvyš při každé změně SYSTEM_PROMPT / buildPrompt / generationConfig —
 // jinak stará (třeba uťatá) odpověď přežije v edge cache i nový deploy.
 const CACHE_VERSION = "v2";

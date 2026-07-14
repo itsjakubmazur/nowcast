@@ -18,6 +18,27 @@ export async function geocode(q) {
   return (await r.json()).results || [];
 }
 
+// Reverzní geokódování pro GPS tlačítko — ať se místo "Moje poloha" ukáže
+// skutečný název obce. Nominatim (OSM), žádný klíč netřeba.
+export async function reverseGeocode(lat, lon) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 6000);
+  try {
+    const r = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}&zoom=12&accept-language=cs`,
+      { signal: ctrl.signal }
+    );
+    clearTimeout(timer);
+    if (!r.ok) return null;
+    const data = await r.json();
+    const a = data.address || {};
+    return a.city || a.town || a.village || a.municipality || a.suburb || a.county || null;
+  } catch {
+    clearTimeout(timer);
+    return null;
+  }
+}
+
 export function initSearch(onSelect) {
   const input = document.getElementById("search");
   const ul = document.getElementById("suggestions");
