@@ -202,8 +202,13 @@ function buildPrompt(om, label) {
     outlook.push(slice);
   }
 
+  // Generické placeholdery (např. tlačítko "Moje poloha") nejsou skutečný název
+  // místa — kdyby to šlo do promptu takhle doslova, model by si "Moje poloha"
+  // spletl s reálným toponymem. Radši spadni na souřadnice.
+  const isGenericLabel = !label || /^(moje poloha|aktuální poloha|vybrané místo)$/i.test(label.trim());
+
   return JSON.stringify({
-    misto: label || `${lat.toFixed(2)}°N ${lon.toFixed(2)}°E`,
+    misto: isGenericLabel ? `${lat.toFixed(2)}°N ${lon.toFixed(2)}°E` : label,
     detail_0_6h: detail,
     vyhled_zbytek_dne: outlook,
   }, null, 2);
@@ -214,7 +219,13 @@ async function callGemini(prompt, apiKey) {
   const body = {
     system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
     contents: [{ parts: [{ text: prompt }] }],
-    generationConfig: { maxOutputTokens: 1200, temperature: 0.2 },
+    // thinkingBudget: 0 — bez toho si gemini-2.5-flash "myšlením" ukrajuje
+    // z maxOutputTokens a odpověď pak přijde uťatá uprostřed věty.
+    generationConfig: {
+      maxOutputTokens: 1200,
+      temperature: 0.2,
+      thinkingConfig: { thinkingBudget: 0 },
+    },
   };
   const r = await fetch(url, {
     method: "POST",
