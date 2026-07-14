@@ -224,6 +224,9 @@ button.glass-btn svg { width: 17px; height: 17px; display: block; }
 #alert-bar.show { display: flex; }
 #alert-bar .warn-chip { margin: 0; }
 
+/* úchyt sheetu — viditelný jen na mobilu */
+#sheet-grabber { display: none; }
+
 /* ── Left floating card ─────────────────────────────────────────────────── */
 #left-card {
   position: fixed; left: 12px; top: 100px; bottom: calc(var(--radar-bar-h) + 20px);
@@ -982,11 +985,15 @@ body.embed #left-card { bottom: 1rem; }
   }
   body > * { order: 10; }
 
-  /* mapa zůstává fixní vzadu, obsah po ní roluje */
+  :root { --sheet-top: 40vh; }
+
+  /* mapa zůstává fixní vzadu, obsah po ní roluje; výška kopíruje polohu
+     sheetu (+6vh přesah pod něj), takže zoom ovládání zůstává viditelné */
   #map {
-    position: fixed; inset: 0 0 auto 0; height: 46vh; width: 100%;
+    position: fixed; inset: 0 0 auto 0; height: calc(var(--sheet-top) + 6vh); width: 100%;
     filter: none; z-index: 0;
   }
+  .leaflet-bottom.leaflet-right { bottom: calc(6vh + 8px); }
   #topbar {
     position: fixed; top: 0; left: 0; right: 0;
     padding: 8px 8px 0; gap: .4rem;
@@ -1002,14 +1009,18 @@ body.embed #left-card { bottom: 1rem; }
     order: 1;
     position: relative; left: auto; top: auto; bottom: auto;
     width: auto; height: auto;
-    margin: 40vh 0 0; border-radius: 28px 28px 0 0;
+    margin: var(--sheet-top) 0 0; border-radius: 28px 28px 0 0;
     overflow: visible;
     z-index: 10;
   }
-  #left-card::before {
-    content: ""; display: block; width: 2.6rem; height: .3rem;
-    border-radius: 999px; background: var(--muted); opacity: .4;
-    margin: .5rem auto 0;
+  #sheet-grabber {
+    display: flex; justify-content: center; align-items: center;
+    padding: .55rem 0 .3rem; cursor: grab;
+    touch-action: none; /* tažení úchytu nesmí rolovat stránku */
+  }
+  #sheet-grabber i {
+    width: 2.6rem; height: .3rem; border-radius: 999px;
+    background: var(--muted); opacity: .45;
   }
   #right-panel {
     order: 2;

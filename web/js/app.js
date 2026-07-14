@@ -198,6 +198,55 @@ function showForecast(lat, lon, label) {
   history.replaceState(null, "", u);
 }
 
+// ── Mobilní sheet — tažením za úchyt zvětšíš mapu, klepnutím přepneš ────────
+function initSheetDrag() {
+  const grabber = document.getElementById("sheet-grabber");
+  if (!grabber || !window.matchMedia("(max-width: 768px)").matches) return;
+
+  const SNAPS = [26, 40, 74]; // vh: velký přehled / výchozí / velká mapa
+  let startY = 0, startVh = 40, dragging = false, moved = false;
+
+  const getVh = () => {
+    const v = getComputedStyle(document.documentElement).getPropertyValue("--sheet-top").trim();
+    return v.endsWith("vh") ? parseFloat(v) : 40;
+  };
+  const setVh = vh => {
+    document.documentElement.style.setProperty("--sheet-top", vh + "vh");
+  };
+  const settle = () => {
+    // Leaflet potřebuje vědět, že se mu změnila výška kontejneru
+    state.map?.invalidateSize();
+  };
+
+  grabber.addEventListener("pointerdown", e => {
+    dragging = true; moved = false;
+    startY = e.clientY;
+    startVh = getVh();
+    grabber.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  });
+  grabber.addEventListener("pointermove", e => {
+    if (!dragging) return;
+    const dvh = (e.clientY - startY) / window.innerHeight * 100;
+    if (Math.abs(dvh) > 1.5) moved = true;
+    setVh(Math.min(80, Math.max(20, startVh + dvh)));
+  });
+  grabber.addEventListener("pointerup", () => {
+    if (!dragging) return;
+    dragging = false;
+    if (!moved) {
+      // klepnutí = přepnutí výchozí ↔ velká mapa
+      setVh(getVh() < 55 ? 74 : 40);
+    } else {
+      const cur = getVh();
+      const snap = SNAPS.reduce((a, b) => Math.abs(b - cur) < Math.abs(a - cur) ? b : a);
+      setVh(snap);
+    }
+    settle();
+  });
+  grabber.addEventListener("pointercancel", () => { dragging = false; settle(); });
+}
+
 // ── Offline badge — jasně říct, že koukáš na stará data ─────────────────────
 function initOfflineBadge() {
   const badge = document.getElementById("offline-badge");
@@ -269,6 +318,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   initAiAsk();
   initLightning();
   initOfflineBadge();
+  initSheetDrag();
 
   // ── Radar ovládání ────────────────────────────────────────────────────────
   document.getElementById("timeline").addEventListener("input", e => {

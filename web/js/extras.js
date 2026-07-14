@@ -47,6 +47,9 @@ export function renderMinutely(ptId, minutely) {
   if (!vals || !vals.some(v => v != null)) { panel.classList.remove("show"); return; }
 
   const known = vals.filter(v => v != null);
+  // Když je celých 120 minut sucho, graf nic neříká — countdown karta
+  // ("Nejbližší 2 h bez srážek") to komunikuje líp. Ukazuj jen když prší.
+  if (Math.max(...known) < 0.05) { panel.classList.remove("show"); return; }
   const maxV = Math.max(...known, 1.5);
   barsEl.innerHTML = vals.map(v => {
     if (v == null || v < 0.05) return `<i class="dry"></i>`;
