@@ -317,19 +317,24 @@ function _drawRainSparkCanvas(ptId, wrap, canvas) {
   ctx.fillText("nowcast →", t0x + 4, 12);
 }
 
-// ── Výška radar-baru → CSS var, ať layer-selector/legenda/storm-bar nikdy
-//    nesedí "pod" ním (viz --radar-bar-h v app.css) — místo hádaného pixelu
-//    měříme skutečnou vykreslenou výšku a reagujeme na její změny (wrap řádků
-//    na užších oknech, zobrazení sparkline, …). ─────────────────────────────
-export function observeRadarBarHeight() {
-  const bar = document.getElementById("radar-bar");
-  if (!bar || typeof ResizeObserver === "undefined") return;
+// ── Výška fixed panelů → CSS vars, ať se navzájem nikdy nepřekrývají (viz
+//    --radar-bar-h/--layer-selector-h v app.css) — místo hádaných pixelů
+//    měříme skutečnou vykreslenou výšku a reagujeme na její změny (wrap
+//    řádků na užších oknech, zobrazení sparkline, …). ─────────────────────
+function observeHeightVar(elId, cssVar, fallbackPx) {
+  const el = document.getElementById(elId);
+  if (!el || typeof ResizeObserver === "undefined") return;
   const apply = () => {
-    const h = bar.offsetHeight || 88;
-    document.documentElement.style.setProperty("--radar-bar-h", `${h}px`);
+    const h = el.offsetHeight || fallbackPx;
+    document.documentElement.style.setProperty(cssVar, `${h}px`);
   };
-  new ResizeObserver(apply).observe(bar);
+  new ResizeObserver(apply).observe(el);
   apply();
+}
+
+export function observeRadarBarHeight() {
+  observeHeightVar("radar-bar", "--radar-bar-h", 88);
+  observeHeightVar("layer-selector", "--layer-selector-h", 36);
 }
 
 // ── Manifest UI ────────────────────────────────────────────────────────────

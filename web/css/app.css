@@ -10,6 +10,7 @@
   --t0-color: #f59e0b;
   --card: rgba(12,16,28,.85);
   --radar-bar-h: 88px; /* reálná výška #radar-bar — nastavuje JS (ResizeObserver), aby se s ním layer-selector/legenda nikdy nepřekrývaly */
+  --layer-selector-h: 36px; /* reálná výška #layer-selector — legenda se skládá nad ni, ne přes levou kartu */
 }
 
 /* Systémová světlá preference vyhraje JEN pokud uživatel motiv ručně nepřepnul
@@ -528,8 +529,14 @@ button.glass-btn.icon-only { padding: 0; width: 32px; justify-content: center; }
 .aq-poor { background:#f97316; } .aq-verypoor { background:#ef4444; } .aq-extreme { background:#7c3aed; }
 
 /* ── Legenda radaru ───────────────────────────────────────────────────── */
+/* left: 284px = stejný sloupec jako #layer-selector (mimo levou kartu,
+   která má vlastní left:1rem a zabírá stejnou vertikální oblast — dřív se
+   legenda kreslila přes její spodní karty). Skládá se NAD layer-selector,
+   ne přes něj — obě výšky se měří živě (viz observeRadarBarHeight). */
 #radar-legend {
-  position: fixed; bottom: calc(var(--radar-bar-h) + 12px); left: 1rem; z-index: 110;
+  position: fixed;
+  bottom: calc(var(--radar-bar-h) + var(--layer-selector-h) + 20px);
+  left: 284px; z-index: 110;
   background: var(--panel); backdrop-filter: blur(10px);
   border: 1px solid var(--border); border-radius: 10px;
   padding: .4rem .6rem .5rem; display: none;

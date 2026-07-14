@@ -264,6 +264,25 @@ async function main() {
   await page.waitForSelector("#radar-legend.show", { timeout: 3000 });
   assertTrue(true, "legenda radaru se zobrazila");
 
+  // ── Žádné neúmyslné překryvy fixed panelů (chytilo reálný bug: legenda
+  //    se dřív kreslila přes spodní karty v #left-card) ─────────────────────
+  const overlapPairs = [
+    ["#radar-legend", "#left-card"],
+    ["#layer-selector", "#left-card"],
+    ["#radar-legend", "#layer-selector"],
+    ["#storm-bar", "#right-panel"],
+  ];
+  for (const [selA, selB] of overlapPairs) {
+    const overlap = await page.evaluate(([a, b]) => {
+      const elA = document.querySelector(a), elB = document.querySelector(b);
+      if (!elA || !elB) return null;
+      const ra = elA.getBoundingClientRect(), rb = elB.getBoundingClientRect();
+      if (ra.width === 0 || ra.height === 0 || rb.width === 0 || rb.height === 0) return false;
+      return !(ra.right <= rb.left || ra.left >= rb.right || ra.bottom <= rb.top || ra.top >= rb.bottom);
+    }, [selA, selB]);
+    assertTrue(overlap !== true, `${selA} se nepřekrývá s ${selB}`);
+  }
+
   // ── Vrstvový selektor ČHMÚ ────────────────────────────────────────────────
   await page.click('.layer-btn[data-layer="wind_kmh"]');
   const activeLayer = await page.getAttribute('.layer-btn[data-layer="wind_kmh"]', "class");
