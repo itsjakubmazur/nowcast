@@ -85,6 +85,9 @@ async function showFc24(lat, lon, label) {
     if (e.name === "AbortError") return;
     scroll.innerHTML = `<div style="padding:.6rem 1rem;color:var(--muted);font-size:.85rem">Předpověď se nepodařilo načíst (${esc(e.message)}).</div>`;
     document.getElementById("fc7").style.display = "none";
+    // Bez tohohle zůstane levá karta navždy zaseknutá na "Načítám předpověď…"
+    // ze showForecast, protože se sem nikdy nedostane renderLocationVerdict.
+    renderVerdictText("", `<span style="color:var(--muted)">Předpověď se nepodařilo načíst. Zkus obnovit stránku.</span>`, null);
   }
 }
 

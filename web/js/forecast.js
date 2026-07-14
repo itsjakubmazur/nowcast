@@ -432,7 +432,21 @@ export async function fetchOpenMeteo(lat, lon, signal) {
     + `&minutely_15=precipitation,rain,snowfall,windspeed_10m,windgusts_10m,winddirection_10m,cape`
     + `&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,wind_gusts_10m_max,uv_index_max,sunrise,sunset`
     + `&forecast_days=7&timezone=Europe%2FPrague`;
-  const r = await fetch(url, { signal });
-  if (!r.ok) throw new Error(`HTTP ${r.status}`);
-  return r.json();
+
+  // Bez vlastního timeoutu umí fetch na slabším mobilním signálu viset
+  // donekonečna a volající strana (showFc24) pak zůstane navždy na
+  // "Načítám předpověď…", protože se nikdy nedostane do catch bloku.
+  const ctrl = new AbortController();
+  const onAbort = () => ctrl.abort(signal.reason);
+  signal?.addEventListener("abort", onAbort);
+  const timer = setTimeout(() => ctrl.abort(new Error("Open-Meteo neodpověděl do 15 s")), 15000);
+
+  try {
+    const r = await fetch(url, { signal: ctrl.signal });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return await r.json();
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener("abort", onAbort);
+  }
 }
