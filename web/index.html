@@ -65,7 +65,7 @@
     </div>
     <div id="frame-time" style="min-width:60px;text-align:center">—</div>
     <span id="radar-t0" style="font-size:.78rem;font-weight:600;color:var(--text)"></span>
-    <div style="margin-left:auto;display:flex;align-items:center;gap:.5rem">
+    <div class="opacity-group" style="margin-left:auto;display:flex;align-items:center;gap:.5rem">
       <label for="opacity-slider">Průhlednost</label>
       <input type="range" id="opacity-slider" min="0" max="100" value="70" style="width:70px" />
       <span id="opacity-val" style="font-size:.72rem;color:var(--muted);min-width:30px">70 %</span>
@@ -108,10 +108,11 @@
 <!-- Výstrahy ČHMÚ — první informace dne, vždy nahoře pod topbarem -->
 <div id="alert-bar" role="button" tabindex="0" aria-label="Aktivní výstrahy"></div>
 
+<!-- úchyt sheetu — jen mobil: tažením dolů zvětšíš mapu, klepnutím přepneš -->
+<div id="sheet-grabber" aria-hidden="true"><i></i></div>
+
 <!-- Levá floating karta -->
 <div id="left-card">
-  <!-- úchyt sheetu — jen mobil: tažením dolů zvětšíš mapu, klepnutím přepneš -->
-  <div id="sheet-grabber" aria-hidden="true"><i></i></div>
   <div id="wu-own-panel"></div>
 
   <!-- Hero countdown -->
