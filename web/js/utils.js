@@ -64,6 +64,18 @@ export function beaufortLabel(kmh) {
   return "Beaufort 12 · Orkán";
 }
 
+// Nahradí obsah elementu s krátkým fade-in — místo "naskočení" hotového
+// obsahu (typicky přes skeleton placeholder) se nový obsah zjeví plynule.
+// Element musí mít definovanou transition na opacity (viz .fade-swap v CSS).
+export function revealSwap(el, html) {
+  if (!el) return;
+  el.classList.add("fade-swap");
+  el.style.opacity = "0";
+  el.innerHTML = html;
+  void el.offsetWidth; // vynutí reflow, ať se přechod skutečně přehraje
+  requestAnimationFrame(() => { el.style.opacity = "1"; });
+}
+
 export function debounce(fn, ms) {
   let t = null;
   return (...args) => {

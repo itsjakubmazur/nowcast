@@ -25,6 +25,7 @@ const STATIC_ASSETS = [
   "./js/search.js",
   "./js/share.js",
   "./js/extras.js",
+  "./js/skeleton.js",
   "./js/climate.js",
   "./js/lightning.js",
   "./icon.svg",

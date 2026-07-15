@@ -109,6 +109,27 @@ button, input { font-family: inherit; }
 img.wicon { filter: var(--wicon-shadow); vertical-align: middle; }
 .winline { width: 15px; height: 15px; vertical-align: -3px; }
 
+/* ── Skeleton placeholdery (lazy-load karet pod scrollem) ──────────────── */
+@keyframes skel-shimmer {
+  0%   { background-position: -140% 0; }
+  100% { background-position: 240% 0; }
+}
+.skel {
+  display: inline-block; border-radius: 7px; vertical-align: middle;
+  background: linear-gradient(100deg,
+    var(--rowline) 20%,
+    color-mix(in srgb, var(--text) 14%, var(--rowline)) 44%,
+    var(--rowline) 68%);
+  background-size: 250% 100%;
+  animation: skel-shimmer 1.5s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .skel { animation: none; opacity: .5; }
+}
+
+/* fade-in přechod pro obsah, který nahrazuje skeleton (viz revealSwap) */
+.fade-swap { transition: opacity .32s ease; }
+
 /* ── Glass mixin — sdílený vzhled všech plovoucích vrstev ───────────────── */
 #left-card, #right-panel, #radar-bar-inner, #storm-bar, #radar-legend,
 .layer-btn, button.glass-btn, .search-wrap, #suggestions, .logo,

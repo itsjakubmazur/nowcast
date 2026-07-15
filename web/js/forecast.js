@@ -1,6 +1,6 @@
 import { state } from "./state.js";
 import { wcIconSvg, wcLabel, mostSevere, wImg } from "./icons.js";
-import { uvClass, esc } from "./utils.js";
+import { uvClass, esc, revealSwap } from "./utils.js";
 import { isDarkTheme } from "./theme.js";
 
 const N_HOURLY = 6;
@@ -171,6 +171,10 @@ export function renderFc24(fc, label) {
   const el = document.getElementById("fc24");
   const scroll = document.getElementById("fc24-scroll");
   document.getElementById("fc24-place").textContent = label || "—";
+  // Fade-out skeletonu → fade-in skutečného obsahu (viz revealSwap v utils.js,
+  // tady je to natvrdo protože se staví přes appendChild, ne přes jeden innerHTML).
+  scroll.classList.add("fade-swap");
+  scroll.style.opacity = "0";
   scroll.innerHTML = "";
 
   // Kompaktní pruh úmyslně ukazuje JEN čas/ikonu/teplotu/srážky — vítr, UV a
@@ -213,6 +217,8 @@ export function renderFc24(fc, label) {
   }
 
   el.style.display = "block";
+  void scroll.offsetWidth;
+  requestAnimationFrame(() => { scroll.style.opacity = "1"; });
 }
 
 const CZ_DAYS = ["Ne", "Po", "Út", "St", "Čt", "Pá", "So"];
@@ -226,6 +232,8 @@ export function renderFc7(data, label) {
   if (!dates.length) { el.style.display = "none"; return; }
 
   document.getElementById("fc7-place").textContent = label || "—";
+  grid.classList.add("fade-swap");
+  grid.style.opacity = "0";
   grid.innerHTML = "";
   const todayStr = new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Prague" });
 
@@ -265,6 +273,8 @@ export function renderFc7(data, label) {
   });
 
   el.style.display = "block";
+  void grid.offsetWidth;
+  requestAnimationFrame(() => { grid.style.opacity = "1"; });
 }
 
 // ── Meteogram — kombinovaný graf (teplota + srážky + vítr + noc) ────────────
@@ -278,6 +288,8 @@ export function renderMeteogram(fc, daily) {
 
   wrap.classList.add("show");
   if (_meteoChart) { _meteoChart.destroy(); _meteoChart = null; }
+  canvasWrap.classList.add("fade-swap");
+  canvasWrap.style.opacity = "0";
   canvasWrap.innerHTML = `<canvas id="meteo-canvas"></canvas>`;
 
   const labels = hourly.map(h => h.t);
@@ -362,6 +374,9 @@ export function renderMeteogram(fc, daily) {
       },
     },
   });
+
+  void canvasWrap.offsetWidth;
+  requestAnimationFrame(() => { canvasWrap.style.opacity = "1"; });
 }
 
 // ── Porovnání modelů — pásmo nejistoty ICON / ECMWF / GFS v meteogramu ──────
@@ -477,11 +492,11 @@ function renderAQ(data) {
     ...pollenItems.map(([label, v]) => ({ label: `Pyl · ${label}`, val: `${v.toFixed(0)} zrn/m³` })),
   ];
 
-  panel.innerHTML = `<div class="aq-title">Ovzduší a pyl${lvl ? ` <span style="color:var(--muted);font-weight:400">· ${esc(lvl[3])}</span>` : ""}</div>
+  revealSwap(panel, `<div class="aq-title">Ovzduší a pyl${lvl ? ` <span style="color:var(--muted);font-weight:400">· ${esc(lvl[3])}</span>` : ""}</div>
     <div class="aq-grid">${items.map(it => `<div class="aq-item">
       <div class="aq-item-label">${esc(it.label)}</div>
       <div class="aq-item-val">${it.val}</div>
-    </div>`).join("")}</div>`;
+    </div>`).join("")}</div>`);
   panel.classList.add("show");
 }
 

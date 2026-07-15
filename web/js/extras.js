@@ -3,7 +3,7 @@
 // která už stahujeme (grid série + Open-Meteo hourly/daily).
 
 import { state } from "./state.js";
-import { esc } from "./utils.js";
+import { esc, revealSwap } from "./utils.js";
 import { moonIconImg, wImg } from "./icons.js";
 
 function nowPragueStr() {
@@ -52,11 +52,11 @@ export function renderMinutely(ptId, minutely) {
   // ("Nejbližší 2 h bez srážek") to komunikuje líp. Ukazuj jen když prší.
   if (Math.max(...known) < 0.05) { panel.classList.remove("show"); return; }
   const maxV = Math.max(...known, 1.5);
-  barsEl.innerHTML = vals.map(v => {
+  revealSwap(barsEl, vals.map(v => {
     if (v == null || v < 0.05) return `<i class="dry"></i>`;
     const h = Math.max(12, Math.round(v / maxV * 100));
     return `<i style="height:${h}%" title="${v.toFixed(1)} mm/h"></i>`;
-  }).join("");
+  }).join(""));
   if (srcEl) srcEl.textContent = src;
   panel.classList.add("show");
 }
@@ -104,9 +104,9 @@ export function renderActivities(fc, data) {
     ["🔥", "Gril", grill, `večer srážky ${Math.round(mx(evening, "prob"))}%`],
     ["🔭", "Hvězdy", stars, `oblačnost v noci ~${Math.round(nightCloud)} %`],
   ];
-  grid.innerHTML = items.map(([e, n, s, why]) =>
+  revealSwap(grid, items.map(([e, n, s, why]) =>
     `<span class="act" title="${esc(why)}"><span class="a-e">${e}</span><span class="a-n">${esc(n)}</span><span class="a-s ${scoreClass(s)}">${s}/10</span></span>`
-  ).join("");
+  ).join(""));
   panel.classList.add("show");
   void uvMax; void data;
 }
@@ -182,11 +182,11 @@ export function renderAstro(data, fc) {
     nightQ = q >= 6.5 ? "výborná" : q >= 4 ? "průměrná" : "špatná";
   }
 
-  body.innerHTML = `
+  revealSwap(body, `
     <div class="astro-row"><span class="a-k">Slunce</span><span class="a-v">${wImg("sunrise", "wicon winline")} ${esc(rise)} → ${wImg("sunset", "wicon winline")} ${esc(set_)}</span><span class="a-d">den ${esc(dayLen)}</span></div>
     <div class="astro-row"><span class="a-k">Zlatá h.</span><span class="a-v">${esc(addMin(set_, -45))}–${esc(set_)}</span><span class="a-d">ráno ${esc(rise)}–${esc(addMin(rise, 45))}</span></div>
     <div class="astro-row"><span class="a-k">Měsíc</span><span class="a-v">${moonIconImg(moon.frac).replace("wicon", "wicon winline")} ${esc(moon.name)}</span><span class="a-d">svit ${Math.round(moon.illum * 100)} %</span></div>
-    ${nightQ ? `<div class="astro-row"><span class="a-k">Noc</span><span class="a-v">pozorování: ${esc(nightQ)}</span><span class="a-d">oblačnost ~${Math.round(nightCloud)} %</span></div>` : ""}`;
+    ${nightQ ? `<div class="astro-row"><span class="a-k">Noc</span><span class="a-v">pozorování: ${esc(nightQ)}</span><span class="a-d">oblačnost ~${Math.round(nightCloud)} %</span></div>` : ""}`);
   panel.classList.add("show");
 }
 
@@ -215,6 +215,6 @@ export function renderWinter(fc, data) {
   if (next48snow >= 0.2) rows.push(`<div class="astro-row"><span class="a-k">Sněžení</span><span class="a-v">~${next48snow.toFixed(1)} cm / 48 h</span></div>`);
   if (frostHours > 0) rows.push(`<div class="astro-row"><span class="a-k">Mráz</span><span class="a-v">${frostHours} h pod 0 °C</span><span class="a-d">z příštích 24 h</span></div>`);
   if (iceRisk) rows.push(`<div class="astro-row"><span class="a-k">Náledí</span><span class="a-v" style="color:var(--red)">riziko</span><span class="a-d">srážky při teplotě ≤ 1 °C</span></div>`);
-  body.innerHTML = rows.join("");
+  revealSwap(body, rows.join(""));
   panel.classList.add("show");
 }

@@ -30,6 +30,7 @@ import {
 } from "./extras.js";
 import { renderClimateAnomaly } from "./climate.js";
 import { initLightning } from "./lightning.js";
+import { showLoadingSkeletons } from "./skeleton.js";
 import { shareCurrentView, copyEmbedLink, initEmbedMode } from "./share.js";
 import { esc } from "./utils.js";
 
@@ -67,11 +68,13 @@ async function loadData() {
 
 // ── Forecast pro vybrané místo (24h strip + meteogram + AQ + AI verdikt) ────
 async function showFc24(lat, lon, label) {
-  const scroll = document.getElementById("fc24-scroll");
   document.getElementById("fc24-place").textContent = label || "—";
-  scroll.innerHTML = `<div style="padding:.6rem 1rem;color:var(--muted);font-size:.85rem">Načítám předpověď…</div>`;
-  document.getElementById("fc24").style.display = "block";
+  // Skeleton placeholdery mají STEJNÉ rozměry jako finální karty — takže i
+  // karty pod scrollem (meteogram, 7 dní, ovzduší…) jsou hned vidět správně
+  // velké, místo aby byly prázdné/schované a pak najednou "naskočily".
+  showLoadingSkeletons();
 
+  const scroll = document.getElementById("fc24-scroll");
   state.fc24Ctrl?.abort();
   const ctrl = new AbortController();
   state.fc24Ctrl = ctrl;
@@ -102,6 +105,11 @@ async function showFc24(lat, lon, label) {
     if (e.name === "AbortError") return;
     scroll.innerHTML = `<div style="padding:.6rem 1rem;color:var(--muted);font-size:.85rem">Předpověď se nepodařilo načíst (${esc(e.message)}).</div>`;
     document.getElementById("fc7").style.display = "none";
+    // Skeletony ostatních karet by jinak zůstaly navždy "načítat se" —
+    // schovej je stejně, jako by to udělal jejich vlastní render, kdyby
+    // pro dané místo neměly co zobrazit.
+    ["meteo-block", "aq-panel", "astro-panel", "activities-panel", "minutely-panel"]
+      .forEach(id => document.getElementById(id)?.classList.remove("show"));
     // Bez tohohle zůstane levá karta navždy zaseknutá na "Načítám předpověď…"
     // ze showForecast, protože se sem nikdy nedostane renderLocationVerdict.
     renderVerdictText("", `<span style="color:var(--muted)">Předpověď se nepodařilo načíst. Zkus obnovit stránku.</span>`, null);
