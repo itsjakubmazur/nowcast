@@ -1,4 +1,4 @@
-const CACHE_VERSION = "v3";
+const CACHE_VERSION = "v4";
 const STATIC_CACHE = `nowcast-static-${CACHE_VERSION}`;
 const DATA_CACHE = `nowcast-data-${CACHE_VERSION}`;
 
@@ -60,34 +60,22 @@ self.addEventListener("fetch", e => {
     return; // necháváme prohlížeči, žádný respondWith = normální síťový fetch
   }
 
-  // Radar PNG snímky a JSON data — network-first, fallback na cache (offline).
-  if (url.pathname.includes("/data/")) {
-    e.respondWith(
-      fetch(e.request)
-        .then(res => {
-          if (res.ok) {
-            const clone = res.clone();
-            caches.open(DATA_CACHE).then(c => c.put(e.request, clone));
-          }
-          return res;
-        })
-        .catch(() => caches.match(e.request))
-    );
-    return;
-  }
-
-  // Statické soubory appky — cache-first.
+  // VŠECHNO same-origin je network-first s fallbackem na cache.
+  // Dřív byly statické soubory cache-first — to appku "zamrazilo" na verzi
+  // z prvního načtení a deploye se k uživatelům nedostaly, dokud neumřela
+  // cache. Offline režim funguje dál (fallback), jen za cenu, že online
+  // se vždy sáhne na síť (GitHub Pages má stejně krátké HTTP cache).
+  const cacheName = url.pathname.includes("/data/") ? DATA_CACHE : STATIC_CACHE;
   e.respondWith(
-    caches.match(e.request).then(cached => {
-      if (cached) return cached;
-      return fetch(e.request).then(res => {
+    fetch(e.request)
+      .then(res => {
         if (res.ok) {
           const clone = res.clone();
-          caches.open(STATIC_CACHE).then(c => c.put(e.request, clone));
+          caches.open(cacheName).then(c => c.put(e.request, clone));
         }
         return res;
-      });
-    })
+      })
+      .catch(() => caches.match(e.request))
   );
 });
 
