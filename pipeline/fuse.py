@@ -8,6 +8,7 @@ Fáze 3a — Fúze
 
 import json
 import re
+import sys
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -398,7 +399,55 @@ def fuse(nowcast_path: Path, om_path: Path, lat: float, lon: float) -> dict:
 
     timeseries.sort(key=lambda x: x["time_utc"])
 
-    nowcast_points = sum(1 for p in timeseries if p["source"] == "nowcast")
+    # ── Seamless blending radar → NWP uvnitř nowcast okna ─────────────────────
+    # Radarová extrapolace je nejpřesnější prvních ~30 minut a s rostoucím
+    # lead-time degraduje; NWP je naopak stabilní na celém okně. Místo ostrého
+    # střihu ve 2 h proto váhu radaru lineárně stahujeme z 100 % (30. minuta)
+    # na 0 % (konec horizontu) a mícháme s NWP srážkami interpolovanými
+    # z minutely_15. Bod s váhou <1 je označen source="blend" + radar_weight.
+    m15_pts: list[tuple[datetime, float]] = []
+    for i, t_str in enumerate(times_m15):
+        if precip_m15[i] is None:
+            continue
+        t_str_z = t_str if "+" in t_str or t_str.endswith("Z") else t_str + "+00:00"
+        m15_pts.append((datetime.fromisoformat(t_str_z), float(precip_m15[i])))
+    m15_pts.sort(key=lambda x: x[0])
+
+    def nwp_precip_at(t: datetime) -> float | None:
+        """Lineární interpolace NWP srážek mezi 15min body; None mimo pokrytí."""
+        if not m15_pts:
+            return None
+        if t <= m15_pts[0][0]:
+            return m15_pts[0][1] if (m15_pts[0][0] - t) <= timedelta(minutes=15) else None
+        for (ta, va), (tb, vb) in zip(m15_pts, m15_pts[1:]):
+            if ta <= t <= tb:
+                f = (t - ta).total_seconds() / (tb - ta).total_seconds()
+                return va + f * (vb - va)
+        return None
+
+    FULL_RADAR_MIN = 30                 # do 30 min věříme radaru naplno
+    horizon_min = horizon_h * 60
+    blended_n = 0
+    for p in timeseries:
+        if p["source"] != "nowcast":
+            continue
+        t = datetime.fromisoformat(p["time_utc"])
+        lead_min = (t - t0).total_seconds() / 60
+        if lead_min <= FULL_RADAR_MIN:
+            continue
+        nwp_val = nwp_precip_at(t)
+        if nwp_val is None:
+            continue
+        w = max(0.0, (horizon_min - lead_min) / (horizon_min - FULL_RADAR_MIN))
+        p["precip_mm_h"] = round(w * p["precip_mm_h"] + (1 - w) * nwp_val, 3)
+        p["source"] = "blend"
+        p["radar_weight"] = round(w, 2)
+        p["confidence"] = "high" if w >= 0.6 else "medium"
+        blended_n += 1
+    if blended_n:
+        print(f"  Blend: {blended_n} bodů radar→NWP (plný radar do {FULL_RADAR_MIN}. min, 0 % v {horizon_min}. min)")
+
+    nowcast_points = sum(1 for p in timeseries if p["source"] in ("nowcast", "blend"))
     print(f"  Fúze: {nowcast_points} nowcast bodů + {nwp_added} NWP bodů = {len(timeseries)} celkem")
     print(f"  Nowcast pokrytí: {t0.isoformat()} → {cutoff.isoformat()}")
     if timeseries:

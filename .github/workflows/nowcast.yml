@@ -5,6 +5,13 @@ on:
     # GitHub free tier cron je nespolehlivý — primárně triggerujeme přes cron-job.org → workflow_dispatch
     - cron: '*/10 * * * *'
   workflow_dispatch:  # trigger z externího cronu (cron-job.org) nebo ruční spuštění
+    inputs:
+      mode:
+        description: 'auto = full/fast střídavě podle minuty, full = vše, fast = jen radarová dráha'
+        required: false
+        default: 'auto'
+        type: choice
+        options: [auto, full, fast]
 
 # Zabrání hromadění běhů — nový run zruší čekající, ne běžící
 concurrency:
@@ -19,6 +26,37 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      # Rychlá dráha: fast režim přeskočí stanice/verify (ušetří ~1–2 min),
+      # takže radar může jet každých 5 minut. Externí cron (cron-job.org) volá
+      # workflow_dispatch s mode=auto co 5 min → minuty :x0–:x4 full, :x5–:x9 fast.
+      - name: Determine mode
+        id: mode
+        run: |
+          MODE="${{ github.event.inputs.mode || 'auto' }}"
+          if [ "$MODE" = "auto" ]; then
+            M=$((10#$(date -u +%M)))
+            if [ $((M % 10)) -lt 5 ]; then MODE=full; else MODE=fast; fi
+          fi
+          echo "mode=$MODE" >> "$GITHUB_OUTPUT"
+          echo "Režim běhu: $MODE"
+
+      # Ve fast režimu se stanice/accuracy negenerují — obnovíme je z cache
+      # posledního full běhu, ať se z publikovaného webu neztratí.
+      - name: Restore station data (poslední full běh)
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            data/chmi_stations.json
+            data/chmi_series_index.json
+            data/chmi_series
+            data/chmi_stats.json
+            data/wu_stations.json
+            data/wu_history.json
+            data/accuracy.json
+          key: station-data-${{ github.run_id }}
+          restore-keys: |
+            station-data-
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -60,18 +98,35 @@ jobs:
         run: python pipeline/render.py
 
       - name: Run verify (zpětná validace přesnosti nowcastu)
+        if: steps.mode.outputs.mode == 'full'
         run: python pipeline/verify.py || echo "verify.py selhalo, pokračuji bez accuracy.json"
         env:
           NOWCAST_LAT: '50.08'
           NOWCAST_LON: '14.42'
 
       - name: Run wu (WU PWS stanice)
+        if: steps.mode.outputs.mode == 'full'
         run: python pipeline/wu.py || echo "wu.py selhalo (WU_API_KEY?), pokračuji"
         env:
           WU_API_KEY: ${{ secrets.WU_API_KEY }}
 
       - name: Run chmi (ČHMÚ stanice + akumulace historie)
+        if: steps.mode.outputs.mode == 'full'
         run: python pipeline/chmi.py || echo "chmi.py selhalo, pokračuji"
+
+      - name: Save station data cache (pro příští fast běhy)
+        if: steps.mode.outputs.mode == 'full'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            data/chmi_stations.json
+            data/chmi_series_index.json
+            data/chmi_series
+            data/chmi_stats.json
+            data/wu_stations.json
+            data/wu_history.json
+            data/accuracy.json
+          key: station-data-${{ github.run_id }}
 
       - name: Validate publikovaná data (poslední pojistka před deployem)
         run: python pipeline/validate.py
