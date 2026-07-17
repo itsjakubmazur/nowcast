@@ -198,6 +198,60 @@ function destroyRainViewerFrames() {
   state.rvFrames = [];
 }
 
+// ── Satelitní IR vrstva (RainViewer infrared kompozit) ───────────────────────
+// Nezávislá na radarové animaci — poslední dostupný IR snímek pod radarem
+// (zIndex 150 < 199/200 radaru), obnovovaný co 10 minut dokud je zapnutá.
+// Ukazuje oblačnost i tam, kde neprší — kontext, který radar nemá.
+const SAT_REFRESH_MS = 10 * 60 * 1000;
+
+export async function toggleSatellite() {
+  const btn = document.getElementById("btn-satellite");
+  state.satMode = !state.satMode;
+
+  if (!state.satMode) {
+    clearInterval(state.satTimer);
+    state.satTimer = null;
+    if (state.satLayer) { state.map.removeLayer(state.satLayer); state.satLayer = null; }
+    btn?.classList.remove("active");
+    return;
+  }
+
+  btn?.classList.add("active");
+  await loadSatelliteFrame();
+  if (state.satMode && !state.satTimer) {
+    state.satTimer = setInterval(loadSatelliteFrame, SAT_REFRESH_MS);
+  }
+}
+
+async function loadSatelliteFrame() {
+  try {
+    const res = await fetch(RAINVIEWER_API, { cache: "no-store" });
+    const data = await res.json();
+    const frames = data.satellite?.infrared || [];
+    if (!frames.length) throw new Error("IR snímky nedostupné");
+    const last = frames[frames.length - 1];
+    const url = `${data.host}${last.path}/256/{z}/{x}/{y}/0/0_0.png`;
+    if (!state.satMode) return; // uživatel mezitím vypnul
+    if (state.satLayer) {
+      state.satLayer.setUrl(url);
+    } else {
+      state.satLayer = L.tileLayer(url, {
+        opacity: 0.5, zIndex: 150, attribution: "Družice IR: RainViewer",
+        maxNativeZoom: 6, maxZoom: 19,
+      }).addTo(state.map);
+    }
+  } catch (e) {
+    console.warn("Satelit:", e);
+    if (!state.satLayer) {
+      // první načtení selhalo — vrať tlačítko do vypnutého stavu
+      state.satMode = false;
+      clearInterval(state.satTimer);
+      state.satTimer = null;
+      document.getElementById("btn-satellite")?.classList.remove("active");
+    }
+  }
+}
+
 // ── Aktivní srážkové/konvekční jádro — poctivě odvozené z VLASTNÍHO nowcastu,
 //    ne z cizích "lightning" dlaždic, které ve skutečnosti nejsou blesky. ────
 const STORM_PEAK_THRESHOLD_MM_H = 15; // "silný déšť" práh z rainIntensity()

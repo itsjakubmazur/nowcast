@@ -34,10 +34,14 @@
   <!-- iOS neumí SVG apple-touch-icon — musí být PNG, jinak spadne na screenshot stránky -->
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
+  <!-- Data API, na která se sahá hned po startu — ušetří TLS handshake při prvním fetch -->
+  <link rel="preconnect" href="https://api.open-meteo.com" crossorigin>
+  <link rel="preconnect" href="https://air-quality-api.open-meteo.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <link rel="stylesheet" href="css/app.css" />
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <!-- defer: Chart.js neblokuje první vykreslení; meteogram se kreslí až po fetch dat -->
+  <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 </head>
 <body>
 
@@ -71,6 +75,7 @@
       <span id="opacity-val" style="font-size:.72rem;color:var(--muted);min-width:30px">70 %</span>
     </div>
     <button class="ctrl" id="btn-global" title="Globální radarové dlaždice (RainViewer)">🌍 Svět</button>
+    <button class="ctrl" id="btn-satellite" title="Satelitní IR vrstva — oblačnost (RainViewer)">🛰️ Družice</button>
     <span id="radar-updated" style="font-size:.68rem;color:var(--muted)"></span>
   </div>
   <div class="rain-spark-wrap" id="rain-spark-wrap" style="display:none">
@@ -181,7 +186,15 @@
     <div class="fc24-scroll" id="fc24-scroll"></div>
   </div>
   <div class="meteo-block" id="meteo-block">
-    <div class="meteo-title">Meteogram</div>
+    <div class="meteo-head">
+      <div class="meteo-title">Meteogram</div>
+      <div class="meteo-tabs" id="meteo-tabs">
+        <button class="mtab active" data-mode="overview">Přehled</button>
+        <button class="mtab" data-mode="precip">Srážky</button>
+        <button class="mtab" data-mode="wind">Vítr</button>
+        <button class="mtab" data-mode="pressure">Tlak</button>
+      </div>
+    </div>
     <div id="meteo-canvas-wrap"></div>
   </div>
   <div class="fc7" id="fc7" style="display:none">

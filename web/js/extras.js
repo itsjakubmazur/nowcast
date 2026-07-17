@@ -28,14 +28,31 @@ export function renderMinutely(ptId, minutely) {
 
   const series = state.GRID?.series?.[String(ptId)];
   const stepMin = state.GRID?.step_min || 10;
+  // Hodnota modelu (minutely_15) pro minutu t — pro blend i fallback.
+  const modelAt = t => {
+    if (!minutely?.length) return null;
+    const idx = Math.min(Math.floor(t / 15), minutely.length - 1);
+    return minutely[idx]?.precip ?? null;
+  };
   if (series?.length) {
+    // Seamless blending: do 30 min věříme radarové extrapolaci naplno,
+    // pak její váha lineárně klesá k nule ve 120. minutě — přesně tam,
+    // kde extrapolace ztrácí smysl a NWP model ji přebírá. Žádný skok
+    // mezi zdroji, plynulý přechod.
     vals = [];
+    let blended = false;
     for (let i = 0; i < SLOTS; i++) {
       const t = i * 10; // minuta slotu
       const idx = Math.floor(t / stepMin);
-      vals.push(idx < series.length ? series[idx] : null);
+      const radar = idx < series.length ? series[idx] : null;
+      const model = modelAt(t);
+      if (radar == null) { vals.push(model); continue; }
+      if (model == null) { vals.push(radar); continue; }
+      const w = t <= 30 ? 1 : Math.max(0, (120 - t) / 90);
+      if (w < 1) blended = true;
+      vals.push(w * radar + (1 - w) * model);
     }
-    src = "radarová extrapolace";
+    src = blended ? "radar → model" : "radarová extrapolace";
   } else if (minutely?.length) {
     vals = [];
     for (let i = 0; i < SLOTS; i++) {

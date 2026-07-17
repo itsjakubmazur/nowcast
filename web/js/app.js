@@ -1,10 +1,10 @@
 import { state, PLAY, AUTO_REFRESH_MS } from "./state.js";
 import { initTheme } from "./theme.js";
 import { showToast, initToastClose } from "./toast.js";
-import { initMap } from "./map.js";
+import { initMap, createBaseTileLayer } from "./map.js";
 import {
   preloadFrames, showFrame, stepFrame, togglePlay, setOpacity,
-  toggleGlobalMode, applyManifestUI, drawRainSpark, updateStormBar,
+  toggleGlobalMode, toggleSatellite, applyManifestUI, drawRainSpark, updateStormBar,
   observeRadarBarHeight,
 } from "./radar.js";
 import { renderWarningsLayer } from "./warnings.js";
@@ -305,11 +305,11 @@ window.addEventListener("DOMContentLoaded", async () => {
   } catch (err) {
     renderVerdictText("", `<span class="hint">Data se nepodařilo načíst (${esc(err.message)}). Pipeline možná ještě neproběhla.</span>`, null);
     state.map = L.map("map").setView([49.8, 15.5], 7);
-    L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
-      { attribution: "© OpenStreetMap © CARTO", subdomains: "abcd" }).addTo(state.map);
+    createBaseTileLayer().addTo(state.map);
     document.getElementById("radar-bar").style.display = "block";
     observeRadarBarHeight();
     document.getElementById("btn-global").addEventListener("click", toggleGlobalMode);
+    document.getElementById("btn-satellite")?.addEventListener("click", toggleSatellite);
     return;
   }
 
@@ -378,6 +378,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   // ── Refresh / vrstvy / globální radar ────────────────────────────────────
   document.getElementById("btn-refresh").addEventListener("click", refreshAll);
   document.getElementById("btn-global").addEventListener("click", toggleGlobalMode);
+  document.getElementById("btn-satellite")?.addEventListener("click", toggleSatellite);
   setInterval(() => { refreshAll(); checkRainNotifications(); }, AUTO_REFRESH_MS);
 
   document.getElementById("chmi-detail-close").addEventListener("click", closeChmiDetail);

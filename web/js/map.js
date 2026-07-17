@@ -1,16 +1,32 @@
 import { state } from "./state.js";
+import { isDarkTheme } from "./theme.js";
+
+// Podkladová mapa sleduje motiv aplikace — světlý Positron / tmavý Dark Matter
+// (stejný host basemaps.cartocdn.com, žádná změna CSP). Přepnutí motivu jen
+// vymění URL šablonu, Leaflet si dlaždice přenačte sám.
+const TILE_LIGHT = "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png";
+const TILE_DARK = "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
+
+function baseTileUrl() {
+  return isDarkTheme() ? TILE_DARK : TILE_LIGHT;
+}
+
+// Vytvoří podkladovou vrstvu a přihlásí ji k odběru změn motivu.
+// Používá se i z fallback větve v app.js (mapa bez radarového manifestu).
+export function createBaseTileLayer() {
+  const layer = L.tileLayer(baseTileUrl(), {
+    attribution: "© <a href='https://www.openstreetmap.org/copyright'>OpenStreetMap</a> © <a href='https://carto.com/attributions'>CARTO</a>",
+    subdomains: "abcd", maxZoom: 19,
+  });
+  window.addEventListener("nowcast:theme-changed", () => layer.setUrl(baseTileUrl()));
+  return layer;
+}
 
 export function initMap(onMapClick) {
   state.map = L.map("map", { zoomControl: false }).setView([49.8, 15.5], 7);
   L.control.zoom({ position: "bottomright" }).addTo(state.map);
 
-  L.tileLayer(
-    "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
-    {
-      attribution: "© <a href='https://www.openstreetmap.org/copyright'>OpenStreetMap</a> © <a href='https://carto.com/attributions'>CARTO</a>",
-      subdomains: "abcd", maxZoom: 19,
-    }
-  ).addTo(state.map);
+  state.baseTiles = createBaseTileLayer().addTo(state.map);
 
   // Dva overlaye pro crossfade — vždy jeden "aktivní" (viditelný), druhý
   // v pozadí připravený na příští snímek; přepnutí je jen opacity tween.
