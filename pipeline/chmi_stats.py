@@ -21,13 +21,17 @@ TMA/TMI/Fmax/SCE jsou skutečná absolutní maxima/minima (měsíční hodnota =
 import json
 import sys
 import re
+import time
 import requests
 from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 
 DATA_DIR = Path(__file__).parent.parent / "data"
-TIMEOUT  = 30
+TIMEOUT  = (5, 15)
+BUDGET_S = 100   # tvrdý časový rozpočet na běh — opendata server umí být POMALÝ
+                 # a pipeline jede co 5–10 min; zbytek stanic doběhne v dalších
+                 # bězích (resume: hotové stanice se drží ve výstupu)
 
 BASE   = "https://opendata.chmi.cz/meteorology/climate"
 RECENT = f"{BASE}/recent/data"
@@ -173,22 +177,40 @@ def main():
     now_utc = datetime.now(timezone.utc)
     yyyymm = now_utc.strftime("%Y%m")
     stats_path = DATA_DIR / "chmi_stats.json"
-    if stats_path.exists():
-        age_h = (now_utc.timestamp() - stats_path.stat().st_mtime) / 3600
-        if age_h < CACHE_MAX_AGE_H:
-            print(f"  chmi_stats.json je {age_h:.1f} h starý — přeskočeno", file=sys.stderr)
-            return
-        print(f"  chmi_stats.json je {age_h:.1f} h starý — regeneruji", file=sys.stderr)
 
     wsis = load_station_ids()
     if not wsis:
         print("  chmi_stations.json chybí/prázdný — nejdřív musí běžet chmi.py", file=sys.stderr)
         return
-    print(f"  Zpracovávám {len(wsis)} stanic…", file=sys.stderr)
 
+    # Resume: už zpracované stanice z minulého souboru drž, nové dobírej
+    # v rozpočtu. Za pár běhů jsou hotové všechny; KOMPLETNÍ soubor se pak
+    # obnovuje nejvýš 1× za CACHE_MAX_AGE_H (drží ho CI cache mezi běhy).
     all_stats = {}
+    file_age_h = None
+    if stats_path.exists():
+        file_age_h = (now_utc.timestamp() - stats_path.stat().st_mtime) / 3600
+        try:
+            all_stats = json.loads(stats_path.read_text()).get("stations", {})
+        except Exception:
+            all_stats = {}
+    pending = [w for w in wsis if w not in all_stats]
+    if not pending:
+        if file_age_h is not None and file_age_h < CACHE_MAX_AGE_H:
+            print(f"  Kompletní ({len(all_stats)} stanic), {file_age_h:.1f} h starý — přeskočeno", file=sys.stderr)
+            return
+        pending = wsis          # plný refresh po vypršení stáří
+        all_stats = {}
+    print(f"  Stanic: {len(wsis)} (hotovo {len(all_stats)}, zbývá {len(pending)}), "
+          f"rozpočet {BUDGET_S} s", file=sys.stderr)
+
+    t_start = time.monotonic()
     ok = 0
-    for wsi in wsis:
+    for wsi in pending:
+        if time.monotonic() - t_start > BUDGET_S:
+            print(f"  Rozpočet {BUDGET_S} s vyčerpán — zbytek doběhne příště "
+                  f"({len(all_stats)} stanic zatím)", file=sys.stderr)
+            break
         merged = defaultdict(list)   # měsíční řady (historical + recent)
         for url in (f"{HIST}/monthly/mly-{wsi}.json",
                     f"{RECENT}/monthly/mly-{wsi}.json"):
@@ -209,6 +231,8 @@ def main():
                 merged[k].extend(pairs)
 
         if not any(merged.values()):
+            # zapamatuj si i "bez dat" — jinak by se stanice zkoušela každý běh
+            all_stats[wsi] = {"records": {}, "monthly_normals": {}, "yearly_trend": {}}
             continue
 
         all_stats[wsi] = {

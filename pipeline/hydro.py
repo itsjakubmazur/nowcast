@@ -23,11 +23,19 @@ from pathlib import Path
 
 import requests
 
+import time as _time
+
 DATA_DIR = Path(__file__).parent.parent / "data"
 BASE = "https://opendata.chmi.cz/hydrology"
 HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; NowcastBot/1.0)", "Accept": "application/json,*/*"}
-TIMEOUT = (10, 60)
+TIMEOUT = (5, 15)
 MAX_STATIONS = 400   # pojistka proti tisícům souborů
+BUDGET_S = 90        # tvrdý rozpočet — pipeline nesmí čekat na pomalý server
+_T0 = _time.monotonic()
+
+
+def over_budget():
+    return _time.monotonic() - _T0 > BUDGET_S
 
 
 def get(url):
@@ -211,6 +219,9 @@ def main():
     out_stations = []
     matched = 0
     for dbc, st in list(stations.items())[:MAX_STATIONS]:
+        if over_budget():
+            print(f"  Rozpočet {BUDGET_S} s vyčerpán — beru, co je ({matched} stanic)", file=sys.stderr)
+            break
         f = by_dbc.get(dbc)
         if not f:
             continue
