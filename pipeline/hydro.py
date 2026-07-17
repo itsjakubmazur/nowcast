@@ -187,12 +187,14 @@ def parse_metadata(files):
     return stations
 
 
-_series_diag_left = 2
-
-
 def parse_series(url):
-    """Datový soubor stanice → [(dt_str, h_cm, q_m3s)] seřazené vzestupně."""
-    global _series_diag_left
+    """
+    Datový soubor stanice → [(dt_str, h_cm, q_m3s)] seřazené vzestupně.
+    Reálná struktura (ověřeno v CI diagnostice):
+      {"objList": [{"objID": "...", "tsList": [
+          {"tsConID": "H", "unit": "CM",   "tsData": [{"dt": "...Z", "value": 96}, …]},
+          {"tsConID": "Q", "unit": "M3_S", "tsData": […]} ]}]}
+    """
     r = get(url)
     if not r:
         return []
@@ -200,31 +202,27 @@ def parse_series(url):
         data = r.json()
     except Exception:
         return []
-    rows = _walk_values(data)
-    if _series_diag_left > 0:
-        top = list(data)[:8] if isinstance(data, dict) else f"list[{len(data)}]"
-        sample = json.dumps(rows[:2], ensure_ascii=False)[:400] if rows else "—"
-        print(f"  [diag] data {url.rsplit('/',1)[-1]}: top={top} rows={len(rows) if rows else 0} vzorek={sample}", file=sys.stderr)
-        _series_diag_left -= 1
-    if not rows:
+    objs = data.get("objList") if isinstance(data, dict) else None
+    if not objs:
         return []
-    out = []
-    for row in rows:
-        if isinstance(row, dict):
-            dt = row.get("DT") or row.get("dt") or row.get("DATE") or row.get("time")
-            h = _num(row.get("H") or row.get("h"))
-            q = _num(row.get("Q") or row.get("q"))
-        elif isinstance(row, list) and len(row) >= 2:
-            # pivot varianta: [id?, dt, H, Q, ...] — hledej dt (string s '-' nebo ':')
-            dt = next((c for c in row if isinstance(c, str) and ("-" in c or ":" in c)), None)
-            nums = [_num(c) for c in row if _num(c) is not None]
-            h = nums[0] if nums else None
-            q = nums[1] if len(nums) > 1 else None
-        else:
+    by_dt = {}
+    for obj in objs:
+        if not isinstance(obj, dict):
             continue
-        if dt is None or (h is None and q is None):
-            continue
-        out.append((str(dt), h, q))
+        for ts in obj.get("tsList", []) or []:
+            key = str(ts.get("tsConID", "")).strip().upper()
+            if key not in ("H", "Q"):
+                continue
+            for p in ts.get("tsData", []) or []:
+                if not isinstance(p, dict):
+                    continue
+                dt = p.get("dt")
+                v = _num(p.get("value"))
+                if dt is None or v is None:
+                    continue
+                slot = by_dt.setdefault(str(dt), [None, None])
+                slot[0 if key == "H" else 1] = v
+    out = [(dt, h, q) for dt, (h, q) in by_dt.items()]
     out.sort(key=lambda x: x[0])
     return out
 
