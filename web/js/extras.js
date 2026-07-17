@@ -5,6 +5,7 @@
 import { state } from "./state.js";
 import { esc, revealSwap } from "./utils.js";
 import { moonIconImg, wImg } from "./icons.js";
+import { computeNight } from "./stargaze.js";
 
 function nowPragueStr() {
   const s = new Date().toLocaleString("sv-SE", { timeZone: "Europe/Prague" });
@@ -214,19 +215,56 @@ export function renderAstro(data, fc) {
   const moon = moonInfo();
   state._moonIllum = moon.illum; // pro index hvězdaření
 
-  const night = (fc?.hourlyFull || []).filter(h => { const hr = +h.t.slice(0, 2); return hr >= 22 || hr <= 2; }).slice(0, 5);
-  const nightCloud = night.length ? night.reduce((s, h) => s + (h.cloud ?? 50), 0) / night.length : null;
+  // hodinová oblačnost přes noc (21→05) — pro pásek i pro kvalitu noci
+  const nightHours = (fc?.hourlyFull || []).filter(h => { const hr = +h.t.slice(0, 2); return hr >= 21 || hr <= 5; }).slice(0, 9);
+  const nightCloud = nightHours.length ? nightHours.reduce((s, h) => s + (h.cloud ?? 50), 0) / nightHours.length : null;
+  const nightHumMax = nightHours.length ? Math.max(...nightHours.map(h => h.humidity ?? 0)) : null;
+  const bestHour = nightHours.length
+    ? nightHours.reduce((best, h) => (h.cloud ?? 100) < (best.cloud ?? 100) ? h : best)
+    : null;
+
+  // astronomický výpočet noci (tmavé okno, Měsíc, planety, roje)
+  let sg = null;
+  try {
+    sg = computeNight(state.currentLat ?? 50.08, state.currentLon ?? 14.42);
+  } catch (e) { console.warn("stargaze:", e); }
+  const hm = dt => dt ? dt.toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Prague" }) : null;
+
   let nightQ = null;
   if (nightCloud != null) {
-    const q = 10 * (1 - nightCloud / 100) - moon.illum * 3;
+    let q = 10 * (1 - nightCloud / 100) - moon.illum * 3;
+    if (sg && !sg.duskAstro) q -= 1.5;             // bez astronomické noci (léto)
+    if (nightHumMax != null && nightHumMax >= 92) q -= 1; // mlha/rosa
     nightQ = q >= 6.5 ? "výborná" : q >= 4 ? "průměrná" : "špatná";
   }
+
+  // pásek oblačnosti: jeden sloupec za hodinu, tmavší = jasněji
+  const strip = nightHours.length ? `<div class="astro-row"><span class="a-k">Oblačnost</span>
+    <span class="a-v nstrip" title="oblačnost po hodinách ${esc(nightHours[0].t)}–${esc(nightHours[nightHours.length - 1].t)}">
+      ${nightHours.map(h => `<i style="opacity:${(0.15 + 0.85 * (h.cloud ?? 50) / 100).toFixed(2)}" title="${esc(h.t)} · ${h.cloud ?? "?"} %"></i>`).join("")}
+    </span>
+    ${bestHour && (bestHour.cloud ?? 100) <= 40 ? `<span class="a-d">nejjasněji ~${esc(bestHour.t)}</span>` : ""}</div>` : "";
+
+  const showers = (sg?.showers || []).slice(0, 2);
+  const showerStr = showers.length
+    ? showers.map(s => `${s.name}${s.isPeak ? " · MAXIMUM" : ""} (ZHR ${s.zhr})`).join(", ")
+    : null;
+  const moonWarns = moon.illum > 0.6 && showers.length ? " · ruší Měsíc" : "";
 
   revealSwap(body, `
     <div class="astro-row"><span class="a-k">Slunce</span><span class="a-v">${wImg("sunrise", "wicon winline")} ${esc(rise)} → ${wImg("sunset", "wicon winline")} ${esc(set_)}</span><span class="a-d">den ${esc(dayLen)}</span></div>
     <div class="astro-row"><span class="a-k">Zlatá h.</span><span class="a-v">${esc(addMin(set_, -45))}–${esc(set_)}</span><span class="a-d">ráno ${esc(rise)}–${esc(addMin(rise, 45))}</span></div>
-    <div class="astro-row"><span class="a-k">Měsíc</span><span class="a-v">${moonIconImg(moon.frac).replace("wicon", "wicon winline")} ${esc(moon.name)}</span><span class="a-d">svit ${Math.round(moon.illum * 100)} %</span></div>
-    ${nightQ ? `<div class="astro-row"><span class="a-k">Noc</span><span class="a-v">pozorování: ${esc(nightQ)}</span><span class="a-d">oblačnost ~${Math.round(nightCloud)} %</span></div>` : ""}`);
+    <div class="astro-row"><span class="a-k">Měsíc</span><span class="a-v">${moonIconImg(moon.frac).replace("wicon", "wicon winline")} ${esc(moon.name)}</span><span class="a-d">svit ${Math.round(moon.illum * 100)} %${sg?.moonRise ? ` · ↑${hm(sg.moonRise)}` : ""}${sg?.moonSet ? ` ↓${hm(sg.moonSet)}` : ""}</span></div>
+    ${nightQ ? `<div class="astro-row"><span class="a-k">Noc</span><span class="a-v">pozorování: ${esc(nightQ)}</span><span class="a-d">oblačnost ~${Math.round(nightCloud)} %${nightHumMax >= 92 ? " · riziko mlhy" : ""}</span></div>` : ""}
+    <div class="astro-sub">✨ Pozorování dnes v noci</div>
+    ${sg?.duskAstro && sg?.dawnAstro
+      ? `<div class="astro-row"><span class="a-k">Astro noc</span><span class="a-v">${hm(sg.duskAstro)}–${hm(sg.dawnAstro)}</span><span class="a-d">slunce pod −18°</span></div>`
+      : `<div class="astro-row"><span class="a-k">Astro noc</span><span class="a-v" style="color:var(--muted)">nenastává</span><span class="a-d">letní světlé noci</span></div>`}
+    ${sg?.darkStart && sg?.darkEnd
+      ? `<div class="astro-row"><span class="a-k">Tmavé okno</span><span class="a-v" style="color:var(--green)">${hm(sg.darkStart)}–${hm(sg.darkEnd)}</span><span class="a-d">bez Slunce i Měsíce</span></div>` : ""}
+    ${strip}
+    ${sg?.planets?.length ? `<div class="astro-row"><span class="a-k">Planety</span><span class="a-v">${sg.planets.map(p => `${esc(p.name)} <span style="color:var(--muted);font-weight:400">(${esc(p.when)})</span>`).join(" · ")}</span></div>` : ""}
+    ${showerStr ? `<div class="astro-row"><span class="a-k">Met. roj</span><span class="a-v">${esc(showerStr)}</span><span class="a-d">radiant po půlnoci${moonWarns}</span></div>` : ""}`);
   panel.classList.add("show");
 }
 

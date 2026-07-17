@@ -32,6 +32,7 @@ import {
 import { renderClimateAnomaly, renderDayInHistory } from "./climate.js";
 import { initSettingsPanel, applySettingsOnLoad, saveSettings } from "./settings.js";
 import { initCompare, showCompareBtn } from "./compare.js";
+import { toggleHydro } from "./hydro.js";
 import { initLightning } from "./lightning.js";
 import { showLoadingSkeletons } from "./skeleton.js";
 import { shareCurrentView, copyEmbedLink, initEmbedMode } from "./share.js";
@@ -96,9 +97,14 @@ async function showFc24(lat, lon, label) {
     // v2.0 doplňky — každý panel se sám schová, když pro něj nejsou data
     try {
       const ptId = state.GRID ? nearestPt(lat, lon).id : null;
-      // typ srážek z modelu (déšť/sníh/smíšené) → countdown karta ho převezme
+      // typ srážek z modelu (déšť/sníh/smíšené) → countdown karta ho převezme;
+      // minutely si schovej pro assessRain (jednotné vyhodnocení srážek)
+      state._lastMinutely = minutely;
       setPrecipTypeHint(fc);
-      if (ptId != null) renderRainCountdown(ptId);
+      if (ptId != null) {
+        renderRainCountdown(ptId, minutely); // s modelem — konzistentní verdikt
+        renderRainBadge(ptId);
+      }
       renderAstro(data, fc);            // před aktivitami — nastavuje svit měsíce
       renderMinutely(ptId, minutely);
       renderActivities(fc, data);
@@ -185,6 +191,7 @@ function renderLocationVerdict(fc, lat, lon, label) {
 function showForecast(lat, lon, label) {
   state.currentLat = lat; state.currentLon = lon; state.currentLabel = label;
   saveLastLocation(lat, lon, label);
+  state._lastMinutely = null; // model předchozího místa tu neplatí
 
   const { id, dist } = nearestPt(lat, lon);
   const { chips } = templateVerdict(id);
@@ -394,6 +401,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   document.getElementById("btn-global").addEventListener("click", toggleGlobalMode);
   document.getElementById("btn-satellite")?.addEventListener("click", toggleSatellite);
   document.getElementById("btn-wind")?.addEventListener("click", toggleWindLayer);
+  document.getElementById("btn-hydro")?.addEventListener("click", toggleHydro);
   setInterval(() => { refreshAll(); checkRainNotifications(); }, AUTO_REFRESH_MS);
 
   document.getElementById("chmi-detail-close").addEventListener("click", closeChmiDetail);

@@ -91,15 +91,21 @@ async function handleVerdict(request, url, env, ctx) {
   const lat = parseFloat(url.searchParams.get("lat"));
   const lon = parseFloat(url.searchParams.get("lon"));
   const label = url.searchParams.get("label") || "";
+  // Radarový kontext z klienta (assessRain): "raining" | "soon" | "possible" |
+  // "dry". AI verdikt z čistého NWP uměl tvrdit "déšť kolem 18:00", zatímco
+  // venku už půl hodiny lilo — model o bouřce nevěděl, radar ano.
+  const radarHint = ["raining", "soon", "possible", "dry"].includes(url.searchParams.get("radar"))
+    ? url.searchParams.get("radar") : "";
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
     return json({ error: "lat/lon required" }, 400);
   }
 
   // Zaokrouhli na ~1 km, ať víc lidí ze stejné obce trefí stejný cache klíč.
+  // Radarový stav patří do klíče — "prší" a "sucho" nesmí sdílet odpověď.
   const rlat = lat.toFixed(2);
   const rlon = lon.toFixed(2);
   const cacheKey = new Request(
-    `https://cache.internal/verdict?v=${CACHE_VERSION}&lat=${rlat}&lon=${rlon}`,
+    `https://cache.internal/verdict?v=${CACHE_VERSION}&lat=${rlat}&lon=${rlon}&radar=${radarHint}`,
     { method: "GET" }
   );
   const cache = caches.default;
@@ -111,7 +117,7 @@ async function handleVerdict(request, url, env, ctx) {
     return res;
   }
 
-  const result = await generateVerdict(lat, lon, label, env);
+  const result = await generateVerdict(lat, lon, label, env, radarHint);
   if (result.error) {
     return json(result, result.status || 502);
   }
@@ -208,7 +214,7 @@ async function handleVerdictLegacyPost(request, env) {
   return json({ text: result.text });
 }
 
-async function generateVerdict(lat, lon, label, env) {
+async function generateVerdict(lat, lon, label, env, radarHint = "") {
   let omData;
   try {
     const omUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}`
@@ -221,7 +227,7 @@ async function generateVerdict(lat, lon, label, env) {
     return { error: `Open-Meteo fetch failed: ${e.message}`, status: 502 };
   }
 
-  const prompt = buildPrompt(omData, label);
+  const prompt = buildPrompt(omData, label, lat, lon, radarHint);
 
   const apiKey = env.GEMINI_API_KEY;
   if (!apiKey) return { error: "GEMINI_API_KEY not configured", status: 500 };
@@ -234,7 +240,7 @@ async function generateVerdict(lat, lon, label, env) {
   }
 }
 
-function buildPrompt(om, label) {
+function buildPrompt(om, label, lat, lon, radarHint) {
   const h = om.hourly || {};
   const times = h.time || [];
   const temp = h.temperature_2m || [];
@@ -286,8 +292,17 @@ function buildPrompt(om, label) {
   // spletl s reálným toponymem. Radši spadni na souřadnice.
   const isGenericLabel = !label || /^(moje poloha|aktuální poloha|vybrané místo)$/i.test(label.trim());
 
+  // Radar má vždy pravdu o TEĎ — NWP hodinovka bouřku klidně nevidí.
+  const RADAR_CZ = {
+    raining: "PRÁVĚ TEĎ na místě nebo v bezprostředním okolí PRŠÍ (radarové měření). Začni od aktuálního deště, nemluv o něm v budoucím čase.",
+    soon: "Radar ukazuje srážky přicházející v řádu desítek minut.",
+    possible: "Radar zatím nic, ale ensemble/model srážky v nejbližších 2 h připouští.",
+    dry: "Radar aktuálně žádné srážky v okolí neukazuje.",
+  };
+
   return JSON.stringify({
     misto: isGenericLabel ? `${lat.toFixed(2)}°N ${lon.toFixed(2)}°E` : label,
+    ...(radarHint && RADAR_CZ[radarHint] ? { radar_ted: RADAR_CZ[radarHint] } : {}),
     detail_0_6h: detail,
     vyhled_zbytek_dne: outlook,
   }, null, 2);
@@ -524,24 +539,39 @@ async function checkAndNotify(key, record, grid, env) {
       continue;
     }
 
-    // Příchozí srážky
-    const act = grid.act?.[String(id)];
-    if (act && now - lastNotified > PUSH_SNOOZE_MS) {
-      const [startStep] = act;
-      const rainVal = act[2];
+    // Příchozí srážky — nejbližší aktivita v okolí (≤ 12 km), ne jen jeden pixel
+    const near = nearestRainActivity(grid, fav.lat, fav.lon);
+    if (near && now - lastNotified > PUSH_SNOOZE_MS) {
+      const [startStep, endStep] = near.act;
+      const rainVal = near.act[2];
       if (rainVal >= RAIN_THRESHOLD_MM_H && startStep <= RAIN_LOOKAHEAD_STEPS) {
-        shouldNotify = true;
-        reason = `rain:${favKey}`;
         const startMs = t0ms + (startStep + 1) * stepMin * 60000;
-        const minsAway = Math.max(Math.round((startMs - now) / 60000), 1);
+        const endMs = t0ms + (endStep + 1) * stepMin * 60000;
         const type = (await precipType(fav.lat, fav.lon)) || "rain";
-        notifPayload = {
-          title: `${PRECIP_TITLE[type]} za ~${minsAway} min`,
-          body: `${fav.label || favKey}: ${precipWords(type, rainVal)} přibližně od ${localHM(new Date(startMs).toISOString())}. Podle radaru.`,
-          tag: `rain-${favKey}`,
-        };
-        record.notified = record.notified || {};
-        record.notified[favKey] = new Date(now).toISOString();
+        const kmStr = near.distKm > 5 ? ` (~${Math.round(near.distKm)} km)` : "";
+        if (now >= startMs && now <= endMs) {
+          // už prší/sněží — "za X min" by byl výsměch, řekni to na rovinu
+          shouldNotify = true;
+          reason = `rainnow:${favKey}`;
+          notifPayload = {
+            title: type === "snow" ? "🌨️ Právě sněží" : "🌧️ Právě prší",
+            body: `${fav.label || favKey}${kmStr}: ${precipWords(type, rainVal)}, špička ${rainVal} mm/h. Podle radaru.`,
+            tag: `rain-${favKey}`,
+          };
+        } else if (now < startMs) {
+          shouldNotify = true;
+          reason = `rain:${favKey}`;
+          const minsAway = Math.max(Math.round((startMs - now) / 60000), 1);
+          notifPayload = {
+            title: `${PRECIP_TITLE[type]} za ~${minsAway} min`,
+            body: `${fav.label || favKey}${kmStr}: ${precipWords(type, rainVal)} přibližně od ${localHM(new Date(startMs).toISOString())}. Podle radaru.`,
+            tag: `rain-${favKey}`,
+          };
+        }
+        if (shouldNotify) {
+          record.notified = record.notified || {};
+          record.notified[favKey] = new Date(now).toISOString();
+        }
       }
     }
   }
@@ -568,6 +598,23 @@ function nearestPtIdx(grid, lat, lon) {
     if (d < bd) { bd = d; best = i; }
   }
   return { id: best, dist: bd };
+}
+
+// Nejbližší aktivní srážky v okolí bodu (≤ 12 km) — bouřka pár km vedle
+// oblíbeného místa se počítá; jediný suchý pixel dřív celou notifikaci zahodil.
+function nearestRainActivity(grid, lat, lon) {
+  const pts = grid.pts || [];
+  let best = null;
+  for (let i = 0; i < pts.length; i++) {
+    const a = grid.act?.[String(i)];
+    if (!a) continue;
+    const d = haversineKm(lat, lon, pts[i][0], pts[i][1]);
+    if (d > 12) continue;
+    if (!best || a[0] < best.act[0] || (a[0] === best.act[0] && d < best.distKm)) {
+      best = { act: a, distKm: d };
+    }
+  }
+  return best;
 }
 
 function haversineKm(lat1, lon1, lat2, lon2) {

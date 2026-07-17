@@ -603,10 +603,10 @@ function _renderTabRekordy(body, stationId) {
     return;
   }
   const LABELS = {
-    temp_max: ["Max. teplota", "°C", "🌡️"], temp_min: ["Min. teplota", "°C", "❄️"],
-    temp_avg: ["Průměrná teplota", "°C", "📊"], precip: ["Max. srážky za den", "mm", "🌧️"],
-    gust_kmh: ["Max. nárazy větru", "km/h", "💨"], snow_cm: ["Max. výška sněhu", "cm", "❄️"],
-    sunshine_h: ["Max. sluneční svit", "h", "☀️"],
+    temp_max: ["Nejvyšší teplota", "°C", "🌡️"], temp_min: ["Nejnižší teplota", "°C", "❄️"],
+    temp_avg: ["Průměrná teplota", "°C", "📊"], precip: ["Max. srážky za měsíc", "mm", "🌧️"],
+    gust_kmh: ["Max. náraz větru", "km/h", "💨"], snow_cm: ["Max. výška sněhu", "cm", "❄️"],
+    sunshine_h: ["Max. svit za měsíc", "h", "☀️"],
   };
   let html = `<div style="display:grid;gap:.6rem;padding:.5rem 0">`;
   for (const [key, rec] of Object.entries(stats.records)) {

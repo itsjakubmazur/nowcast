@@ -54,6 +54,7 @@ jobs:
             data/wu_stations.json
             data/wu_history.json
             data/accuracy.json
+            data/hydro.json
           key: station-data-${{ github.run_id }}
           restore-keys: |
             station-data-
@@ -117,6 +118,14 @@ jobs:
         if: steps.mode.outputs.mode == 'full'
         run: python pipeline/chmi.py || echo "chmi.py selhalo, pokračuji"
 
+      - name: Run chmi_stats (rekordy/normály/trend — samo se omezuje na 1× za 6 h)
+        if: steps.mode.outputs.mode == 'full'
+        run: python pipeline/chmi_stats.py || echo "chmi_stats.py selhalo, pokračuji"
+
+      - name: Run hydro (hlásné profily — stavy a průtoky)
+        if: steps.mode.outputs.mode == 'full'
+        run: python pipeline/hydro.py || echo "hydro.py selhalo, pokračuji"
+
       - name: Save station data cache (pro příští fast běhy)
         if: steps.mode.outputs.mode == 'full'
         uses: actions/cache/save@v4
@@ -129,6 +138,7 @@ jobs:
             data/wu_stations.json
             data/wu_history.json
             data/accuracy.json
+            data/hydro.json
           key: station-data-${{ github.run_id }}
 
       - name: Validate publikovaná data (poslední pojistka před deployem)

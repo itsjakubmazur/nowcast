@@ -753,6 +753,12 @@ button.glass-btn svg { width: 17px; height: 17px; display: block; }
   text-transform: uppercase; color: var(--muted); min-width: 4.4rem; }
 .astro-row .a-v { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .astro-row .a-d { color: var(--muted); font-size: .68rem; }
+/* podsekce "Pozorování dnes v noci" + pásek noční oblačnosti */
+.astro-sub { font-size: .64rem; font-weight: 700; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .06em; margin: .55rem 0 .1rem;
+  padding-top: .45rem; border-top: 1px solid var(--rowline); }
+.nstrip { display: inline-flex; gap: 2px; align-items: center; }
+.nstrip i { width: 11px; height: 13px; border-radius: 3px; background: var(--muted); display: inline-block; }
 
 /* zimní panel — objeví se jen v sezóně */
 #winter-panel {

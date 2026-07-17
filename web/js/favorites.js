@@ -2,6 +2,7 @@ import { state, WORKER_BASE } from "./state.js";
 import { localHM, esc } from "./utils.js";
 import { showToast } from "./toast.js";
 import { getSettings, logNotif } from "./settings.js";
+import { assessRain } from "./verdict.js";
 
 const FAV_KEY = "nowcast_favs";
 const FAV_MAX = 5;
@@ -126,18 +127,21 @@ export function checkRainNotifications() {
     const snoozeKey = `rain_${f.label}`;
     if (snooze[snoozeKey] && now - snooze[snoozeKey] < 20 * 60 * 1000) continue;
     const { id } = _nearestPtLocal(f.lat, f.lon);
-    const a = state.GRID.act[String(id)];
-    if (!a) continue;
-    if (a[2] < rainThresh) continue; // pod uživatelským prahem z Nastavení
+    // jednotné vyhodnocení včetně OKOLÍ bodu — bouřka 3 km vedle oblíbeného
+    // místa dřív propadla sítem, protože přesně ten jeden pixel byl suchý
+    const as = assessRain(id, null);
+    if (!as || (as.status !== "raining" && as.status !== "soon")) continue;
+    if ((as.peak ?? 0) < rainThresh) continue; // pod uživatelským prahem z Nastavení
 
-    const t0ms = new Date(state.GRID.t0_utc).getTime();
-    const startMs = t0ms + (a[0] + 1) * (state.GRID.step_min || 10) * 60000;
-    const minsAway = (startMs - now) / 60000;
-    if (minsAway < 0 || minsAway > 60) continue;
-
-    const mins = Math.round(minsAway);
-    const intenz = a[2] >= 7.5 ? "vydatný déšť" : a[2] >= 2.5 ? "mírný déšť" : "slabé srážky";
-    const msg = `Za ${mins} min — ${intenz} (${a[2]} mm/h) u ${f.label}`;
+    let msg;
+    if (as.status === "raining") {
+      msg = `Právě prší u ${f.label}${as.nearKm > 5 ? ` (jádro ~${as.nearKm} km)` : ""}${as.peak != null ? ` — ${as.peak} mm/h` : ""}`;
+    } else {
+      const mins = Math.round((as.startMs - now) / 60000);
+      if (mins > 60) continue;
+      const intenz = as.peak >= 7.5 ? "vydatný déšť" : as.peak >= 2.5 ? "mírný déšť" : "slabé srážky";
+      msg = `Za ${mins} min — ${intenz} (${as.peak} mm/h) u ${f.label}`;
+    }
     if (notifAllowed()) new Notification("🌧️ Meteo Nowcast", { body: msg, icon: "icon.svg", tag: snoozeKey });
     showToast(`🌧️ ${msg}`, { timeoutMs: 8000 });
     logNotif(`🌧️ ${msg}`);
