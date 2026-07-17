@@ -25,6 +25,10 @@ import requests
 
 import time as _time
 
+# keep-alive: opendata server má vysokou latenci TLS handshaku — jedno
+# recyklované spojení zrychlí stahování řádově
+SESSION = requests.Session()
+
 DATA_DIR = Path(__file__).parent.parent / "data"
 BASE = "https://opendata.chmi.cz/hydrology"
 HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; NowcastBot/1.0)", "Accept": "application/json,*/*"}
