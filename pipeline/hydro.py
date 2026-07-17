@@ -102,10 +102,54 @@ def _walk_values(obj):
     return None
 
 
+def _parse_meta_row_list(row):
+    """
+    meta1 řádek dle PDF pořadí (ověřeno v CI diagnostice):
+      [WSI, DBC, název, tok, lat, lon, SPA_TYP, "vodní stav", "CM",
+       DRYH, SPA1H..SPA4H, "průtok", "M3_S", DRYQ, SPA1Q..SPA4Q, …]
+    Prahy kotvíme na jednotkové stringy CM / M3_S — kdyby ČHMÚ posunulo sloupce.
+    """
+    if len(row) < 9 or not isinstance(row[1], str):
+        return None
+    dbc = row[1].strip()
+    lat, lon = _num(row[4]), _num(row[5])
+    if not dbc or lat is None or lon is None:
+        return None
+
+    def anchor_block(unit):
+        for i, c in enumerate(row):
+            if isinstance(c, str) and c.strip().upper() == unit:
+                nums = [_num(x) for x in row[i + 1:i + 6]]
+                return (nums + [None] * 5)[:5]   # [DRY, SPA1, SPA2, SPA3, SPA4]
+        return [None] * 5
+    hb = anchor_block("CM")
+    qb = anchor_block("M3_S")
+
+    spa_typ = "H"
+    for c in row[6:9]:
+        if isinstance(c, str) and c.strip().upper() in ("H", "Q"):
+            spa_typ = c.strip().upper()
+            break
+
+    return {
+        "id": dbc,
+        "name": str(row[2] or dbc),
+        "stream": str(row[3] or ""),
+        "lat": round(lat, 4), "lon": round(lon, 4),
+        "spa_typ": spa_typ,
+        "dry_h": hb[0], "spa_h": hb[1:4],
+        "dry_q": qb[0], "spa_q": qb[1:4],
+    }
+
+
 def parse_metadata(files):
     """Metadata → {dbc: {name, stream, lat, lon, spa_typ, prahy…}}. Loguje tvar."""
     stations = {}
     for url in files:
+        # meta2/meta3 mají jiný layout — stačí meta1 (obsahuje vše potřebné)
+        fname = url.rsplit("/", 1)[-1].lower()
+        if "meta" in fname and "meta1" not in fname:
+            continue
         r = get(url)
         if not r:
             continue
@@ -120,24 +164,22 @@ def parse_metadata(files):
             continue
         print(f"  [diag] metadata {url.rsplit('/',1)[-1]}: {len(rows)} řádků, vzorek: {json.dumps(rows[0], ensure_ascii=False)[:300]}", file=sys.stderr)
         for row in rows:
-            if not isinstance(row, dict):
-                continue
-            dbc = str(row.get("DBC") or row.get("dbc") or "").strip()
-            lat = _num(row.get("GEOGR1") or row.get("geogr1"))
-            lon = _num(row.get("GEOGR2") or row.get("geogr2"))
-            if not dbc or lat is None or lon is None:
-                continue
-            stations[dbc] = {
-                "id": dbc,
-                "name": str(row.get("STATION_NAME") or row.get("station_name") or dbc),
-                "stream": str(row.get("STREAM_NAME") or row.get("stream_name") or ""),
-                "lat": round(lat, 4), "lon": round(lon, 4),
-                "spa_typ": str(row.get("SPA_TYP") or "H").strip().upper() or "H",
-                "spa_h": [_num(row.get(f"SPA{i}H")) for i in (1, 2, 3)],
-                "spa_q": [_num(row.get(f"SPA{i}Q")) for i in (1, 2, 3)],
-                "dry_h": _num(row.get("DRYH")),
-                "dry_q": _num(row.get("DRYQ")),
-            }
+            st = None
+            if isinstance(row, list):
+                st = _parse_meta_row_list(row)
+            elif isinstance(row, dict):
+                dbc = str(row.get("DBC") or "").strip()
+                lat, lon = _num(row.get("GEOGR1")), _num(row.get("GEOGR2"))
+                if dbc and lat is not None and lon is not None:
+                    st = {"id": dbc, "name": str(row.get("STATION_NAME") or dbc),
+                          "stream": str(row.get("STREAM_NAME") or ""),
+                          "lat": round(lat, 4), "lon": round(lon, 4),
+                          "spa_typ": str(row.get("SPA_TYP") or "H").upper(),
+                          "spa_h": [_num(row.get(f"SPA{i}H")) for i in (1, 2, 3)],
+                          "spa_q": [_num(row.get(f"SPA{i}Q")) for i in (1, 2, 3)],
+                          "dry_h": _num(row.get("DRYH")), "dry_q": _num(row.get("DRYQ"))}
+            if st:
+                stations[st["id"]] = st
     return stations
 
 
@@ -209,12 +251,15 @@ def main():
     if data_files:
         print(f"  [diag] příklad názvů: {[f.rsplit('/',1)[-1] for f in data_files[:6]]}", file=sys.stderr)
 
-    # datový soubor → DBC podle čísla v názvu
+    # datový soubor → DBC: ze všech číselných skupin v názvu vyber tu, která
+    # odpovídá známé stanici (v názvu bývá i WSI s dalšími čísly)
+    known = set(stations)
     by_dbc = {}
     for f in data_files:
-        m = re.search(r"(\d{3,})", f.rsplit("/", 1)[-1])
-        if m:
-            by_dbc.setdefault(m.group(1), f)
+        for grp in re.findall(r"\d{3,}", f.rsplit("/", 1)[-1]):
+            if grp in known:
+                by_dbc.setdefault(grp, f)
+                break
 
     out_stations = []
     matched = 0

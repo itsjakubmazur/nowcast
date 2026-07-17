@@ -55,7 +55,14 @@ ELEMENTS = {
     "SSV":  ("sunshine_h", 1),
 }
 
-_logged_shape = False
+# Reálný tvar řádku (ověřeno v CI diagnostice):
+#   ['0-20000-0-11406', 'E', '1961', '01', 'AVG', 'AVG', 4.5, '', '']
+# → datum a charakteristika jsou STRINGY, hodnota je jediné skutečné ČÍSLO.
+# Toho se držíme: datum = číselné stringy na začátku, charakteristika = první
+# známý alfabetický token, hodnota = první buňka typu int/float.
+CHAR_TOKENS = {"AVG", "MAX", "MIN", "SUM", "CNT", "MOD", "MED"}
+
+_diag_left = 3
 
 
 def fetch_json(url):
@@ -70,69 +77,79 @@ def fetch_json(url):
     return None
 
 
-def extract_values(data):
-    """
-    Z pivot JSON (data.data.values, řádek [WSI, ELEMENT, DT, VALUE, (FLAG…)])
-    vrátí {out_key: [(dt, val), ...]}. Hodnotu hledá adaptivně — první číselný
-    sloupec za DT (kdyby ČHMÚ vložilo sloupec navíc, ať to nespadne potichu).
-    """
-    global _logged_shape
-    result = defaultdict(list)
+def extract_rows(data, diag_label=""):
+    """Vrátí seznam čtveřic (out_key, characteristic, dt, val)."""
+    global _diag_left
     try:
         rows = data["data"]["data"]["values"]
     except (KeyError, TypeError):
-        return result
+        return []
+    if rows and _diag_left > 0:
+        print(f"  [diag] {diag_label} řádek: {rows[0]!r}", file=sys.stderr)
+        _diag_left -= 1
 
-    if rows and not _logged_shape:
-        print(f"  [diag] tvar řádku: {rows[0]!r}", file=sys.stderr)
-        _logged_shape = True
-
+    out = []
     for row in rows:
         if len(row) < 4:
             continue
-        element, dt = row[1], row[2]
-        spec = ELEMENTS.get(element)
-        if spec is None or dt is None:
+        spec = ELEMENTS.get(row[1])
+        if spec is None:
             continue
-        val = None
-        for cell in row[3:]:
-            if cell is None or cell == "":
-                continue
-            try:
+        date_parts, char, val = [], None, None
+        for cell in row[2:]:
+            if isinstance(cell, (int, float)) and not isinstance(cell, bool):
                 val = float(cell)
-                break
-            except (TypeError, ValueError):
-                continue  # textový FLAG sloupec — hledej dál
-        if val is None:
+                break                      # hodnota = první skutečné číslo
+            if not isinstance(cell, str) or cell == "":
+                continue
+            token = cell.strip()
+            if token.upper() in CHAR_TOKENS:
+                if char is None:
+                    char = token.upper()   # první charakteristika (AVG/MAX/…)
+            elif re.fullmatch(r"\d{1,4}", token) and len(date_parts) < 3 and char is None:
+                date_parts.append(token.zfill(2) if len(token) < 4 else token)
+            elif re.fullmatch(r"\d{4}-\d{2}(-\d{2})?([ T].*)?", token) and not date_parts:
+                date_parts = [token[:10]]
+        if val is None or not date_parts:
             continue
+        dt = date_parts[0] if len(date_parts[0]) > 4 else "-".join(date_parts)
         key, mult = spec
-        result[key].append((str(dt), val * mult))
-    return result
+        out.append((key, char or "", dt, val * mult))
+    return out
 
 
-MAX_KEYS = {"temp_max", "precip", "gust_kmh", "snow_cm", "sunshine_h"}
+# rekord = extrémní charakteristika; normál/průměr = AVG (u úhrnů SUM)
+REC_CHAR = {"temp_max": "MAX", "temp_min": "MIN", "gust_kmh": "MAX",
+            "snow_cm": "MAX", "precip": "SUM", "sunshine_h": "SUM"}
+AVG_CHAR = {"temp_max": "AVG", "temp_min": "AVG", "temp_avg": "AVG",
+            "precip": "SUM", "sunshine_h": "SUM", "snow_cm": "MAX", "gust_kmh": "MAX"}
 
 
-def compute_records(vals):
+def compute_records(rows):
     records = {}
-    for key, pairs in vals.items():
-        if not pairs or key == "temp_avg":
+    for key, want in REC_CHAR.items():
+        cand = [(dt, v) for k, c, dt, v in rows if k == key and (c == want or not c)]
+        if not cand:
+            cand = [(dt, v) for k, c, dt, v in rows if k == key]
+        if not cand:
             continue
-        best = max(pairs, key=lambda x: x[1]) if key in MAX_KEYS \
-            else min(pairs, key=lambda x: x[1])
+        best = min(cand, key=lambda x: x[1]) if key == "temp_min" \
+            else max(cand, key=lambda x: x[1])
         records[key] = {"value": round(best[1], 1), "date": best[0][:10]}
     return records
 
 
-def compute_monthly_normals(vals):
+def compute_monthly_normals(rows):
     buckets = defaultdict(lambda: defaultdict(list))
-    for key, pairs in vals.items():
-        for dt, val in pairs:
-            try:
-                m = int(dt[5:7])
-            except (ValueError, IndexError):
-                continue
-            buckets[m][key].append(val)
+    for k, c, dt, v in rows:
+        want = AVG_CHAR.get(k)
+        if want and c and c != want:
+            continue
+        try:
+            m = int(dt[5:7])
+        except (ValueError, IndexError):
+            continue
+        buckets[m][k].append(v)
     normals = {}
     for month in range(1, 13):
         normals[month] = {}
@@ -142,18 +159,18 @@ def compute_monthly_normals(vals):
     return normals
 
 
-def yearly_trend_from_yrs(vals):
-    """yrs soubor: jeden záznam prvku na rok — přímo roční charakteristiky."""
+def yearly_trend_from_yrs(rows):
+    """yrs soubor: roční charakteristiky — AVG(TPM), MAX(TMA), MIN(TMI), SUM(SRA)."""
+    WANT = {("temp_avg", "AVG"): "temp_avg", ("temp_max", "MAX"): "temp_max",
+            ("temp_min", "MIN"): "temp_min", ("precip", "SUM"): "precip_total"}
     trend = defaultdict(dict)
-    for key, pairs in vals.items():
-        for dt, val in pairs:
-            y = dt[:4]
-            if not y.isdigit():
-                continue
-            out = {"temp_avg": "temp_avg", "temp_max": "temp_max",
-                   "temp_min": "temp_min", "precip": "precip_total"}.get(key)
-            if out:
-                trend[y][out] = round(val, 1)
+    for k, c, dt, v in rows:
+        out = WANT.get((k, c or ""))
+        if out is None and not c:
+            out = {"temp_avg": "temp_avg", "precip": "precip_total"}.get(k)
+        y = dt[:4]
+        if out and y.isdigit():
+            trend[y][out] = round(v, 1)
     return dict(sorted(trend.items()))
 
 
@@ -169,6 +186,7 @@ def load_station_ids():
 
 
 CACHE_MAX_AGE_H = 6  # přegenerovat jen když je soubor starší (drží ho CI cache)
+PARSER_V = 2         # bump = zahodit uložené stanice (změna parsování hodnot)
 
 
 def main():
@@ -191,7 +209,11 @@ def main():
     if stats_path.exists():
         file_age_h = (now_utc.timestamp() - stats_path.stat().st_mtime) / 3600
         try:
-            all_stats = json.loads(stats_path.read_text()).get("stations", {})
+            prev = json.loads(stats_path.read_text())
+            if prev.get("parser_v") == PARSER_V:
+                all_stats = prev.get("stations", {})
+            else:
+                print("  Starší verze parseru — uložené stanice zahazuji", file=sys.stderr)
         except Exception:
             all_stats = {}
     pending = [w for w in wsis if w not in all_stats]
@@ -211,26 +233,24 @@ def main():
             print(f"  Rozpočet {BUDGET_S} s vyčerpán — zbytek doběhne příště "
                   f"({len(all_stats)} stanic zatím)", file=sys.stderr)
             break
-        merged = defaultdict(list)   # měsíční řady (historical + recent)
+        merged = []   # měsíční + denní řádky (historical + recent)
         for url in (f"{HIST}/monthly/mly-{wsi}.json",
                     f"{RECENT}/monthly/mly-{wsi}.json"):
             d = fetch_json(url)
             if d:
-                for k, pairs in extract_values(d).items():
-                    merged[k].extend(pairs)
+                merged.extend(extract_rows(d, "mly"))
 
-        yrs_vals = defaultdict(list)
+        yrs_rows = []
         d = fetch_json(f"{HIST}/yearly/yrs-{wsi}.json")
         if d:
-            yrs_vals = extract_values(d)
+            yrs_rows = extract_rows(d, "yrs")
 
         # denní data aktuálního měsíce — ať čerstvý rekord nečeká na konec měsíce
         d = fetch_json(f"{RECENT}/daily/dly-{wsi}-{yyyymm}.json")
         if d:
-            for k, pairs in extract_values(d).items():
-                merged[k].extend(pairs)
+            merged.extend(extract_rows(d, "dly"))
 
-        if not any(merged.values()):
+        if not merged:
             # zapamatuj si i "bez dat" — jinak by se stanice zkoušela každý běh
             all_stats[wsi] = {"records": {}, "monthly_normals": {}, "yearly_trend": {}}
             continue
@@ -238,16 +258,17 @@ def main():
         all_stats[wsi] = {
             "records":         compute_records(merged),
             "monthly_normals": {str(k): v for k, v in compute_monthly_normals(merged).items() if v},
-            "yearly_trend":    yearly_trend_from_yrs(yrs_vals),
+            "yearly_trend":    yearly_trend_from_yrs(yrs_rows),
         }
         ok += 1
-        n = sum(len(v) for v in merged.values())
-        print(f"  ✓ {wsi}: {n} měsíčních/denních hodnot, "
-              f"{len(all_stats[wsi]['yearly_trend'])} roků trendu", file=sys.stderr)
+        print(f"  ✓ {wsi}: {len(merged)} hodnot, "
+              f"{len(all_stats[wsi]['yearly_trend'])} roků trendu, "
+              f"rekordy: {list(all_stats[wsi]['records'])}", file=sys.stderr)
 
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     stats_path.write_text(json.dumps({
         "generated_at_utc": now_utc.isoformat(),
+        "parser_v": PARSER_V,
         "stations": all_stats,
     }, ensure_ascii=False, separators=(",", ":")))
     print(f"\n  ✓ chmi_stats.json — {ok}/{len(wsis)} stanic s historickými daty", file=sys.stderr)
