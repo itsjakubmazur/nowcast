@@ -12,6 +12,7 @@ průchodu pipeline — vítr se mění pomalu, ale ať je vrstva vždy čerstvá
 import json
 import math
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -53,18 +54,23 @@ def fetch_wind(points):
             "current": "wind_speed_10m,wind_direction_10m",
             "timezone": "UTC",
         }
-        try:
-            r = requests.get(OPEN_METEO_URL, params=params, timeout=(5, 30))
-            r.raise_for_status()
-            data = r.json()
-            items = data if isinstance(data, list) else [data]
-            for i, item in enumerate(items):
-                cur = item.get("current", {})
-                spd, wdir = cur.get("wind_speed_10m"), cur.get("wind_direction_10m")
-                if spd is not None and wdir is not None:
-                    out[start + i] = (float(spd), float(wdir))
-        except Exception as e:
-            print(f"  wind batch {start // OM_BATCH}: chyba {e}", file=sys.stderr)
+        # Open-Meteo umí být z CI runneru líné — 3 pokusy s rostoucí pauzou,
+        # jinak by jediný pomalý batch zahodil celou větrnou vrstvu.
+        for attempt in range(3):
+            try:
+                r = requests.get(OPEN_METEO_URL, params=params, timeout=(10, 60))
+                r.raise_for_status()
+                data = r.json()
+                items = data if isinstance(data, list) else [data]
+                for i, item in enumerate(items):
+                    cur = item.get("current", {})
+                    spd, wdir = cur.get("wind_speed_10m"), cur.get("wind_direction_10m")
+                    if spd is not None and wdir is not None:
+                        out[start + i] = (float(spd), float(wdir))
+                break
+            except Exception as e:
+                print(f"  wind batch {start // OM_BATCH} pokus {attempt + 1}: chyba {e}", file=sys.stderr)
+                time.sleep(2 * (attempt + 1))
     return out
 
 

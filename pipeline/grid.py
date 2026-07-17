@@ -128,13 +128,19 @@ def fetch_nwp_grid(nwp_points: list) -> tuple[list, int]:
             "forecast_days": 1,
             "models": "icon_d2",
         }
-        try:
-            r = requests.get(OPEN_METEO_URL, params=params, timeout=(5, 30))
-            http_calls += 1
-            r.raise_for_status()
-            data = r.json()
-        except Exception as e:
-            print(f"  NWP batch {start//OM_BATCH}: chyba {e} — body bez NWP")
+        # 2 pokusy — Open-Meteo z CI runneru občas nestihne první odpověď
+        data = None
+        for attempt in range(2):
+            try:
+                r = requests.get(OPEN_METEO_URL, params=params, timeout=(10, 60))
+                http_calls += 1
+                r.raise_for_status()
+                data = r.json()
+                break
+            except Exception as e:
+                print(f"  NWP batch {start//OM_BATCH} pokus {attempt + 1}: chyba {e}")
+        if data is None:
+            print(f"  NWP batch {start//OM_BATCH}: vzdávám — body bez NWP")
             for p in chunk:
                 results.append([p[2], p[3], None, None, None])
             continue
