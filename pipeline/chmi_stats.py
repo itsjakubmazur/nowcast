@@ -42,6 +42,9 @@ HEADERS = {
     "Accept":     "application/json,*/*",
 }
 
+# keep-alive spojení — TLS handshake na opendata serveru trvá sekundy
+SESSION = requests.Session()
+
 MS_TO_KMH = 3.6
 
 # prvek → (klíč ve výstupu, násobič)
@@ -67,7 +70,7 @@ _diag_left = 3
 
 def fetch_json(url):
     try:
-        r = requests.get(url, headers=HEADERS, timeout=TIMEOUT)
+        r = SESSION.get(url, headers=HEADERS, timeout=TIMEOUT)
         if r.ok:
             return r.json()
         if r.status_code != 404:

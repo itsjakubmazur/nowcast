@@ -30,7 +30,7 @@ BASE = "https://opendata.chmi.cz/hydrology"
 HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; NowcastBot/1.0)", "Accept": "application/json,*/*"}
 TIMEOUT = (5, 15)
 MAX_STATIONS = 400   # pojistka proti tisícům souborů
-BUDGET_S = 90        # tvrdý rozpočet — pipeline nesmí čekat na pomalý server
+BUDGET_S = 120       # tvrdý rozpočet — pipeline nesmí čekat na pomalý server
 _T0 = _time.monotonic()
 
 
@@ -40,7 +40,7 @@ def over_budget():
 
 def get(url):
     try:
-        r = requests.get(url, headers=HEADERS, timeout=TIMEOUT)
+        r = SESSION.get(url, headers=HEADERS, timeout=TIMEOUT)
         if r.ok:
             return r
         print(f"  HTTP {r.status_code}: {url}", file=sys.stderr)
@@ -183,8 +183,12 @@ def parse_metadata(files):
     return stations
 
 
+_series_diag_left = 2
+
+
 def parse_series(url):
     """Datový soubor stanice → [(dt_str, h_cm, q_m3s)] seřazené vzestupně."""
+    global _series_diag_left
     r = get(url)
     if not r:
         return []
@@ -193,6 +197,11 @@ def parse_series(url):
     except Exception:
         return []
     rows = _walk_values(data)
+    if _series_diag_left > 0:
+        top = list(data)[:8] if isinstance(data, dict) else f"list[{len(data)}]"
+        sample = json.dumps(rows[:2], ensure_ascii=False)[:400] if rows else "—"
+        print(f"  [diag] data {url.rsplit('/',1)[-1]}: top={top} rows={len(rows) if rows else 0} vzorek={sample}", file=sys.stderr)
+        _series_diag_left -= 1
     if not rows:
         return []
     out = []
@@ -261,9 +270,20 @@ def main():
                 by_dbc.setdefault(grp, f)
                 break
 
+    # resume: předchozí stanice drž (CI cache soubor přenáší mezi běhy),
+    # v tomhle běhu obnov, co se stihne — nejdřív dosud nestažené
+    prev = {}
+    prev_path = DATA_DIR / "hydro.json"
+    if prev_path.exists():
+        try:
+            prev = {s["id"]: s for s in json.loads(prev_path.read_text()).get("stations", [])}
+        except Exception:
+            prev = {}
+    order = sorted(stations.items(), key=lambda kv: kv[0] in prev)  # nové první
+
     out_stations = []
     matched = 0
-    for dbc, st in list(stations.items())[:MAX_STATIONS]:
+    for dbc, st in order[:MAX_STATIONS]:
         if over_budget():
             print(f"  Rozpočet {BUDGET_S} s vyčerpán — beru, co je ({matched} stanic)", file=sys.stderr)
             break
@@ -285,7 +305,10 @@ def main():
             "spa": spa_level(st, h, q), "trend_cm": trend,
         })
 
-    print(f"  Stanic s daty: {matched} / metadata {len(stations)}", file=sys.stderr)
+    # merge s předchozím stavem — čerstvé přepisují, staré zůstávají
+    merged = {**prev, **{s["id"]: s for s in out_stations}}
+    out_stations = list(merged.values())
+    print(f"  Stanic s daty: čerstvě {matched}, celkem {len(out_stations)} / metadata {len(stations)}", file=sys.stderr)
     if not out_stations:
         print("  Žádná napárovaná data — hydro.json nepřepisuji", file=sys.stderr)
         return
