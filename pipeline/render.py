@@ -16,6 +16,7 @@ from zoneinfo import ZoneInfo
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
+from scipy import ndimage
 
 sys.path.insert(0, str(Path(__file__).parent))
 from ingest import DATA_DIR
@@ -34,9 +35,12 @@ DBZ_MIN = 5.0
 DBZ_MAX = 65.0
 
 # (dBZ, (R, G, B, A))
+# Průhledné zarážky (A=0) mají RGB shodné s první viditelnou barvou — kdyby
+# byly černé, interpolace LUT by u okrajů ozvěn míchala do modré černou a
+# kolem každé srážkové buňky by vznikl tmavý lem.
 CMAP_DBZ: list[tuple[float, tuple[int, int, int, int]]] = [
-    ( 0.0, (  0,   0,   0,   0)),   # pod prahem = průhledné
-    ( 5.0, (  0,   0,   0,   0)),   # stále průhledné
+    ( 0.0, (160, 210, 255,   0)),   # pod prahem = průhledné
+    ( 5.0, (160, 210, 255,   0)),   # stále průhledné (odtud alfa plynule roste)
     (10.0, (160, 210, 255, 100)),   # velmi slabé — bledě modrá, poloprůhledná
     (15.0, ( 80, 160, 255, 140)),
     (20.0, ( 30, 120, 230, 170)),   # slabé — modrá
@@ -68,23 +72,42 @@ _LUT = _build_lut()
 _TRANSPARENT = np.array([0, 0, 0, 0], dtype=np.uint8)
 
 
+# Supersampling + vyhlazení: radarový grid (~1 km/px) vypadá po roztažení
+# Leafletem přes celou ČR kostičkovaně. Pole proto před obarvením 2× zvětšíme
+# bilineárně přímo v dBZ a lehce vyhladíme Gaussem (σ<1 px na 2× gridu ≈
+# σ<0.5 px původního — detaily buněk zůstávají, schodovité hrany zmizí).
+UPSAMPLE   = 2
+SMOOTH_SIG = 0.9
+
+
+def _upsample_smooth(dbz: np.ndarray) -> np.ndarray:
+    """Bilineární 2× upsample + jemný Gauss; NaN/pod prahem drží pod DBZ_MIN."""
+    # NaN → hodnota hluboko pod prahem, ať interpolace na okraji ozvěny plynule
+    # klesá pod DBZ_MIN místo šíření NaN do sousedních pixelů.
+    fill = DBZ_MIN - 10.0
+    d = np.nan_to_num(dbz, nan=fill)
+    d = np.maximum(d, fill)
+    up = ndimage.zoom(d, UPSAMPLE, order=1, prefilter=False)
+    return ndimage.gaussian_filter(up, sigma=SMOOTH_SIG)
+
+
 def dbz_to_img(dbz: np.ndarray) -> Image.Image:
     """
     2D pole dBZ (float32, NaN povoleno) → kvantizovaný PIL Image (paleta + alfa).
     Hodnoty < DBZ_MIN nebo NaN → průhledné.
     """
-    d = np.nan_to_num(dbz, nan=-999.0)
+    d = _upsample_smooth(dbz)
     mask_vis = d >= DBZ_MIN   # pixely s detekovatelnou ozvěnou
     d_clamped = np.clip(d, DBZ_MIN, DBZ_MAX)
     idx = ((d_clamped - DBZ_MIN) / (DBZ_MAX - DBZ_MIN) * (_LUT_SIZE - 1)).astype(np.int32)
 
     # RGBA array: začni jako průhledné, pak nastav viditelné pixely z LUT
-    rgba = np.zeros((*dbz.shape, 4), dtype=np.uint8)
+    rgba = np.zeros((*d.shape, 4), dtype=np.uint8)
     rgba[mask_vis] = _LUT[idx[mask_vis]]
 
     img = Image.fromarray(rgba, mode="RGBA")
     if SCALE != 1:
-        h, w = dbz.shape
+        h, w = d.shape
         img = img.resize((w * SCALE, h * SCALE), Image.Resampling.BILINEAR)
     return img.quantize(colors=256, method=Image.Quantize.FASTOCTREE)
 

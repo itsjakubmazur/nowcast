@@ -296,7 +296,9 @@ function wireMeteoTabs() {
     if (!btn || btn.dataset.mode === _meteoMode) return;
     _meteoMode = btn.dataset.mode;
     tabs.querySelectorAll(".mtab").forEach(b => b.classList.toggle("active", b === btn));
-    if (_meteoData) drawMeteoChart(false);
+    if (!_meteoData) return;
+    if (_meteoMode === "ensemble" && !_meteoEnsemble) loadEnsemble();
+    else drawMeteoChart(false);
   });
 }
 
@@ -305,10 +307,69 @@ export function renderMeteogram(fc, daily) {
   const hourly = fc.hourlyFull || fc.hourly;
   if (!hourly.length) { wrap.classList.remove("show"); return; }
   _meteoData = { fc, daily };
-  _meteoSpread = null; // nové místo = staré pásmo modelů neplatí
+  _meteoSpread = null;   // nové místo = staré pásmo modelů neplatí
+  _meteoEnsemble = null; // ensemble se pro nové místo stáhne líně při kliku
   wireMeteoTabs();
   wrap.classList.add("show");
-  drawMeteoChart(true);
+  if (_meteoMode === "ensemble") loadEnsemble();
+  else drawMeteoChart(true);
+}
+
+// ── Ensemble vějíř — ICON-EPS členy z Open-Meteo ensemble API ───────────────
+// Stahuje se líně až při kliknutí na záložku (40 členů = větší odpověď).
+let _meteoEnsemble = null; // { p10, p25, p50, p75, p90, prec50, prec90 } zarovnané na hourlyFull
+
+function quantile(sorted, q) {
+  if (!sorted.length) return null;
+  const pos = (sorted.length - 1) * q;
+  const lo = Math.floor(pos), hi = Math.ceil(pos);
+  return sorted[lo] + (sorted[hi] - sorted[lo]) * (pos - lo);
+}
+
+async function loadEnsemble() {
+  const canvasWrap = document.getElementById("meteo-canvas-wrap");
+  const fc = _meteoData?.fc;
+  const lat = state.currentLat, lon = state.currentLon;
+  if (!fc || lat == null) return;
+  if (canvasWrap) canvasWrap.innerHTML = `<span class="skel" style="width:100%;height:100%;border-radius:12px"></span>`;
+  try {
+    const url = `https://ensemble-api.open-meteo.com/v1/ensemble?latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}`
+      + `&hourly=temperature_2m,precipitation&models=icon_seamless&forecast_days=2&timezone=Europe%2FPrague`;
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 15000);
+    const r = await fetch(url, { signal: ctrl.signal });
+    clearTimeout(timer);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const data = await r.json();
+    const h = data.hourly || {};
+    const tempKeys = Object.keys(h).filter(k => k.startsWith("temperature_2m"));
+    const precKeys = Object.keys(h).filter(k => k.startsWith("precipitation"));
+    if (tempKeys.length < 5) throw new Error("málo členů");
+    const idxByTime = new Map((h.time || []).map((t, i) => [t, i]));
+    const hourly = fc.hourlyFull || [];
+
+    const agg = { p10: [], p25: [], p50: [], p75: [], p90: [], prec50: [], prec90: [] };
+    for (const x of hourly) {
+      const j = idxByTime.get(x.iso);
+      if (j == null) { for (const k of Object.keys(agg)) agg[k].push(null); continue; }
+      const temps = tempKeys.map(k => h[k]?.[j]).filter(v => v != null).sort((a, b) => a - b);
+      const precs = precKeys.map(k => h[k]?.[j]).filter(v => v != null).sort((a, b) => a - b);
+      agg.p10.push(quantile(temps, 0.1)); agg.p25.push(quantile(temps, 0.25));
+      agg.p50.push(quantile(temps, 0.5)); agg.p75.push(quantile(temps, 0.75));
+      agg.p90.push(quantile(temps, 0.9));
+      agg.prec50.push(quantile(precs, 0.5)); agg.prec90.push(quantile(precs, 0.9));
+    }
+    agg.nMembers = tempKeys.length;
+    // mezitím mohl uživatel přepnout místo nebo záložku
+    if (_meteoData?.fc !== fc) return;
+    _meteoEnsemble = agg;
+    if (_meteoMode === "ensemble") drawMeteoChart(false);
+  } catch (e) {
+    console.warn("Ensemble:", e);
+    if (_meteoMode === "ensemble" && canvasWrap) {
+      canvasWrap.innerHTML = `<div class="meteo-note" style="padding:2rem 0;text-align:center">Ensemble data se nepodařilo načíst.</div>`;
+    }
+  }
 }
 
 // Datasety pro jednotlivé záložky. Každá vrací { datasets, scales }.
@@ -376,6 +437,36 @@ function meteoModeConfig(hourly, textColor, gridColor) {
       scales: {
         y: { position: "left", ticks: { color: textColor, font: { size: 10 }, callback: v => v + " hPa" }, grid: { color: gridColor } },
         y1: pct,
+      },
+    };
+  }
+
+  if (_meteoMode === "ensemble" && _meteoEnsemble) {
+    const e = _meteoEnsemble;
+    return {
+      datasets: [
+        // vějíř: 10–90 % (světlé) a 25–75 % (sytější) pásmo + medián
+        { type: "line", label: "_p90", data: e.p90, borderWidth: 0, pointRadius: 0,
+          tension: 0.35, yAxisID: "y", fill: "+1", backgroundColor: "rgba(10,132,255,.10)", order: 6 },
+        { type: "line", label: "_p75", data: e.p75, borderWidth: 0, pointRadius: 0,
+          tension: 0.35, yAxisID: "y", fill: "+1", backgroundColor: "rgba(10,132,255,.20)", order: 5 },
+        { type: "line", label: "_p25", data: e.p25, borderWidth: 0, pointRadius: 0,
+          tension: 0.35, yAxisID: "y", fill: "+1", backgroundColor: "rgba(10,132,255,.10)", order: 4 },
+        { type: "line", label: "_p10", data: e.p10, borderWidth: 0, pointRadius: 0,
+          tension: 0.35, yAxisID: "y", order: 3 },
+        { type: "line", label: `Medián teploty (${e.nMembers} členů)`, data: e.p50,
+          borderColor: "#0A84FF", backgroundColor: "transparent", borderWidth: 2.2,
+          pointRadius: 0, tension: 0.35, yAxisID: "y", order: 1 },
+        { type: "bar", label: "Srážky medián (mm)", data: e.prec50,
+          backgroundColor: "rgba(79,142,247,.55)", yAxisID: "y1", order: 7,
+          barPercentage: 0.9, categoryPercentage: 1 },
+        { type: "line", label: "Srážky 90. percentil", data: e.prec90,
+          borderColor: "#5AC8FA", backgroundColor: "transparent", borderWidth: 1.2,
+          borderDash: [3, 3], pointRadius: 0, tension: 0.3, yAxisID: "y1", order: 2 },
+      ],
+      scales: {
+        y: { position: "left", ticks: { color: textColor, font: { size: 10 }, callback: v => v + "°" }, grid: { color: gridColor } },
+        y1: { position: "right", ticks: { color: textColor, font: { size: 10 } }, grid: { display: false }, beginAtZero: true, suggestedMax: 5 },
       },
     };
   }
@@ -485,7 +576,7 @@ function drawMeteoChart(withFade) {
       plugins: {
         legend: { display: true, position: "top", labels: {
           color: textColor, font: { size: 10 }, boxWidth: 10, padding: 8,
-          filter: item => item.text !== "_bandmin", // pomocná spodní hrana pásma
+          filter: item => !item.text.startsWith("_"), // pomocné hrany pásem
         } },
         tooltip: { mode: "index", intersect: false },
       },

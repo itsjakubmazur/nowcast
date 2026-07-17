@@ -90,18 +90,20 @@ def main():
         print("verify.py: nedostatek snímků po načtení — přeskakuji", file=sys.stderr)
         return
 
-    # Ponech poslední 2 snímky jako "budoucnost" k porovnání, zbytek jako trénink.
-    train_stack = stack[:-2]
-    actual_1 = dbz_to_rainrate(stack[-2])
-    actual_2 = dbz_to_rainrate(stack[-1])
+    # Ponech poslední 2–3 snímky jako "budoucnost" k porovnání, zbytek jako
+    # trénink. Při dostatku snímků validujeme i +30 min — přesnost podle
+    # lead-time je vidět na webu (radar degraduje s časem, ať je to poctivě
+    # změřené, ne jen tvrzené).
+    n_holdout = 3 if stack.shape[0] >= 6 else 2
+    train_stack = stack[:-n_holdout]
+    actuals = [dbz_to_rainrate(stack[-(n_holdout - k)]) for k in range(n_holdout)]
 
     start_rr = dbz_to_rainrate(train_stack[-1])
     try:
-        forecast = run_extrapolation(train_stack, start_rr, 2, TIMESTEP_MIN)
+        forecast = run_extrapolation(train_stack, start_rr, n_holdout, TIMESTEP_MIN)
     except Exception as e:
         print(f"verify.py: extrapolace selhala: {e}", file=sys.stderr)
         return
-    pred_1, pred_2 = forecast[0], forecast[1]
 
     try:
         row, col = latlon_to_pixel(lat, lon, meta)
@@ -113,16 +115,14 @@ def main():
     r0, r1 = max(0, row - SAMPLE_RADIUS), min(nrows, row + SAMPLE_RADIUS + 1)
     c0, c1 = max(0, col - SAMPLE_RADIUS), min(ncols, col + SAMPLE_RADIUS + 1)
 
-    m1 = _metrics(pred_1, actual_1, r0, r1, c0, c1)
-    m2 = _metrics(pred_2, actual_2, r0, r1, c0, c1)
-
     now_utc = datetime.now(timezone.utc)
     entry = {
         "run_utc":    now_utc.isoformat(),
         "t0_utc":     times[-1].isoformat(),
-        "leadtime_1": m1,
-        "leadtime_2": m2,
     }
+    for k in range(n_holdout):
+        entry[f"leadtime_{k + 1}"] = _metrics(forecast[k], actuals[k], r0, r1, c0, c1)
+    m1 = entry["leadtime_1"]
 
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     history = []
@@ -148,6 +148,7 @@ def main():
                    "skutečně zachytil. Stejný kód jako produkční nowcast."),
         "leadtime_10min":   _aggregate(history, "leadtime_1"),
         "leadtime_20min":   _aggregate(history, "leadtime_2"),
+        "leadtime_30min":   _aggregate(history, "leadtime_3"),
         "threshold_mm_h":   RAIN_THRESHOLD_MM_H,
         "sample_location":  {"lat": lat, "lon": lon, "radius_px": SAMPLE_RADIUS},
     }

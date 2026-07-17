@@ -104,6 +104,20 @@ export function renderRainBadge(ptId) {
 let _countdownTimer = null;
 let _countdownTarget = null; // { startMs, endMs, peak } nebo null
 
+// Typ srážek (déšť / sníh / smíšené) — hint z Open-Meteo hodinovky, nastavuje
+// showFc24 po parseFc24. Radar sám typ nezná, model ano.
+let _precipHint = "rain";
+const PRECIP_WORD = { rain: "Déšť", snow: "Sněžení", mixed: "Déšť se sněhem" };
+const PRECIP_NOW = { rain: "Právě prší", snow: "Právě sněží", mixed: "Padá déšť se sněhem" };
+const PRECIP_ICON = { rain: "rain", snow: "snow", mixed: "sleet" };
+
+export function setPrecipTypeHint(fc) {
+  const h = (fc?.hourlyFull || []).slice(0, 3);
+  const snow = h.some(x => (x.snow ?? 0) > 0);
+  const cold = h.length && h[0].tempRaw != null && h[0].tempRaw <= 1;
+  _precipHint = snow ? (cold ? "snow" : "mixed") : "rain";
+}
+
 export function renderRainCountdown(ptId) {
   const el = document.getElementById("rain-countdown");
   if (!el || !state.GRID || !state.MANIFEST) { el?.classList.remove("show"); return; }
@@ -140,19 +154,19 @@ function _tickCountdown() {
   const { startMs, endMs, peak, total } = _countdownTarget;
   el.classList.add("show", "imminent");
   el.classList.remove("clear");
-  document.getElementById("rc-icon").innerHTML = wImg("rain");
+  document.getElementById("rc-icon").innerHTML = wImg(PRECIP_ICON[_precipHint]);
 
   if (now < startMs) {
     const minsAway = Math.round((startMs - now) / 60000);
     const durMin = Math.round((endMs - startMs) / 60000);
     document.getElementById("rc-title").innerHTML =
-      `Déšť za <span class="rc-timer">${minsAway} min</span>`;
+      `${PRECIP_WORD[_precipHint]} za <span class="rc-timer">${minsAway} min</span>`;
     document.getElementById("rc-sub").textContent =
       `${localHM(new Date(startMs).toISOString())}–${localHM(new Date(endMs).toISOString())} · potrvá ~${durMin} min · špička ${peak} mm/h`;
   } else if (now <= endMs) {
     const minsLeft = Math.round((endMs - now) / 60000);
     document.getElementById("rc-title").innerHTML =
-      `Právě prší <span class="rc-timer">(ještě ~${Math.max(minsLeft, 1)} min)</span>`;
+      `${PRECIP_NOW[_precipHint]} <span class="rc-timer">(ještě ~${Math.max(minsLeft, 1)} min)</span>`;
     document.getElementById("rc-sub").textContent = `Špička ${peak} mm/h · úhrn ~${total} mm`;
   } else {
     document.getElementById("rc-title").textContent = "Přeháňka odezněla";
@@ -294,8 +308,15 @@ export function renderAccuracyLine() {
   }
   const l10 = acc.leadtime_10min;
   if (l10.mae_mm_h == null) { el.classList.remove("show"); return; }
-  el.innerHTML = `📊 Přesnost nowcastu (${acc.window_days} dní): MAE <b>${l10.mae_mm_h} mm/h</b>, ` +
-    `shoda příchodu srážek <b>${l10.hit_rate_pct}%</b> <span style="opacity:.7">(n=${l10.n})</span>`;
+  // přesnost podle lead-time: +10/+20/+30 min vedle sebe — poctivě ukazuje,
+  // jak extrapolace s časem degraduje
+  const leads = [["+10", acc.leadtime_10min], ["+20", acc.leadtime_20min], ["+30", acc.leadtime_30min]]
+    .filter(([, l]) => l && l.hit_rate_pct != null);
+  const perLead = leads.length > 1
+    ? ` · shoda ${leads.map(([t, l]) => `<b>${t}′ ${Math.round(l.hit_rate_pct)}%</b>`).join(" / ")}`
+    : ` · shoda příchodu srážek <b>${l10.hit_rate_pct}%</b>`;
+  el.innerHTML = `📊 Přesnost nowcastu (${acc.window_days} dní): MAE <b>${l10.mae_mm_h} mm/h</b>${perLead}` +
+    ` <span style="opacity:.7">(n=${l10.n})</span>`;
   el.classList.add("show");
   el.title = acc.method || "";
 }

@@ -28,6 +28,8 @@ const STATIC_ASSETS = [
   "./js/skeleton.js",
   "./js/climate.js",
   "./js/lightning.js",
+  "./js/settings.js",
+  "./js/compare.js",
   "./icon.svg",
   "./icons/icon-192.png",
   "./manifest.json",

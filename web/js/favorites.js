@@ -1,6 +1,7 @@
 import { state, WORKER_BASE } from "./state.js";
 import { localHM, esc } from "./utils.js";
 import { showToast } from "./toast.js";
+import { getSettings, logNotif } from "./settings.js";
 
 const FAV_KEY = "nowcast_favs";
 const FAV_MAX = 5;
@@ -112,6 +113,7 @@ export function checkRainNotifications() {
         const msg = `${icon} ${w.event} u ${f.label} — platí do ${localHM(w.expires_utc)}`;
         if (notifAllowed()) new Notification("⚠️ Výstraha ČHMÚ", { body: msg, icon: "icon.svg", tag: snoozeKey });
         showToast(msg, { kind: "warn", timeoutMs: 8000 });
+        logNotif(msg);
         snooze[snoozeKey] = now;
         localStorage.setItem(NOTIF_SNOOZE_KEY, JSON.stringify(snooze));
         return;
@@ -119,12 +121,14 @@ export function checkRainNotifications() {
     }
   }
 
+  const rainThresh = getSettings().rainThresh;
   for (const f of favs) {
     const snoozeKey = `rain_${f.label}`;
     if (snooze[snoozeKey] && now - snooze[snoozeKey] < 20 * 60 * 1000) continue;
     const { id } = _nearestPtLocal(f.lat, f.lon);
     const a = state.GRID.act[String(id)];
     if (!a) continue;
+    if (a[2] < rainThresh) continue; // pod uživatelským prahem z Nastavení
 
     const t0ms = new Date(state.GRID.t0_utc).getTime();
     const startMs = t0ms + (a[0] + 1) * (state.GRID.step_min || 10) * 60000;
@@ -136,6 +140,7 @@ export function checkRainNotifications() {
     const msg = `Za ${mins} min — ${intenz} (${a[2]} mm/h) u ${f.label}`;
     if (notifAllowed()) new Notification("🌧️ Meteo Nowcast", { body: msg, icon: "icon.svg", tag: snoozeKey });
     showToast(`🌧️ ${msg}`, { timeoutMs: 8000 });
+    logNotif(`🌧️ ${msg}`);
     snooze[snoozeKey] = now;
     localStorage.setItem(NOTIF_SNOOZE_KEY, JSON.stringify(snooze));
     return;

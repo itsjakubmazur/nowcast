@@ -49,6 +49,23 @@ function fmtDate(d) {
   return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
 }
 
+// Syntetická klimatologie 1991–2020 pro archive-api (normál + rekordy) —
+// stačí pár let, agregace v climate.js si poradí s libovolným počtem.
+function buildArchiveFixture() {
+  const daily = { time: [], temperature_2m_mean: [], temperature_2m_max: [], temperature_2m_min: [] };
+  for (let y = 2015; y <= 2020; y++) {
+    for (let d = 0; d < 365; d++) {
+      const dt = new Date(Date.UTC(y, 0, 1 + d));
+      daily.time.push(dt.toISOString().slice(0, 10));
+      const seasonal = 10 + 10 * Math.sin(((d - 105) / 365) * 2 * Math.PI);
+      daily.temperature_2m_mean.push(Math.round(seasonal * 10) / 10);
+      daily.temperature_2m_max.push(Math.round((seasonal + 6 + (y - 2015)) * 10) / 10);
+      daily.temperature_2m_min.push(Math.round((seasonal - 6 - (y - 2015)) * 10) / 10);
+    }
+  }
+  return { daily };
+}
+
 function buildOpenMeteoFixture() {
   const nowHour = pragueNowAsNaive();
   nowHour.setUTCMinutes(0, 0, 0);
@@ -193,6 +210,12 @@ async function main() {
     ] }), contentType: "application/json" }));
   await page.route("https://api.rainviewer.com/**", route =>
     route.fulfill({ body: JSON.stringify({ host: "https://tilecache.rainviewer.com", radar: { past: [{ time: 1, path: "/v2/radar/1" }], nowcast: [] } }), contentType: "application/json" }));
+  // klimatologie 1991–2020 (normál + rekordy) — malá syntetická řada, ať
+  // renderClimateAnomaly/renderDayInHistory nejdou do reálné sítě
+  await page.route("https://archive-api.open-meteo.com/**", route =>
+    route.fulfill({ body: JSON.stringify(buildArchiveFixture()), contentType: "application/json" }));
+  await page.route("https://ensemble-api.open-meteo.com/**", route =>
+    route.fulfill({ body: "{}", contentType: "application/json" }));
   await page.route("https://*.workers.dev/vapid-public-key**", route =>
     route.fulfill({ body: JSON.stringify({ publicKey: "BM60k6heLK2a7KNELX05p5_Wpv1zhUbB2JFLMLVz13uirAVfjkCtoksQ7bdQIMd5hqvwUTwPUWUGfhFm0KkhF3Y" }), contentType: "application/json" }));
   await page.route("https://*.workers.dev/verdict**", route =>
@@ -224,7 +247,7 @@ async function main() {
   // ── Přesnost nowcastu ─────────────────────────────────────────────────────
   await page.waitForSelector("#accuracy-line.show", { timeout: 5000 });
   const accText = await page.textContent("#accuracy-line");
-  assertTrue(accText.includes("91.3"), `accuracy.json se zobrazil (obsah: "${accText.trim()}")`);
+  assertTrue(/\+10′ 91\s?%/.test(accText), `accuracy.json se zobrazil per lead-time (obsah: "${accText.trim()}")`);
 
   // ── 24h strip + meteogram + AQ + 7denní výhled ───────────────────────────
   await page.waitForSelector("#fc24-scroll .fc24-col", { timeout: 8000 });
@@ -355,6 +378,7 @@ async function main() {
   await page2.route("https://api.open-meteo.com/v1/forecast**", route =>
     route.fulfill({ body: JSON.stringify(omFixture), contentType: "application/json" }));
   await page2.route("https://air-quality-api.open-meteo.com/**", route => route.fulfill({ body: "{}", contentType: "application/json" }));
+  await page2.route("https://archive-api.open-meteo.com/**", route => route.fulfill({ body: JSON.stringify(buildArchiveFixture()), contentType: "application/json" }));
   await page2.route("https://*.workers.dev/**", route => route.fulfill({ body: "{}", contentType: "application/json" }));
   const errors2 = [];
   page2.on("pageerror", e => { errors2.push(e.message); if (process.env.DEBUG) console.log("[page2:pageerror]", e.message); });
@@ -380,6 +404,7 @@ async function main() {
   await pageM.route("https://fonts.googleapis.com/**", route => route.fulfill({ body: "", contentType: "text/css" }));
   await pageM.route("https://api.open-meteo.com/v1/forecast**", route => route.fulfill({ body: JSON.stringify(omFixture), contentType: "application/json" }));
   await pageM.route("https://air-quality-api.open-meteo.com/**", route => route.fulfill({ body: "{}", contentType: "application/json" }));
+  await pageM.route("https://archive-api.open-meteo.com/**", route => route.fulfill({ body: JSON.stringify(buildArchiveFixture()), contentType: "application/json" }));
   await pageM.route("https://*.workers.dev/**", route => route.fulfill({ body: "{}", contentType: "application/json" }));
   await pageM.goto(`${base}/?lat=50.09&lon=14.40&q=TestObec`, { waitUntil: "load" });
   await pageM.waitForSelector("#rain-countdown.show", { timeout: 8000 });

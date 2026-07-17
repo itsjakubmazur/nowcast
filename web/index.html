@@ -23,7 +23,7 @@
     style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com;
     font-src https://fonts.gstatic.com;
     img-src 'self' data: blob: https://*.basemaps.cartocdn.com https://*.rainviewer.com https://unpkg.com;
-    connect-src 'self' https://api.open-meteo.com https://geocoding-api.open-meteo.com https://air-quality-api.open-meteo.com https://archive-api.open-meteo.com https://api.rainviewer.com https://*.rainviewer.com https://*.workers.dev https://nominatim.openstreetmap.org wss://*.blitzortung.org;
+    connect-src 'self' https://api.open-meteo.com https://geocoding-api.open-meteo.com https://air-quality-api.open-meteo.com https://archive-api.open-meteo.com https://ensemble-api.open-meteo.com https://api.rainviewer.com https://*.rainviewer.com https://*.workers.dev https://nominatim.openstreetmap.org wss://*.blitzortung.org;
     manifest-src 'self';
     base-uri 'self';
   ">
@@ -102,6 +102,9 @@
     <button class="glass-btn icon-only embed-hide" id="btn-share" title="Sdílet" aria-label="Sdílet">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3.5"/><path d="M8 7l4-3.5L16 7"/><path d="M5 11v8.5A1.5 1.5 0 0 0 6.5 21h11a1.5 1.5 0 0 0 1.5-1.5V11"/></svg>
     </button>
+    <button class="glass-btn icon-only" id="btn-settings" title="Nastavení" aria-label="Nastavení">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.03 1.56V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1.11-1.56 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.56-1.03H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.56-1.11 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h.01A1.7 1.7 0 0 0 10 3.09V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v.01c.26.63.87 1.04 1.56 1.04H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.51 1.94Z"/></svg>
+    </button>
     <button class="glass-btn icon-only" id="btn-theme" title="Přepnout motiv" aria-label="Přepnout motiv">
       <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.5a9.5 9.5 0 1 0 0 19V2.5Z"/><circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>
     </button>
@@ -171,6 +174,7 @@
   </div>
 
   <div id="fav-row"></div>
+  <button id="btn-compare" title="Porovnat aktuální místo s jinou obcí">⇄ Porovnat s jiným místem</button>
   <button id="btn-fav" style="display:none">☆ Uložit místo</button>
   <button id="btn-push">🔕 Zapnout upozornění</button>
   <div class="share-row embed-hide">
@@ -193,6 +197,7 @@
         <button class="mtab" data-mode="precip">Srážky</button>
         <button class="mtab" data-mode="wind">Vítr</button>
         <button class="mtab" data-mode="pressure">Tlak</button>
+        <button class="mtab" data-mode="ensemble" title="Ensemble ICON — vějíř 40 členů">Ens.</button>
       </div>
     </div>
     <div id="meteo-canvas-wrap"></div>
@@ -211,6 +216,11 @@
   <div id="winter-panel">
     <div class="astro-title">❄️ Zimní podmínky</div>
     <div id="winter-body"></div>
+  </div>
+  <!-- Tento den v historii — rekordy ERA5 1991–2020 -->
+  <div id="history-panel">
+    <div class="astro-title">📜 Tento den v historii</div>
+    <div id="history-body"></div>
   </div>
 </div>
 
@@ -239,6 +249,63 @@
 <!-- WU detail overlay -->
 <div id="wu-detail-overlay">
   <div id="wu-detail-box"></div>
+</div>
+
+<!-- Nastavení -->
+<div id="settings-overlay">
+  <div id="settings-box">
+    <div class="settings-head">
+      <h3>Nastavení</h3>
+      <button id="settings-close" title="Zavřít" aria-label="Zavřít">✕</button>
+    </div>
+    <label class="set-row">
+      <span>Výchozí vrstva stanic</span>
+      <select id="set-layer">
+        <option value="temp">🌡️ Teplota</option>
+        <option value="dewpoint">🌫️ Rosný bod</option>
+        <option value="humidity">💧 Vlhkost</option>
+        <option value="wind_kmh">🌬️ Vítr</option>
+        <option value="precip_1h">🌧️ Srážky/hod</option>
+        <option value="snow_cm">❄️ Sníh</option>
+        <option value="pressure">🔵 Tlak</option>
+        <option value="solar">☀️ Záření</option>
+        <option value="visibility_m">👁️ Viditelnost</option>
+      </select>
+    </label>
+    <label class="set-row">
+      <span>Rychlost animace radaru</span>
+      <select id="set-anim">
+        <option value="900">½× pomalá</option>
+        <option value="500">1× normální</option>
+        <option value="200">2× rychlá</option>
+      </select>
+    </label>
+    <label class="set-row">
+      <span>Upozornit na srážky od</span>
+      <select id="set-thresh">
+        <option value="0.2">jakýchkoli (0,2 mm/h)</option>
+        <option value="2.5">mírného deště (2,5 mm/h)</option>
+        <option value="7.5">jen vydatného (7,5 mm/h)</option>
+      </select>
+    </label>
+    <div class="settings-log-title">Deník upozornění</div>
+    <div id="settings-log"></div>
+  </div>
+</div>
+
+<!-- Porovnání dvou míst -->
+<div id="compare-overlay">
+  <div id="compare-box">
+    <div class="settings-head">
+      <h3>⇄ Porovnání míst</h3>
+      <button id="compare-close" title="Zavřít" aria-label="Zavřít">✕</button>
+    </div>
+    <div class="suggest" style="position:relative">
+      <input id="compare-input" type="text" placeholder="S jakou obcí porovnat?" autocomplete="off" />
+      <ul id="compare-suggestions"></ul>
+    </div>
+    <div id="compare-result"></div>
+  </div>
 </div>
 
 <!-- Storm bar — nejbližší aktivní srážkové/konvekční jádro (z vlastního nowcastu) -->

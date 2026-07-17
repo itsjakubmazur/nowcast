@@ -19,6 +19,7 @@ import {
 import {
   nearestPt, templateVerdict, renderRainBadge, renderRainCountdown,
   fetchAiVerdict, renderVerdictText, renderAccuracyLine, initAiAsk, showAiAsk,
+  setPrecipTypeHint,
 } from "./verdict.js";
 import {
   loadFavs, renderFavRow, updateFavBtn, saveLastLocation, loadLastLocation,
@@ -28,7 +29,9 @@ import { initSearch, reverseGeocode } from "./search.js";
 import {
   renderMinutely, renderActivities, renderDeltaLine, renderAstro, renderWinter,
 } from "./extras.js";
-import { renderClimateAnomaly } from "./climate.js";
+import { renderClimateAnomaly, renderDayInHistory } from "./climate.js";
+import { initSettingsPanel, applySettingsOnLoad, saveSettings } from "./settings.js";
+import { initCompare, showCompareBtn } from "./compare.js";
 import { initLightning } from "./lightning.js";
 import { showLoadingSkeletons } from "./skeleton.js";
 import { shareCurrentView, copyEmbedLink, initEmbedMode } from "./share.js";
@@ -93,6 +96,9 @@ async function showFc24(lat, lon, label) {
     // v2.0 doplňky — každý panel se sám schová, když pro něj nejsou data
     try {
       const ptId = state.GRID ? nearestPt(lat, lon).id : null;
+      // typ srážek z modelu (déšť/sníh/smíšené) → countdown karta ho převezme
+      setPrecipTypeHint(fc);
+      if (ptId != null) renderRainCountdown(ptId);
       renderAstro(data, fc);            // před aktivitami — nastavuje svit měsíce
       renderMinutely(ptId, minutely);
       renderActivities(fc, data);
@@ -100,6 +106,8 @@ async function showFc24(lat, lon, label) {
       renderWinter(fc, data);
       addModelSpread(lat, lon, fc);           // async — pásmo nejistoty do meteogramu
       renderClimateAnomaly(lat, lon, data);   // async — odchylka od normálu
+      renderDayInHistory(lat, lon, data);     // async — rekordy pro dnešní den
+      showCompareBtn();
     } catch (e) { console.warn("v2 doplňky selhaly:", e); }
   } catch (e) {
     if (e.name === "AbortError") return;
@@ -108,7 +116,7 @@ async function showFc24(lat, lon, label) {
     // Skeletony ostatních karet by jinak zůstaly navždy "načítat se" —
     // schovej je stejně, jako by to udělal jejich vlastní render, kdyby
     // pro dané místo neměly co zobrazit.
-    ["meteo-block", "aq-panel", "astro-panel", "activities-panel", "minutely-panel"]
+    ["meteo-block", "aq-panel", "astro-panel", "activities-panel", "minutely-panel", "history-panel"]
       .forEach(id => document.getElementById(id)?.classList.remove("show"));
     // Bez tohohle zůstane levá karta navždy zaseknutá na "Načítám předpověď…"
     // ze showForecast, protože se sem nikdy nedostane renderLocationVerdict.
@@ -327,6 +335,10 @@ window.addEventListener("DOMContentLoaded", async () => {
   initLightning();
   initOfflineBadge();
   initSheetDrag();
+  applySettingsOnLoad();   // výchozí vrstva + rychlost animace z Nastavení
+  initSettingsPanel();
+  initCompare();
+  window.addEventListener("nowcast:layer-changed", () => renderChmiMarkers());
 
   // ── Radar ovládání ────────────────────────────────────────────────────────
   document.getElementById("timeline").addEventListener("input", e => {
@@ -342,6 +354,7 @@ window.addEventListener("DOMContentLoaded", async () => {
       document.querySelectorAll(".speed-group .ctrl").forEach(b => b.classList.remove("active"));
       btn.classList.add("active");
       PLAY.intervalMs = +btn.dataset.ms;
+      saveSettings({ animMs: +btn.dataset.ms }); // rychlost přežije reload
     });
   });
 

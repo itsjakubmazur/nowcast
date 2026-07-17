@@ -465,6 +465,33 @@ function rainWords(peak) {
   return "vydatný déšť";
 }
 
+// Radar zná jen intenzitu, ne skupenství — typ srážek (déšť/sníh/smíšené)
+// doplní rychlý dotaz na aktuální teplotu a sněžení z Open-Meteo. Při
+// jakémkoli selhání se vracíme k obyčejnému dešti, notifikace nesmí spadnout.
+async function precipType(lat, lon) {
+  try {
+    const r = await fetch(
+      `https://api.open-meteo.com/v1/forecast?latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}`
+      + `&current=temperature_2m,snowfall&timezone=Europe%2FPrague`,
+      { signal: AbortSignal.timeout(5000) });
+    if (!r.ok) return null;
+    const cur = (await r.json()).current || {};
+    const t = cur.temperature_2m;
+    if ((cur.snowfall ?? 0) > 0 || (t != null && t <= 0.5)) return "snow";
+    if (t != null && t <= 2) return "mixed";
+    return "rain";
+  } catch {
+    return null;
+  }
+}
+
+const PRECIP_TITLE = { rain: "🌧️ Déšť", snow: "🌨️ Sněžení", mixed: "🌨️ Déšť se sněhem" };
+function precipWords(type, peak) {
+  if (type === "snow") return peak >= 2.5 ? "vydatné sněžení" : "sněžení";
+  if (type === "mixed") return "déšť se sněhem";
+  return rainWords(peak);
+}
+
 async function checkAndNotify(key, record, grid, env) {
   const now = Date.now();
   let shouldNotify = false;
@@ -507,9 +534,10 @@ async function checkAndNotify(key, record, grid, env) {
         reason = `rain:${favKey}`;
         const startMs = t0ms + (startStep + 1) * stepMin * 60000;
         const minsAway = Math.max(Math.round((startMs - now) / 60000), 1);
+        const type = (await precipType(fav.lat, fav.lon)) || "rain";
         notifPayload = {
-          title: `🌧️ Déšť za ~${minsAway} min`,
-          body: `${fav.label || favKey}: ${rainWords(rainVal)} přibližně od ${localHM(new Date(startMs).toISOString())}. Podle radaru.`,
+          title: `${PRECIP_TITLE[type]} za ~${minsAway} min`,
+          body: `${fav.label || favKey}: ${precipWords(type, rainVal)} přibližně od ${localHM(new Date(startMs).toISOString())}. Podle radaru.`,
           tag: `rain-${favKey}`,
         };
         record.notified = record.notified || {};

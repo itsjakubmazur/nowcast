@@ -591,7 +591,8 @@ button.glass-btn svg { width: 17px; height: 17px; display: block; }
 #right-panel .fc7,
 #right-panel .meteo-block,
 #right-panel .aq-panel,
-#right-panel #astro-panel {
+#right-panel #astro-panel,
+#right-panel #history-panel {
   background: var(--glass2);
   -webkit-backdrop-filter: none; backdrop-filter: none;
   box-shadow: inset 0 1px 0 var(--spec), inset 0 0 0 1px var(--gring);
@@ -757,6 +758,94 @@ button.glass-btn svg { width: 17px; height: 17px; display: block; }
   background: color-mix(in srgb, var(--teal) 8%, var(--glass2)) !important;
 }
 #winter-panel.show { display: block; }
+
+/* tento den v historii — rekordy ERA5 */
+#history-panel {
+  border-radius: var(--r-card); padding: .8rem .9rem .7rem; display: none;
+}
+#history-panel.show { display: block; }
+.hist-row { display: flex; align-items: baseline; gap: .6rem; padding: .32rem 0;
+  border-top: 1px solid var(--rowline); font-size: .78rem; }
+.hist-row:first-of-type { border-top: none; }
+.hist-row .hist-label { font-size: .62rem; font-weight: 700; letter-spacing: .05em;
+  text-transform: uppercase; color: var(--muted); min-width: 5.6rem; }
+.hist-row b { font-variant-numeric: tabular-nums; }
+.hist-row .hist-year { color: var(--muted); font-size: .68rem; margin-left: auto; }
+.hist-note { margin-top: .45rem; font-size: .72rem; font-weight: 600; color: var(--orange); }
+
+/* ── Nastavení + porovnání (glass modaly) ───────────────────────────────── */
+#settings-overlay, #compare-overlay {
+  position: fixed; inset: 0; z-index: 210; background: rgba(0,0,0,.45);
+  display: none; align-items: center; justify-content: center;
+}
+#settings-overlay.open, #compare-overlay.open { display: flex; }
+#settings-box, #compare-box {
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(26px) saturate(1.7);
+  backdrop-filter: blur(26px) saturate(1.7);
+  box-shadow: var(--gshadow), inset 0 1.2px 0 var(--spec), inset 0 0 0 1px var(--gring);
+  border-radius: var(--r-panel);
+  padding: 1.1rem 1.3rem 1.2rem; width: min(92vw, 400px); max-height: 85vh;
+  overflow-y: auto;
+}
+.settings-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: .8rem; }
+.settings-head h3 { font-size: .9rem; font-weight: 700; margin: 0; }
+#settings-close, #compare-close { background: none; border: none; color: var(--muted);
+  font-size: 1.15rem; cursor: pointer; min-width: 36px; min-height: 36px; }
+.set-row { display: flex; align-items: center; justify-content: space-between; gap: .8rem;
+  padding: .55rem 0; border-top: 1px solid var(--rowline); font-size: .78rem; font-weight: 600; }
+.set-row:first-of-type { border-top: none; }
+.set-row select {
+  font: inherit; font-size: .74rem; color: var(--text); border: none; border-radius: 9px;
+  padding: .35rem .5rem; background: var(--glass2);
+  box-shadow: inset 0 1px 0 var(--spec), inset 0 0 0 1px var(--gring);
+  max-width: 55%;
+}
+.settings-log-title { font-size: .68rem; font-weight: 700; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .07em; margin: .9rem 0 .4rem; }
+#settings-log { max-height: 200px; overflow-y: auto; }
+.set-log-row { display: flex; gap: .6rem; padding: .35rem 0; font-size: .72rem;
+  border-top: 1px solid var(--rowline); }
+.set-log-row:first-of-type { border-top: none; }
+.set-log-time { color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.set-log-empty { font-size: .72rem; color: var(--muted); padding: .4rem 0; }
+
+/* porovnání míst */
+#btn-compare {
+  display: none; width: 100%; padding: .55rem; border-radius: 12px; cursor: pointer;
+  border: none; background: var(--glass2); color: var(--text);
+  font: inherit; font-size: .78rem; font-weight: 600;
+  box-shadow: inset 0 1px 0 var(--spec), inset 0 0 0 1px var(--gring);
+  margin-bottom: .5rem;
+}
+#btn-compare.show { display: block; }
+#btn-compare:hover { background: color-mix(in srgb, var(--text) 8%, var(--glass2)); }
+#compare-input {
+  width: 100%; font: inherit; font-size: .82rem; color: var(--text);
+  border: none; border-radius: 11px; padding: .55rem .7rem;
+  background: var(--glass2);
+  box-shadow: inset 0 1px 0 var(--spec), inset 0 0 0 1px var(--gring);
+}
+#compare-input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+#compare-suggestions {
+  list-style: none; margin: .25rem 0 0; padding: 0; max-height: 170px; overflow-y: auto;
+  border-radius: 11px; background: var(--glass2);
+  box-shadow: inset 0 1px 0 var(--spec), inset 0 0 0 1px var(--gring);
+}
+#compare-suggestions:empty { display: none; }
+#compare-suggestions li { padding: .45rem .7rem; font-size: .78rem; cursor: pointer; }
+#compare-suggestions li:hover { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+#compare-result { margin-top: .8rem; }
+.cmp-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: .5rem;
+  padding: .38rem 0; border-top: 1px solid var(--rowline); font-size: .76rem;
+  align-items: baseline; }
+.cmp-row:first-of-type { border-top: none; }
+.cmp-row.cmp-head { font-weight: 700; font-size: .7rem; color: var(--muted); }
+.cmp-row.cmp-head .cmp-val { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cmp-label { font-size: .62rem; font-weight: 700; letter-spacing: .04em;
+  text-transform: uppercase; color: var(--muted); }
+.cmp-val { font-variant-numeric: tabular-nums; font-weight: 600; }
+.cmp-val.cmp-win { color: var(--green); }
 
 /* ── Legenda radaru ─────────────────────────────────────────────────────── */
 #radar-legend {
