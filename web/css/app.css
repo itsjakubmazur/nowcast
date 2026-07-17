@@ -313,6 +313,8 @@ button.glass-btn svg { width: 17px; height: 17px; display: block; }
   min-height: 3px; opacity: .92;
 }
 .minutely-bars i.dry { background: var(--muted); opacity: .22; height: 3px !important; }
+/* "možná" sloupec: deterministicky sucho, ale ensemble dává nezanedbatelnou P(déšť) */
+.minutely-bars i.maybe { background: var(--blue); opacity: .3; }
 .minutely-axis {
   display: flex; justify-content: space-between;
   font-size: .6rem; font-weight: 600; color: var(--muted);

@@ -64,17 +64,40 @@ export function renderMinutely(ptId, minutely) {
 
   if (!vals || !vals.some(v => v != null)) { panel.classList.remove("show"); return; }
 
+  // P(déšť) z ensemble perturbované advekce (grid.prob, % po 10min krocích)
+  const prob = state.GRID?.prob?.[String(ptId)] || null;
+  const probAt = i => {
+    if (!prob) return null;
+    const idx = Math.floor(i * 10 / stepMin);
+    return idx < prob.length ? prob[idx] : null;
+  };
+
   const known = vals.filter(v => v != null);
+  const maxProb = prob ? Math.max(...prob) : 0;
   // Když je celých 120 minut sucho, graf nic neříká — countdown karta
-  // ("Nejbližší 2 h bez srážek") to komunikuje líp. Ukazuj jen když prší.
-  if (Math.max(...known) < 0.05) { panel.classList.remove("show"); return; }
+  // ("Nejbližší 2 h bez srážek") to komunikuje líp. Ukazuj jen když prší,
+  // NEBO když ensemble vidí aspoň 30% šanci (deterministicky sucho ≠ jistota).
+  if (Math.max(...known) < 0.05 && maxProb < 30) { panel.classList.remove("show"); return; }
   const maxV = Math.max(...known, 1.5);
-  revealSwap(barsEl, vals.map(v => {
-    if (v == null || v < 0.05) return `<i class="dry"></i>`;
+  revealSwap(barsEl, vals.map((v, i) => {
+    const p = probAt(i);
+    const pStr = p != null ? ` · P ${p} %` : "";
+    if (v == null || v < 0.05) {
+      // deterministicky sucho — ale s dostatečnou P(déšť) ukaž "možná" sloupec
+      if (p != null && p >= 30) {
+        const h = Math.max(10, Math.round(p / 100 * 45));
+        return `<i class="maybe" style="height:${h}%" title="možné srážky${pStr}"></i>`;
+      }
+      return `<i class="dry"${p != null ? ` title="P ${p} %"` : ""}></i>`;
+    }
     const h = Math.max(12, Math.round(v / maxV * 100));
-    return `<i style="height:${h}%" title="${v.toFixed(1)} mm/h"></i>`;
+    const op = p != null ? Math.max(0.45, p / 100).toFixed(2) : null;
+    return `<i style="height:${h}%${op ? `;opacity:${op}` : ""}" title="${v.toFixed(1)} mm/h${pStr}"></i>`;
   }).join(""));
-  if (srcEl) srcEl.textContent = src;
+  if (srcEl) {
+    srcEl.textContent = prob ? `${src} · ens.` : src;
+    srcEl.title = prob ? `Průhlednost sloupců = P(déšť) z ensemble ${state.GRID.prob_members || 7} členů perturbované advekce` : "";
+  }
   panel.classList.add("show");
 }
 

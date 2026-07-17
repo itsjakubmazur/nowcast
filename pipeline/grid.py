@@ -32,6 +32,12 @@ GRID_STEP_M       = 10_000   # krok jemné mřížky (nowcast) v metrech projekc
 NWP_STEP_M        = 30_000   # krok hrubé NWP podmřížky
 OM_BATCH          = 100      # kolik lokací poslat Open-Meteo v jednom requestu
 
+# Ensemble perturbované advekce: (škála rychlosti, rotace ve stupních).
+# První člen = neperturbovaný (deterministický). Malé rotace/škály pokrývají
+# hlavní zdroj nejistoty krátké extrapolace — nepřesnost pohybového pole.
+ENS_MEMBERS = [(1.0, 0), (0.85, 0), (1.15, 0), (1.0, -8), (1.0, 8), (0.9, 4), (1.1, -4)]
+PROB_MIN_PCT = 5             # body s max P(déšť) pod tímhle prahem do JSONu nedáváme
+
 # Bounding box ČR (lat/lon) — ořízne body radarového gridu mimo ČR (DE/PL/AT/SK)
 CZ_LAT_MIN, CZ_LAT_MAX = 48.5, 51.1
 CZ_LON_MIN, CZ_LON_MAX = 12.0, 18.9
@@ -186,6 +192,37 @@ def _summarize_nwp(item: dict, now_utc: datetime):
 
 # ── Hlavní tok ───────────────────────────────────────────────────────────────────
 
+# ── Pravděpodobnostní nowcast — ensemble perturbované advekce ─────────────────
+def compute_probability(maxz_stack, start_rr, n_leadtimes, threshold):
+    """
+    P(déšť ≥ threshold) pro každý leadtime a pixel z malého ensemble:
+    pohybové pole (lucaskanade, stejné jako deterministická dráha) se pro
+    každý člen mírně přeškáluje a pootočí, start_rr se extrapoluje znovu.
+    Vrátí (n_leadtimes, rows, cols) uint8 v procentech, nebo None při selhání.
+    """
+    try:
+        from pysteps import motion as ps_motion, nowcasts as ps_nowcasts
+        dbz_clean = np.nan_to_num(maxz_stack, nan=0.0)
+        V = ps_motion.get_method("lucaskanade")(dbz_clean)
+        rr_clean = np.nan_to_num(start_rr, nan=0.0)
+        extrap = ps_nowcasts.get_method("extrapolation")
+
+        counts = np.zeros((n_leadtimes, *rr_clean.shape), dtype=np.uint8)
+        for scale, deg in ENS_MEMBERS:
+            th = np.deg2rad(deg)
+            c, s = np.cos(th), np.sin(th)
+            Vm = np.stack([scale * (c * V[0] - s * V[1]),
+                           scale * (s * V[0] + c * V[1])])
+            member = extrap(rr_clean, Vm, n_leadtimes,
+                            extrap_kwargs={"allow_nonfinite_values": True})
+            counts += (np.nan_to_num(member, nan=0.0) >= threshold).astype(np.uint8)
+        prob = (counts.astype(np.float32) / len(ENS_MEMBERS) * 100).astype(np.uint8)
+        return prob
+    except Exception as e:
+        print(f"  Ensemble pravděpodobnost selhala ({e}) — pokračuji bez ní", file=sys.stderr)
+        return None
+
+
 def main():
     meta_path = DATA_DIR / "radar_meta.json"
     if not meta_path.exists():
@@ -251,6 +288,19 @@ def main():
             series_out[str(idx)] = [round(v, 1) for v in vals]
             active_count += 1
     print(f"  Aktivních bodů (srážky ≥ {RAIN_THRESHOLD_MM_H} mm/h): {active_count}")
+
+    # ── 2b. P(déšť) z ensemble perturbované advekce ─────────────────────────────
+    print(f"\n=== Pravděpodobnostní nowcast ({len(ENS_MEMBERS)} členů) ===")
+    t_ens = datetime.now(timezone.utc)
+    prob_field = compute_probability(maxz_stack, start_rr, N_LEADTIMES, RAIN_THRESHOLD_MM_H)
+    prob_out = {}
+    if prob_field is not None:
+        for idx, (row, col, lat, lon) in enumerate(grid):
+            p = prob_field[:, row, col]
+            if int(p.max()) >= PROB_MIN_PCT:
+                prob_out[str(idx)] = [int(v) for v in p]
+        dt_s = (datetime.now(timezone.utc) - t_ens).total_seconds()
+        print(f"  Hotovo za {dt_s:.1f} s — bodů s P ≥ {PROB_MIN_PCT} %: {len(prob_out)}")
 
     # ── 3. NWP hrubá podmřížka (batchovaný Open-Meteo) ──────────────────────────
     print("\n=== NWP hrubá podmřížka (Open-Meteo multi-location) ===")
@@ -336,6 +386,8 @@ def main():
         "pts":             pts,
         "act":             act,
         "series":          series_out,
+        "prob":            prob_out,          # P(déšť) v % per bod, jen kde ≥ PROB_MIN_PCT
+        "prob_members":    len(ENS_MEMBERS) if prob_out else 0,
         "warnings":        warnings_out,
         "wmatch":          wmatch,
         "nwp": {

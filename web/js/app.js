@@ -4,8 +4,8 @@ import { showToast, initToastClose } from "./toast.js";
 import { initMap, createBaseTileLayer } from "./map.js";
 import {
   preloadFrames, showFrame, stepFrame, togglePlay, setOpacity,
-  toggleGlobalMode, toggleSatellite, applyManifestUI, drawRainSpark, updateStormBar,
-  observeRadarBarHeight,
+  toggleGlobalMode, toggleSatellite, toggleWindLayer, applyManifestUI,
+  drawRainSpark, updateStormBar, observeRadarBarHeight,
 } from "./radar.js";
 import { renderWarningsLayer } from "./warnings.js";
 import {
@@ -318,6 +318,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     observeRadarBarHeight();
     document.getElementById("btn-global").addEventListener("click", toggleGlobalMode);
     document.getElementById("btn-satellite")?.addEventListener("click", toggleSatellite);
+    document.getElementById("btn-wind")?.addEventListener("click", toggleWindLayer);
     return;
   }
 
@@ -392,6 +393,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   document.getElementById("btn-refresh").addEventListener("click", refreshAll);
   document.getElementById("btn-global").addEventListener("click", toggleGlobalMode);
   document.getElementById("btn-satellite")?.addEventListener("click", toggleSatellite);
+  document.getElementById("btn-wind")?.addEventListener("click", toggleWindLayer);
   setInterval(() => { refreshAll(); checkRainNotifications(); }, AUTO_REFRESH_MS);
 
   document.getElementById("chmi-detail-close").addEventListener("click", closeChmiDetail);

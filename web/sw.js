@@ -33,6 +33,7 @@ const STATIC_ASSETS = [
   "./icon.svg",
   "./icons/icon-192.png",
   "./manifest.json",
+  "./vendor/leaflet-velocity.min.js",
 ];
 
 self.addEventListener("install", e => {

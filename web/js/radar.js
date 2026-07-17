@@ -252,6 +252,56 @@ async function loadSatelliteFrame() {
   }
 }
 
+// ── Animované částice větru (leaflet-velocity, self-hosted) ─────────────────
+// Knihovna se načítá líně až při prvním zapnutí — šetří start a smoke testy
+// se stubem Leafletu ji vůbec nepotřebují. Data generuje pipeline/windgrid.py.
+let _velocityLoading = null;
+
+function loadVelocityLib() {
+  if (window.L?.velocityLayer) return Promise.resolve();
+  if (_velocityLoading) return _velocityLoading;
+  _velocityLoading = new Promise((resolve, reject) => {
+    const s = document.createElement("script");
+    s.src = "vendor/leaflet-velocity.min.js";
+    s.onload = resolve;
+    s.onerror = () => { _velocityLoading = null; reject(new Error("leaflet-velocity se nenačetl")); };
+    document.head.appendChild(s);
+  });
+  return _velocityLoading;
+}
+
+export async function toggleWindLayer() {
+  const btn = document.getElementById("btn-wind");
+  state.windMode = !state.windMode;
+
+  if (!state.windMode) {
+    if (state.windLayer) { state.map.removeLayer(state.windLayer); state.windLayer = null; }
+    btn?.classList.remove("active");
+    return;
+  }
+  btn?.classList.add("active");
+  try {
+    await loadVelocityLib();
+    const r = await fetch(`data/wind_grid.json?v=${Date.now()}`, { cache: "no-store" });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const data = await r.json();
+    if (!state.windMode) return; // mezitím vypnuto
+    state.windLayer = L.velocityLayer({
+      data,
+      maxVelocity: 20,           // m/s — nad tím je barva saturovaná
+      velocityScale: 0.012,      // délka "ocásku" částice
+      particleAge: 64,
+      lineWidth: 1.4,
+      colorScale: ["#9fc7ff", "#5AC8FA", "#0A84FF", "#BF5AF2", "#FF375F"],
+      displayValues: false,
+    }).addTo(state.map);
+  } catch (e) {
+    console.warn("Vítr:", e);
+    state.windMode = false;
+    btn?.classList.remove("active");
+  }
+}
+
 // ── Aktivní srážkové/konvekční jádro — poctivě odvozené z VLASTNÍHO nowcastu,
 //    ne z cizích "lightning" dlaždic, které ve skutečnosti nejsou blesky. ────
 const STORM_PEAK_THRESHOLD_MM_H = 15; // "silný déšť" práh z rainIntensity()

@@ -97,6 +97,9 @@ jobs:
       - name: Run render (Fáze 4c)
         run: python pipeline/render.py
 
+      - name: Run windgrid (Fáze 4d — částice větru)
+        run: python pipeline/windgrid.py || echo "windgrid.py selhalo, pokračuji bez větrné vrstvy"
+
       - name: Run verify (zpětná validace přesnosti nowcastu)
         if: steps.mode.outputs.mode == 'full'
         run: python pipeline/verify.py || echo "verify.py selhalo, pokračuji bez accuracy.json"

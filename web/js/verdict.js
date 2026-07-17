@@ -131,7 +131,10 @@ export function renderRainCountdown(ptId) {
   if (a) {
     const startMs = t0ms + (a[0] + 1) * stepMin * 60000;
     const endMs = t0ms + (a[1] + 1) * stepMin * 60000;
-    _countdownTarget = { startMs, endMs, peak: a[2], total: a[3] };
+    // jistota příchodu z ensemble (P v % pro krok příchodu), pokud ji grid nese
+    const probSeries = state.GRID.prob?.[String(ptId)];
+    const prob = probSeries?.[Math.max(a[0], 0)] ?? null;
+    _countdownTarget = { startMs, endMs, peak: a[2], total: a[3], prob };
     _tickCountdown();
     _countdownTimer = setInterval(_tickCountdown, 30000);
   } else {
@@ -151,7 +154,7 @@ function _tickCountdown() {
   const el = document.getElementById("rain-countdown");
   if (!el || !_countdownTarget) return;
   const now = Date.now();
-  const { startMs, endMs, peak, total } = _countdownTarget;
+  const { startMs, endMs, peak, total, prob } = _countdownTarget;
   el.classList.add("show", "imminent");
   el.classList.remove("clear");
   document.getElementById("rc-icon").innerHTML = wImg(PRECIP_ICON[_precipHint]);
@@ -161,8 +164,9 @@ function _tickCountdown() {
     const durMin = Math.round((endMs - startMs) / 60000);
     document.getElementById("rc-title").innerHTML =
       `${PRECIP_WORD[_precipHint]} za <span class="rc-timer">${minsAway} min</span>`;
+    const probStr = prob != null ? ` · jistota ~${prob} %` : "";
     document.getElementById("rc-sub").textContent =
-      `${localHM(new Date(startMs).toISOString())}–${localHM(new Date(endMs).toISOString())} · potrvá ~${durMin} min · špička ${peak} mm/h`;
+      `${localHM(new Date(startMs).toISOString())}–${localHM(new Date(endMs).toISOString())} · potrvá ~${durMin} min · špička ${peak} mm/h${probStr}`;
   } else if (now <= endMs) {
     const minsLeft = Math.round((endMs - now) / 60000);
     document.getElementById("rc-title").innerHTML =
