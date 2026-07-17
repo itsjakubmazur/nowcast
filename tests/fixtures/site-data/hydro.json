@@ -1,0 +1,5 @@
+{"generated_at_utc":"2026-07-17T12:00:00+00:00","stations":[
+{"id":"001000","name":"Špindlerův Mlýn","stream":"Labe","lat":50.7232,"lon":15.598,"h_cm":96,"q_m3s":1.23,"t":"2026-07-17T11:50:00Z","spa":0,"trend_cm":0.5},
+{"id":"002000","name":"Testov nad Vltavou","stream":"Vltava","lat":50.09,"lon":14.42,"h_cm":215,"q_m3s":48.6,"t":"2026-07-17T11:50:00Z","spa":2,"trend_cm":6.0},
+{"id":"003000","name":"Suchov","stream":"Bečva","lat":49.4,"lon":17.6,"h_cm":18,"q_m3s":0.2,"t":"2026-07-17T11:50:00Z","spa":-1,"trend_cm":-1.0}
+]}

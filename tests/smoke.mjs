@@ -165,7 +165,12 @@ async function main() {
   const base = `http://127.0.0.1:${port}`;
 
   const browser = await chromium.launch();
-  const context = await browser.newContext();
+  // serviceWorkers: "block" — sw.js by jinak fetch handlerem (network-first
+  // pro same-origin) obsluhoval requesty MIMO stránku (samostatný CDP target),
+  // takže page.route() by je vůbec neviděl. Objevilo se to teprve u
+  // same-origin fixture routy (vendor/leaflet-velocity.min.js) — dřívější
+  // fixtures byly všechny cross-origin, kde SW záměrně nezasahuje.
+  const context = await browser.newContext({ serviceWorkers: "block" });
   await context.grantPermissions(["clipboard-read", "clipboard-write"]).catch(() => {});
   const page = await context.newPage();
 
@@ -209,17 +214,45 @@ async function main() {
       { name: "Brno-Bystrc", admin1: "Jihomoravský kraj", latitude: 49.22, longitude: 16.53 },
     ] }), contentType: "application/json" }));
   await page.route("https://api.rainviewer.com/**", route =>
-    route.fulfill({ body: JSON.stringify({ host: "https://tilecache.rainviewer.com", radar: { past: [{ time: 1, path: "/v2/radar/1" }], nowcast: [] } }), contentType: "application/json" }));
+    route.fulfill({ body: JSON.stringify({
+      host: "https://tilecache.rainviewer.com",
+      radar: { past: [{ time: 1, path: "/v2/radar/1" }], nowcast: [] },
+      satellite: { infrared: [{ time: 1, path: "/v2/satellite/1" }] },
+    }), contentType: "application/json" }));
   // klimatologie 1991–2020 (normál + rekordy) — malá syntetická řada, ať
   // renderClimateAnomaly/renderDayInHistory nejdou do reálné sítě
   await page.route("https://archive-api.open-meteo.com/**", route =>
     route.fulfill({ body: JSON.stringify(buildArchiveFixture()), contentType: "application/json" }));
   await page.route("https://ensemble-api.open-meteo.com/**", route =>
     route.fulfill({ body: "{}", contentType: "application/json" }));
+  // leaflet-velocity je self-hosted (web/vendor/) — reálná knihovna potřebuje
+  // plný Leaflet, který stub neposkytuje; pro test stačí minimální náhrada.
+  await page.route("**/vendor/leaflet-velocity.min.js", route =>
+    route.fulfill({ path: path.join(FIXTURES, "velocity-stub.js"), contentType: "text/javascript" }));
   await page.route("https://*.workers.dev/vapid-public-key**", route =>
     route.fulfill({ body: JSON.stringify({ publicKey: "BM60k6heLK2a7KNELX05p5_Wpv1zhUbB2JFLMLVz13uirAVfjkCtoksQ7bdQIMd5hqvwUTwPUWUGfhFm0KkhF3Y" }), contentType: "application/json" }));
   await page.route("https://*.workers.dev/verdict**", route =>
     route.fulfill({ body: JSON.stringify({ text: "Testovací AI verdikt: dnes odpoledne přeháňky, jinak teplo." }), contentType: "application/json" }));
+
+  // data/wind_grid.json a data/hydro.json: PRVNÍ request v testu níže je
+  // úmyslně zpožděn, aby odpovědi dorazily v OPAČNÉM pořadí, než v jakém
+  // byly vyslány — to je přesně scénář, kdy race condition v
+  // toggleWindLayer/toggleHydro reálně škodí (pozdě dorazivší stará
+  // odpověď přepíše stav nastavený mezitím dokončenou novější odpovědí).
+  // Bez zpoždění by na rychlém lokálním serveru odpovědi typicky dorazily
+  // ve stejném pořadí, v jakém byly vyslány, a test by nic neodhalil.
+  let windReqN = 0;
+  await page.route("**/data/wind_grid.json**", async route => {
+    windReqN++;
+    if (windReqN === 1) await new Promise(r => setTimeout(r, 350));
+    route.continue();
+  });
+  let hydroReqN = 0;
+  await page.route("**/data/hydro.json**", async route => {
+    hydroReqN++;
+    if (hydroReqN === 1) await new Promise(r => setTimeout(r, 350));
+    route.continue();
+  });
 
   await page.goto(`${base}/?lat=50.09&lon=14.40&q=TestObec`, { waitUntil: "load" });
 
@@ -318,6 +351,63 @@ async function main() {
   const activeLayer = await page.getAttribute('.layer-btn[data-layer="wind_kmh"]', "class");
   assertTrue(activeLayer.includes("active"), "přepnutí vrstvy ČHMÚ markerů funguje");
 
+  // ── Globální radar (RainViewer): rychlé zap→vyp nesmí "vzkřísit" vrstvu ──
+  // po dokončení pozdě doražené odpovědi (stejná třída bugů jako u wind/hydro).
+  await page.click("#btn-global");
+  await page.click("#btn-global");
+  await page.waitForTimeout(400);
+  const globalStillOff = await page.evaluate(async () => {
+    const { state } = await import("./js/state.js");
+    return { mode: state.globalMode, hasLayer: !!(state.map._layers || []).includes(state.rvLayer) };
+  });
+  assertTrue(!globalStillOff.mode && !globalStillOff.hasLayer,
+    `rychlé zap/vyp globálního radaru zůstalo vypnuté (mode=${globalStillOff.mode}, vrstva=${globalStillOff.hasLayer})`);
+
+  // ── Mapové vrstvy: satelit / vítr / hydrologie ────────────────────────────
+  await page.click("#btn-satellite");
+  await page.waitForTimeout(300);
+  assertTrue((await page.getAttribute("#btn-satellite", "class") || "").includes("active"),
+    "satelitní vrstva se zapnula");
+  await page.click("#btn-satellite");
+  await page.waitForTimeout(100);
+  assertTrue(!(await page.getAttribute("#btn-satellite", "class") || "").includes("active"),
+    "satelitní vrstva se vypnula");
+
+  // Rychlé zap→vyp BEZ čekání, s uměle zpožděnou první odpovědí (viz route
+  // výše): fetch z "zap" dorazí AŽ PO "vyp". Bez token guardu v
+  // toggleWindLayer/toggleHydro by tahle pozdě dorazivší odpověď vrstvu na
+  // mapě "vzkřísila" i po vypnutí — stejná třída bugu jako u
+  // loadRainViewerFrames/toggleGlobalMode, tady ověřená s deterministickým
+  // zpožděním místo spoléhání na to, že klik č. 2 stihne doběhnout dřív
+  // než fetch (což na rychlém lokálním serveru není zaručeno).
+  await page.click("#btn-wind"); // zap — vyšle zpožděný fetch
+  await page.click("#btn-wind"); // vyp — hned poté, fetch ještě neskončil
+  await page.waitForTimeout(600); // > 350ms zpoždění první odpovědi
+  const windCheck = await page.evaluate(async () => {
+    const { state } = await import("./js/state.js");
+    return {
+      mode: state.windMode,
+      hasLayer: !!state.windLayer,
+      onMap: !!(state.windLayer && state.map._layers?.includes(state.windLayer)),
+    };
+  });
+  assertTrue(!windCheck.mode && !windCheck.hasLayer && !windCheck.onMap,
+    `rychlé zap→vyp větru (se zpožděnou odpovědí) nevzkřísilo vrstvu po vypnutí (mode=${windCheck.mode}, hasLayer=${windCheck.hasLayer}, onMap=${windCheck.onMap})`);
+
+  await page.click("#btn-hydro"); // zap — vyšle zpožděný fetch
+  await page.click("#btn-hydro"); // vyp — hned poté, fetch ještě neskončil
+  await page.waitForTimeout(600); // > 350ms zpoždění první odpovědi
+  const hydroCheck = await page.evaluate(async () => {
+    const { state } = await import("./js/state.js");
+    return {
+      mode: state.hydroMode,
+      hasLayer: !!state.hydroLayer,
+      onMap: !!(state.hydroLayer && state.map._layers?.includes(state.hydroLayer)),
+    };
+  });
+  assertTrue(!hydroCheck.mode && !hydroCheck.hasLayer && !hydroCheck.onMap,
+    `rychlé zap→vyp hydrologie (se zpožděnou odpovědí) nevzkřísilo vrstvu po vypnutí (mode=${hydroCheck.mode}, hasLayer=${hydroCheck.hasLayer}, onMap=${hydroCheck.onMap})`);
+
   // ── Vyhledávání s klávesovou navigací ─────────────────────────────────────
   await page.fill("#search", "Brno");
   await page.waitForSelector("#suggestions li", { timeout: 3000 });
@@ -394,7 +484,7 @@ async function main() {
   await page2.close();
 
   // ── Mobilní šířka ─────────────────────────────────────────────────────────
-  const mobile = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const mobile = await browser.newContext({ viewport: { width: 390, height: 844 }, serviceWorkers: "block" });
   const pageM = await mobile.newPage();
   const errorsM = [];
   pageM.on("pageerror", e => errorsM.push(e.message));

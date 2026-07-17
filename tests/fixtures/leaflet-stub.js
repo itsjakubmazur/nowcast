@@ -61,9 +61,14 @@
     tileLayer() { return makeLayer(); },
     imageOverlay(url) { return makeLayer({ _url: url }); },
     marker(latlng) { return makeLayer({ _latlng: latlng }); },
+    circleMarker(latlng, opts) { return makeLayer({ _latlng: latlng, options: opts }); },
     divIcon(opts) { return { options: opts }; },
     polygon(latlngs) { return makeLayer({ _latlngs: latlngs }); },
-    layerGroup() { return makeLayer(); },
+    layerGroup() {
+      const g = makeLayer({ _sub: [] });
+      g.addLayer = function (l) { this._sub.push(l); return this; };
+      return g;
+    },
   };
   global.L = L;
 })(window);

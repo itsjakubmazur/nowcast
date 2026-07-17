@@ -13,17 +13,25 @@ const SPA_STYLE = {
   "3":  { color: "#ef4444", label: "3. SPA — ohrožení" },
 };
 
-let _layer = null;
+// Vrstva žije na state.hydroLayer (stejný vzorec jako state.windLayer/
+// state.satLayer u ostatních přepínatelných vrstev) — snadno testovatelné
+// zvenčí a konzistentní se zbytkem kódu.
+// Token per zapnutí — bez něj by rychlé zap/vyp/zap nechalo na mapě
+// duplicitní vrstvu (starší dokončený fetch přepíše referenci, aniž by
+// odstranil tu, kterou mezitím na mapu přidal ten předchozí).
+let _token = 0;
 
 export async function toggleHydro() {
   const btn = document.getElementById("btn-hydro");
   state.hydroMode = !state.hydroMode;
 
   if (!state.hydroMode) {
-    if (_layer) { state.map.removeLayer(_layer); _layer = null; }
+    _token++; // zneplatní jakýkoli rozpracovaný fetch z předchozího zapnutí
+    if (state.hydroLayer) { state.map.removeLayer(state.hydroLayer); state.hydroLayer = null; }
     btn?.classList.remove("active");
     return;
   }
+  const myToken = ++_token;
   btn?.classList.add("active");
   try {
     const r = await fetch(`data/hydro.json?v=${Date.now()}`, { cache: "no-store" });
@@ -31,9 +39,10 @@ export async function toggleHydro() {
     const data = await r.json();
     const stations = data.stations || [];
     if (!stations.length) throw new Error("bez stanic");
-    if (!state.hydroMode) return; // mezitím vypnuto
+    if (myToken !== _token) return; // mezitím uživatel znovu přepnul
 
-    _layer = L.layerGroup();
+    if (state.hydroLayer) { state.map.removeLayer(state.hydroLayer); state.hydroLayer = null; } // pojistka
+    const layer = L.layerGroup();
     for (const s of stations) {
       const style = SPA_STYLE[String(s.spa ?? 0)] || SPA_STYLE["0"];
       const trend = s.trend_cm == null ? ""
@@ -45,13 +54,17 @@ export async function toggleHydro() {
         fillOpacity: 0.85, weight: (s.spa ?? 0) > 0 ? 2.5 : 1,
         pane: "markerPane",
       });
-      marker.bindPopup(`<b>${esc(s.name)}</b>${s.stream ? ` <span style="color:#888">· ${esc(s.stream)}</span>` : ""}<br>
-        ${s.h_cm != null ? `stav <b>${s.h_cm} cm</b>` : ""}${s.q_m3s != null ? ` · průtok <b>${s.q_m3s} m³/s</b>` : ""}<br>
-        <span style="color:${style.color};font-weight:600">${esc(style.label)}</span>${esc(trend)}`);
-      _layer.addLayer(marker);
+      marker.bindPopup(`
+        <div class="hydro-popup">
+          <h4>${esc(s.name)}${s.stream ? ` <span class="hydro-meta">· ${esc(s.stream)}</span>` : ""}</h4>
+          <div class="hydro-meta">${s.h_cm != null ? `stav <b>${s.h_cm} cm</b>` : ""}${s.q_m3s != null ? ` · průtok <b>${s.q_m3s} m³/s</b>` : ""}</div>
+          <div class="hydro-spa" style="color:${style.color}">${esc(style.label)}<span class="hydro-meta">${esc(trend)}</span></div>
+        </div>`);
+      layer.addLayer(marker);
     }
-    _layer.addTo(state.map);
+    state.hydroLayer = layer.addTo(state.map);
   } catch (e) {
+    if (myToken !== _token) return; // mezitím uživatel znovu přepnul
     console.warn("Hydro:", e);
     state.hydroMode = false;
     btn?.classList.remove("active");

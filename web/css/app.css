@@ -1070,6 +1070,12 @@ button.ctrl.active { background: var(--accent); color: #fff;
 .warn-popup .warn-meta { color: var(--muted); font-size: .72rem; margin-bottom: .35rem; }
 .warn-popup .warn-desc { font-size: .78rem; line-height: 1.4; }
 
+/* ── Hlásné profily (hydrologie) ────────────────────────────────────────── */
+.hydro-popup { font-size: .82rem; max-width: 240px; }
+.hydro-popup h4 { font-size: .86rem; margin: 0 0 .25rem; font-weight: 700; }
+.hydro-popup .hydro-meta { color: var(--muted); font-size: .72rem; }
+.hydro-popup .hydro-spa { font-size: .78rem; font-weight: 600; margin-top: .3rem; }
+
 /* ── Warn chips ─────────────────────────────────────────────────────────── */
 .warn-chip {
   display: inline-block; padding: .15rem .6rem; border-radius: 999px;

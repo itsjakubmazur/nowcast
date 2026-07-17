@@ -156,6 +156,11 @@ async function loadRainViewerFrames() {
     const nowcast = data.radar?.nowcast || [];
     const all = [...past, ...nowcast];
     if (!all.length) throw new Error("Žádná data");
+    // Uživatel mezitím mohl kliknout zpátky na "Svět" OFF — bez tohohle by
+    // pozdě doražená odpověď vrstvu na mapě "vzkřísila" i po vypnutí a UI by
+    // zůstalo neshodné se state.globalMode (viz stejná třída bugů opravená
+    // u toggleWindLayer/toggleHydro).
+    if (!state.globalMode) return;
 
     setRadarOpacityBoth(0);
     destroyRainViewerFrames();
@@ -270,22 +275,29 @@ function loadVelocityLib() {
   return _velocityLoading;
 }
 
+// Token per zapnutí — bez něj by rychlé zap/vyp/zap nechalo na mapě
+// duplicitní vrstvu (stejný problém jako u hydro.js toggleHydro).
+let _windToken = 0;
+
 export async function toggleWindLayer() {
   const btn = document.getElementById("btn-wind");
   state.windMode = !state.windMode;
 
   if (!state.windMode) {
+    _windToken++;
     if (state.windLayer) { state.map.removeLayer(state.windLayer); state.windLayer = null; }
     btn?.classList.remove("active");
     return;
   }
+  const myToken = ++_windToken;
   btn?.classList.add("active");
   try {
     await loadVelocityLib();
     const r = await fetch(`data/wind_grid.json?v=${Date.now()}`, { cache: "no-store" });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const data = await r.json();
-    if (!state.windMode) return; // mezitím vypnuto
+    if (myToken !== _windToken) return; // mezitím uživatel znovu přepnul
+    if (state.windLayer) { state.map.removeLayer(state.windLayer); state.windLayer = null; } // pojistka
     state.windLayer = L.velocityLayer({
       data,
       maxVelocity: 20,           // m/s — nad tím je barva saturovaná
@@ -296,6 +308,7 @@ export async function toggleWindLayer() {
       displayValues: false,
     }).addTo(state.map);
   } catch (e) {
+    if (myToken !== _windToken) return; // mezitím uživatel znovu přepnul
     console.warn("Vítr:", e);
     state.windMode = false;
     btn?.classList.remove("active");
