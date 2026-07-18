@@ -15,7 +15,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image
 from scipy import ndimage
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -203,35 +203,11 @@ def main():
         return _centroid(dbz)
 
     def _render_og(dbz: np.ndarray, t: datetime) -> None:
-        """1200×630 sdílecí obrázek (OG card): radarový snímek na tmavém pozadí + popisky."""
-        W, H = 1200, 630
-        card = Image.new("RGB", (W, H), (8, 12, 24))
+        """1200×630 sdílecí obrázek (OG card) — design v og_card.py."""
+        from og_card import build_card
         radar_img = dbz_to_img(dbz).convert("RGBA")
-        rw, rh = radar_img.size
-        target_h = H
-        target_w = int(rw * (target_h / rh))
-        radar_resized = radar_img.resize((target_w, target_h), Image.Resampling.BILINEAR)
-        ox = W - target_w if target_w < W else (W - target_w) // 2
-        base = Image.new("RGBA", (W, H), (8, 12, 24, 255))
-        base.alpha_composite(radar_resized, (ox, 0))
-        # Tmavý gradient zleva pro čitelnost textu
-        grad = Image.new("L", (W, 1), 0)
-        for x in range(W):
-            grad.putpixel((x, 0), int(235 * max(0, 1 - x / (W * 0.62))))
-        grad = grad.resize((W, H))
-        shade = Image.new("RGBA", (W, H), (8, 12, 24, 255))
-        base = Image.composite(shade, base, grad)
-        draw = ImageDraw.Draw(base)
-        try:
-            font_big = ImageFont.load_default(size=54)
-            font_sm = ImageFont.load_default(size=26)
-        except TypeError:
-            font_big = font_sm = ImageFont.load_default()
-        draw.text((56, 210), "⚡ nowcast", font=font_big, fill=(237, 240, 248, 255))
-        draw.text((56, 280), "Krátkodobá předpověď počasí pro ČR", font=font_sm, fill=(180, 190, 220, 255))
-        local_str = t.astimezone(PRAGUE_TZ).strftime("%d.%m. %H:%M")
-        draw.text((56, 330), f"Radar {local_str}", font=font_sm, fill=(120, 200, 255, 255))
-        base.convert("RGB").save(DATA_DIR / "og.png", format="PNG", optimize=True)
+        card = build_card(radar_img, t.astimezone(PRAGUE_TZ).strftime("%H:%M"))
+        card.save(DATA_DIR / "og.png", format="PNG", optimize=True)
         print(f"  ✓ og.png (sdílecí obrázek) — {(DATA_DIR / 'og.png').stat().st_size // 1024} kB")
 
     print("\n  Snímek         čas    typ         rozsah dBZ    vel.  zdroj")

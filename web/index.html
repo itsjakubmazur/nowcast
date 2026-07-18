@@ -10,12 +10,22 @@
   <!-- Cloudflare Worker base URL — pokud se subdoména *.workers.dev liší, uprav zde -->
   <meta name="worker-base" content="https://nowcast-narrate.kubajzek.workers.dev" />
 
+  <!-- Open Graph / embed karta — og:image MUSÍ být absolutní URL, relativní
+       cestu řada scraperů (Facebook, Slack, Discord) ignoruje -->
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="nowcast" />
-  <meta property="og:title" content="nowcast — krátkodobá předpověď počasí ČR" />
-  <meta property="og:description" content="Radarová smyčka, vlastní 2h nowcast a předpověď na týden pro libovolné místo v ČR." />
-  <meta property="og:image" content="data/og.png" />
+  <meta property="og:title" content="nowcast — kdy přesně začne pršet?" />
+  <meta property="og:description" content="Živý radar ČHMÚ, vlastní 2h nowcast, AI meteorolog a výstrahy pro každé místo v Česku." />
+  <meta property="og:url" content="https://itsjakubmazur.github.io/nowcast/" />
+  <meta property="og:image" content="https://itsjakubmazur.github.io/nowcast/data/og.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="Živý radarový snímek ČR s aktuálními srážkami" />
+  <meta property="og:locale" content="cs_CZ" />
   <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="nowcast — kdy přesně začne pršet?" />
+  <meta name="twitter:description" content="Živý radar ČHMÚ, vlastní 2h nowcast, AI meteorolog a výstrahy pro každé místo v Česku." />
+  <meta name="twitter:image" content="https://itsjakubmazur.github.io/nowcast/data/og.png" />
 
   <meta http-equiv="Content-Security-Policy" content="
     default-src 'self';
