@@ -21,11 +21,20 @@ const NEIGH_KM = 12;         // stejné okolí jako assessRain
 const MODEL_RAIN_MM_H = 0.2; // stejný práh modelu jako assessRain
 const FRESH_MS = 15 * 60000; // jak dlouho vzorkům věřit
 
-// Nad ~70 dBZ už nejde o déšť (kroupy/artefakt) a Z–R vztah přestává platit —
-// bez stropu by pixel 255 (servisní/no-data hodnota, dBZ "95.5") vyšel na
-// desítky tisíc mm/h. 250+ v jasu = neplatný pixel, ignoruje se úplně.
+// Nad ~70 dBZ už nejde o déšť (kroupy/artefakt) a Z–R vztah přestává platit.
 const DBZ_PHYS_MAX = 70;
 const MMH_CAP = 150; // víc než přívalová průtrž radar stejně neumí kvantifikovat
+
+// Dekódování pixelu BW schématu (color 0) podle oficiální RainViewer spec:
+//   dBZ = (R & 127) − 32;  bit 128 v R = příznak SNĚHU (ne vyšší intenzita!)
+// Dřívější lineární čtení R/2−32 zdvojnásobovalo hodnoty a sněhový bit
+// interpretovalo jako extrémní odrazivost — každý mrak pak "lil" 150 mm/h.
+export function decodeDbz(r, alpha) {
+  if (alpha === 0) return { dbz: -32, snow: false };  // průhledné = bez ozvěny
+  const dbz = (r & 127) - 32;
+  if (dbz > DBZ_PHYS_MAX) return { dbz: -32, snow: false }; // servisní/artefakt
+  return { dbz, snow: (r & 128) === 128 };
+}
 
 // Marshall–Palmer Z=200·R^1.6 — stejný převod, jakým ČHMÚ škále rozumí web
 // (export kvůli smoke testu stropu — regrese "34 000 mm/h u Bratislavy")
@@ -48,7 +57,10 @@ async function sampleTile(host, path, lat, lon) {
   // schéma 0 (dBZ v jasu), options 0_0 = bez vyhlazení, bez sněhové masky
   const r = await fetch(`${host}${path}/256/${ZOOM}/${tx}/${ty}/0/0_0.png`, { mode: "cors" });
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
-  const bmp = await createImageBitmap(await r.blob());
+  // colorSpaceConversion: "none" — datová dlaždice nesmí projít color
+  // managementem prohlížeče (gamma by posunula hodnoty a rozbila dekódování)
+  const bmp = await createImageBitmap(await r.blob(),
+    { colorSpaceConversion: "none", premultiplyAlpha: "none" });
   const cv = document.createElement("canvas");
   cv.width = cv.height = 256;
   const ctx = cv.getContext("2d", { willReadFrequently: true });
@@ -60,21 +72,19 @@ async function sampleTile(host, path, lat, lon) {
   const at = (x, y) => {
     const xi = Math.max(0, Math.min(255, x)), yi = Math.max(0, Math.min(255, y));
     const o = (yi * 256 + xi) * 4;
-    if (img[o + 3] === 0) return -32;  // průhledný pixel = bez ozvěny
-    if (img[o] >= 250) return -32;     // servisní/no-data hodnota, ne měření
-    return Math.min(img[o] / 2 - 32, DBZ_PHYS_MAX);
+    return decodeDbz(img[o], img[o + 3]);
   };
   const center = at(px, py);
-  let best = -32, bestKm = null;
+  let best = { dbz: -32, snow: false }, bestKm = null;
   for (let dy = -rad; dy <= rad; dy++) {
     for (let dx = -rad; dx <= rad; dx++) {
       const dKm = Math.hypot(dx, dy) * kmPerPx;
       if (dKm > NEIGH_KM) continue;
       const v = at(px + dx, py + dy);
-      if (v > best) { best = v; bestKm = dKm; }
+      if (v.dbz > best.dbz) { best = v; bestKm = dKm; }
     }
   }
-  return { dbz: center, dbzNear: best, nearKm: bestKm };
+  return { dbz: center.dbz, dbzNear: best.dbz, nearKm: bestKm, snow: best.snow };
 }
 
 let _token = 0;

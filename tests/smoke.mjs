@@ -629,6 +629,19 @@ async function main() {
   assertTrue(mmhVals[0] <= 150 && mmhVals[1] <= 150 && mmhVals[2] > 2 && mmhVals[2] < 4,
     `dbzToMmh má fyzikální strop (95.5→${mmhVals[0]}, 200→${mmhVals[1]}, 30→${mmhVals[2]} mm/h)`);
 
+  // Dekódování BW pixelu dle RainViewer spec: dBZ = (R & 127) − 32, bit 128 = sníh.
+  // Regrese "každý mrak lije 150 mm/h": R=190 je 30 dBZ sněhu, ne 63 dBZ průtrže.
+  const dec = await pageG.evaluate(async () => {
+    const { decodeDbz } = await import("./js/globalrain.js");
+    return [decodeDbz(62, 255), decodeDbz(190, 255), decodeDbz(255, 255), decodeDbz(120, 0)];
+  });
+  assertTrue(
+    dec[0].dbz === 30 && dec[0].snow === false
+    && dec[1].dbz === 30 && dec[1].snow === true
+    && dec[2].dbz === -32               // (255&127)−32 = 95 > fyzikální strop → neplatný
+    && dec[3].dbz === -32,              // průhledný pixel = bez ozvěny
+    `decodeDbz odpovídá RainViewer spec (62→${dec[0].dbz}, 190→${dec[1].dbz}+sníh=${dec[1].snow}, 255→${dec[2].dbz}, alpha0→${dec[3].dbz})`);
+
   // Slovník intenzit — 0.3 mm/h je mrholení, ne "Déšť" (scénář Těšín)
   const intWords = await pageG.evaluate(async () => {
     const { precipDescr } = await import("./js/verdict.js");
