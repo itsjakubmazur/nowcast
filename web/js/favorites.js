@@ -2,7 +2,7 @@ import { state, WORKER_BASE } from "./state.js";
 import { localHM, esc } from "./utils.js";
 import { showToast } from "./toast.js";
 import { getSettings, logNotif } from "./settings.js";
-import { assessRain } from "./verdict.js";
+import { assessRain, precipDescr } from "./verdict.js";
 
 const FAV_KEY = "nowcast_favs";
 const FAV_MAX = 5;
@@ -141,7 +141,7 @@ export function checkRainNotifications() {
     } else {
       const mins = Math.round((as.startMs - now) / 60000);
       if (mins > 60) continue;
-      const intenz = as.peak >= 7.5 ? "vydatný déšť" : as.peak >= 2.5 ? "mírný déšť" : "slabé srážky";
+      const intenz = precipDescr(as.peak).fut.toLowerCase();
       msg = `Za ${mins} min — ${intenz} (${as.peak} mm/h) u ${f.label}`;
     }
     if (notifAllowed()) new Notification("🌧️ Meteo Nowcast", { body: msg, icon: "icon.svg", tag: snoozeKey });

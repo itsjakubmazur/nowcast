@@ -1,5 +1,5 @@
 import { state, WORKER_BASE } from "./state.js";
-import { wImg } from "./icons.js";
+import { wImg, wcLabel } from "./icons.js";
 import { haversine, localHM, esc } from "./utils.js";
 import { assessRainGlobal } from "./globalrain.js";
 
@@ -84,11 +84,23 @@ export function assessRain(ptId, minutely) {
     return idx >= 0 && idx < probSeries.length ? probSeries[idx] : null;
   };
 
+  // Shoda modelu s radarem — pro poctivou argumentaci v UI ("radar i model
+  // se shodují" vs. "zatím jen radarová extrapolace"). Model minutely_15 jede
+  // v 15min slotech od "teď".
+  const modelAtMs = ms => {
+    if (!minutely?.length) return null;
+    const idx = Math.max(0, Math.floor((ms - now) / (15 * 60000)));
+    return idx < minutely.length ? (minutely[idx]?.precip ?? null) : null;
+  };
+
   if (best) {
     const status = now >= best.startMs && now <= best.endMs ? "raining"
       : now < best.startMs ? "soon" : null;
     if (status) {
-      return { status, ...best, prob: probAt(best.startMs), radarAgeMin, source: best.nearKm > 0 ? "radar-okolí" : "radar" };
+      const mv = modelAtMs(status === "raining" ? now : best.startMs);
+      const modelAgrees = mv == null ? null : mv >= 0.1;
+      return { status, ...best, prob: probAt(best.startMs), modelAgrees,
+        radarAgeMin, source: best.nearKm > 0 ? "radar-okolí" : "radar" };
     }
     // interval už proběhl (starý radar) — spadni do model/ensemble větve
   }
@@ -133,11 +145,11 @@ export function assessRain(ptId, minutely) {
 
 // ── JS šablonový verdikt (okamžitý, vždy dostupný fallback) ─────────────────
 function rainIntensity(peak) {
-  if (peak < 0.5) return "slabé přeháňky";
+  if (peak < 0.5) return "mrholení";
   if (peak < 2.5) return "slabý déšť";
   if (peak < 7.5) return "mírný déšť";
   if (peak < 15) return "vydatný déšť";
-  return "silný déšť";
+  return "přívalový déšť";
 }
 function gustsKmh(ms) { return Math.round(ms * 3.6 / 10) * 10; }
 const COLOR_CZ = { yellow: "žlutou", orange: "oranžovou", red: "červenou" };
@@ -167,7 +179,7 @@ export function templateVerdict(ptId) {
   const as = assessRain(ptId);
   if (as?.status === "raining") {
     const kde = as.nearKm > 5 ? ` (jádro ~${as.nearKm} km odtud)` : "";
-    sentences.push(`Právě prší${kde}${as.peak != null ? `, špička kolem ${as.peak} mm/h` : ""}.`);
+    sentences.push(`${precipDescr(as.peak).now}${kde}${as.peak != null ? `, špička kolem ${as.peak} mm/h` : ""}.`);
   } else if (as?.status === "soon") {
     const intenzita = rainIntensity(as.peak ?? 0);
     const total = as.total == null ? "" : as.total < 1 ? ", úhrn do 1 mm" : `, úhrn kolem ${Math.round(as.total)} mm`;
@@ -204,10 +216,15 @@ export function renderRainBadge(ptId) {
   } else if (as && (as.status === "raining" || as.status === "soon")) {
     const when = localHM(new Date(as.startMs).toISOString());
     const peak = as.peak ?? 0;
-    if (as.status === "raining") { cls = "red"; icon = "🔴"; msg = `Právě prší${as.nearKm > 5 ? ` (~${as.nearKm} km)` : ""}`; }
-    else if (peak >= 7.5) { cls = "red"; icon = "🔴"; msg = `Vydatný déšť od ${when}`; }
-    else if (peak >= 2.5) { cls = "orange"; icon = "🟠"; msg = `Déšť od ${when}`; }
-    else { cls = "yellow"; icon = "🟡"; msg = `Slabé srážky od ${when}`; }
+    const descr = precipDescr(as.peak);
+    if (as.status === "raining") {
+      // mrholení není poplach — žlutá místo červené
+      cls = peak < 0.5 ? "yellow" : "red"; icon = peak < 0.5 ? "🟡" : "🔴";
+      msg = `${descr.now}${as.nearKm > 5 ? ` (~${as.nearKm} km)` : ""}`;
+    }
+    else if (peak >= 7.5) { cls = "red"; icon = "🔴"; msg = `${descr.fut} od ${when}`; }
+    else if (peak >= 2.5) { cls = "orange"; icon = "🟠"; msg = `${descr.fut} od ${when}`; }
+    else { cls = "yellow"; icon = "🟡"; msg = `${descr.fut} od ${when}`; }
   } else if (as?.status === "possible") {
     cls = "yellow"; icon = "🟡"; msg = `Srážky možné od ~${localHM(new Date(as.startMs).toISOString())}`;
   } else if (warns.length) {
@@ -223,15 +240,55 @@ let _countdownTarget = null; // { startMs, endMs, peak } nebo null
 // Typ srážek (déšť / sníh / smíšené) — hint z Open-Meteo hodinovky, nastavuje
 // showFc24 po parseFc24. Radar sám typ nezná, model ano.
 let _precipHint = "rain";
-const PRECIP_WORD = { rain: "Déšť", snow: "Sněžení", mixed: "Déšť se sněhem" };
-const PRECIP_NOW = { rain: "Právě prší", snow: "Právě sněží", mixed: "Padá déšť se sněhem" };
-const PRECIP_ICON = { rain: "rain", snow: "snow", mixed: "sleet" };
+
+// Slovník podle SKUTEČNÉ intenzity (mm/h ze špičky radaru/modelu) — 0.3 mm/h
+// není "déšť", ale mrholení; 20 mm/h není "déšť", ale průtrž. Prahy odpovídají
+// běžné meteorologické klasifikaci (slabý < 2.5 < mírný < 7.5 < vydatný < 15).
+const INT_RAIN = [
+  [0.5,      { fut: "Mrholení", now: "Právě mrholí", icon: "drizzle" }],
+  [2.5,      { fut: "Slabý déšť", now: "Právě slabě prší", icon: "partly-cloudy-day-rain" }],
+  [7.5,      { fut: "Déšť", now: "Právě prší", icon: "rain" }],
+  [15,       { fut: "Vydatný déšť", now: "Právě vydatně prší", icon: "rain" }],
+  [Infinity, { fut: "Přívalový déšť", now: "Právě lije", icon: "extreme-day-rain" }],
+];
+const INT_SNOW = [
+  [1,        { fut: "Slabé sněžení", now: "Právě slabě sněží", icon: "snow" }],
+  [5,        { fut: "Sněžení", now: "Právě sněží", icon: "snow" }],
+  [Infinity, { fut: "Husté sněžení", now: "Právě hustě sněží", icon: "snow" }],
+];
+const INT_MIXED = { fut: "Déšť se sněhem", now: "Padá déšť se sněhem", icon: "sleet" };
+
+export function precipDescr(peak, hint = _precipHint) {
+  if (hint === "mixed") return INT_MIXED;
+  const table = hint === "snow" ? INT_SNOW : INT_RAIN;
+  if (peak == null) return table[Math.floor(table.length / 2)][1]; // bez špičky → střední slovo
+  return (table.find(([max]) => peak < max) || table[table.length - 1])[1];
+}
+
+// Kontext z hodinovky pro nedeštivý hero panel (vítr/mlha/horko/mráz/CAPE) —
+// nastavuje showFc24 spolu s typem srážek.
+let _fcX = null;
 
 export function setPrecipTypeHint(fc) {
-  const h = (fc?.hourlyFull || []).slice(0, 3);
-  const snow = h.some(x => (x.snow ?? 0) > 0);
-  const cold = h.length && h[0].tempRaw != null && h[0].tempRaw <= 1;
+  const h3 = (fc?.hourlyFull || []).slice(0, 3);
+  const snow = h3.some(x => (x.snow ?? 0) > 0);
+  const cold = h3.length && h3[0].tempRaw != null && h3[0].tempRaw <= 1;
   _precipHint = snow ? (cold ? "snow" : "mixed") : "rain";
+
+  const h6 = (fc?.hourlyFull || []).slice(0, 6);
+  if (!h6.length) { _fcX = null; return; }
+  let gustMax = null, gustT = null;
+  for (const x of h6) {
+    if (x.gust != null && (gustMax == null || x.gust > gustMax)) { gustMax = x.gust; gustT = x.t; }
+  }
+  const temps = h6.map(x => x.tempRaw).filter(v => v != null);
+  _fcX = {
+    wcNow: h6[0].wc, tNow: h6[0].tempRaw,
+    gustMax, gustT,
+    tMax6: temps.length ? Math.max(...temps) : null,
+    tMin6: temps.length ? Math.min(...temps) : null,
+    capeMax: Math.max(...h6.map(x => x.cape ?? 0)),
+  };
 }
 
 export function renderRainCountdown(ptId, minutely) {
@@ -270,46 +327,88 @@ export function renderRainCountdown(ptId, minutely) {
     return;
   }
 
-  document.getElementById("rc-icon").innerHTML = wImg("clear-day");
-  document.getElementById("rc-title").textContent = "Nejbližší 2 h bez srážek";
+  // ── Beze srážek: panel řekne to nejdůležitější o počasí, co skutečně je ──
   const nwp = ptId != null && state.GRID?.pts?.[ptId]
     ? nearestNwp(state.GRID.pts[ptId][0], state.GRID.pts[ptId][1]) : null;
-  document.getElementById("rc-sub").textContent = (nwp && nwp[2]
+  const drySub = (nwp && nwp[2]
     ? `Model naznačuje déšť později, přibližně od ${localHM(nwp[2])}.`
     : radarHM
-      ? `Radar ${radarHM} i model se shodují: sucho.`
+      ? `Radar ${radarHM} i model se shodují: beze srážek.`
       : `Podle modelu se srážky neočekávají.`) + staleNote;
+
+  const thunderWarn = warningsForPt(ptId).find(w => /bouř/i.test(w.event));
+  const x = _fcX;
+
+  const setHero = (icon, title, sub) => {
+    document.getElementById("rc-icon").innerHTML = wImg(icon);
+    document.getElementById("rc-title").textContent = title;
+    document.getElementById("rc-sub").textContent = sub;
+  };
+
+  if (thunderWarn) {
+    setHero("thunderstorms-day", "Riziko bouřek",
+      `Výstraha ČHMÚ (${thunderWarn.event}) platí do ${localHM(thunderWarn.expires_utc)} · radar zatím srážky nevidí.`);
+  } else if (x && x.capeMax >= 800) {
+    setHero("thunderstorms-day", "Bouřkový potenciál",
+      `Energie pro bouřky až ${Math.round(x.capeMax)} J/kg — přeháňky se mohou vyvinout rychle. ${drySub}`);
+  } else if (x && x.gustMax != null && x.gustMax >= 45) {
+    setHero("wind", `Vítr v nárazech až ${Math.round(x.gustMax)} km/h`,
+      `Nejsilnější kolem ${x.gustT} · srážky se nečekají.`);
+  } else if (x && (x.wcNow === 45 || x.wcNow === 48)) {
+    setHero("fog-day", "Mlha", `Omezená dohlednost · beze srážek. ${drySub}`);
+  } else if (x && x.tMax6 != null && x.tMax6 >= 30) {
+    setHero("clear-day", `Horko, až ${Math.round(x.tMax6)} °C`, drySub);
+  } else if (x && x.tMin6 != null && x.tMin6 <= -3) {
+    setHero("snow", `Mráz, až ${Math.round(x.tMin6)} °C`, drySub);
+  } else {
+    const nowStr = x && x.wcNow != null
+      ? `${wcLabel(x.wcNow)}${x.tNow != null ? `, ${Math.round(x.tNow)} °C` : ""} · ` : "";
+    setHero("clear-day", "Nejbližší 2 h bez srážek", nowStr + drySub);
+  }
+}
+
+// Poctivá argumentace zdrojů — kdo tvrzení potvrzuje a kdo ne. "Déšť za
+// 1 min" podložený jen radarovou extrapolací je jiná zpráva než tentýž
+// odpočet, na kterém se radar, model i ensemble shodují.
+function sourcesClause({ source, modelAgrees, prob }) {
+  if (source === "model") return " · hlásí model, radar bod nevidí";
+  const parts = [];
+  if (modelAgrees === true) parts.push("radar i model se shodují");
+  else if (modelAgrees === false) parts.push("jen radar, model zatím nic nevidí");
+  else parts.push("radarová extrapolace");
+  if (prob != null) parts.push(`jistota ~${prob} %`);
+  return " · " + parts.join(", ");
 }
 
 function _tickCountdown() {
   const el = document.getElementById("rain-countdown");
   if (!el || !_countdownTarget) return;
   const now = Date.now();
-  const { startMs, endMs, peak, total, prob, nearKm, source, radarAgeMin } = _countdownTarget;
+  const { startMs, endMs, peak, total, prob, nearKm, source, radarAgeMin, modelAgrees } = _countdownTarget;
+  const descr = precipDescr(peak);
   el.classList.add("show", "imminent");
   el.classList.remove("clear");
-  document.getElementById("rc-icon").innerHTML = wImg(PRECIP_ICON[_precipHint]);
+  document.getElementById("rc-icon").innerHTML = wImg(descr.icon);
 
   const nearStr = nearKm != null && nearKm > 5 ? ` · jádro ~${nearKm} km odtud` : "";
   const staleStr = radarAgeMin > 20 ? ` · radar ${radarAgeMin} min starý` : "";
+  const srcStr = sourcesClause({ source, modelAgrees, prob });
 
   if (now < startMs) {
     const minsAway = Math.round((startMs - now) / 60000);
     const durMin = endMs ? Math.round((endMs - startMs) / 60000) : null;
     document.getElementById("rc-title").innerHTML =
-      `${PRECIP_WORD[_precipHint]} za <span class="rc-timer">${minsAway} min</span>`;
-    const probStr = prob != null ? ` · jistota ~${prob} %` : "";
+      `${descr.fut} za <span class="rc-timer">${minsAway} min</span>`;
     document.getElementById("rc-sub").textContent =
       `${localHM(new Date(startMs).toISOString())}${endMs ? `–${localHM(new Date(endMs).toISOString())}` : ""}`
-      + `${durMin ? ` · potrvá ~${durMin} min` : ""}${peak != null ? ` · špička ${peak} mm/h` : ""}${probStr}${nearStr}${staleStr}`;
+      + `${durMin ? ` · potrvá ~${durMin} min` : ""}${peak != null ? ` · špička ${peak} mm/h` : ""}${srcStr}${nearStr}${staleStr}`;
   } else if (!endMs || now <= endMs) {
     const minsLeft = endMs ? Math.round((endMs - now) / 60000) : null;
     document.getElementById("rc-title").innerHTML = minsLeft != null
-      ? `${PRECIP_NOW[_precipHint]} <span class="rc-timer">(ještě ~${Math.max(minsLeft, 1)} min)</span>`
-      : PRECIP_NOW[_precipHint];
-    const srcStr = source === "model" ? " · radar bod nevidí, hlásí model" : nearStr;
+      ? `${descr.now} <span class="rc-timer">(ještě ~${Math.max(minsLeft, 1)} min)</span>`
+      : descr.now;
     document.getElementById("rc-sub").textContent =
-      `${peak != null ? `Špička ${peak} mm/h` : "Podle aktuálních dat"}${total != null ? ` · úhrn ~${total} mm` : ""}${srcStr}${staleStr}`;
+      `${peak != null ? `Špička ${peak} mm/h` : "Podle aktuálních dat"}${total != null ? ` · úhrn ~${total} mm` : ""}${srcStr}${nearStr}${staleStr}`;
   } else {
     document.getElementById("rc-title").textContent = "Přeháňka odezněla";
     document.getElementById("rc-sub").textContent = `${total != null ? `Úhrn ~${total} mm · ` : ""}další výhled v modelu`;

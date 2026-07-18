@@ -507,7 +507,10 @@ async function main() {
   const pageG = await context.newPage();
   const errorsG = [];
   pageG.on("pageerror", e => { errorsG.push(e.message); if (process.env.DEBUG) console.log("[pageG:pageerror]", e.message); });
-  pageG.on("console", msg => { if (msg.type() === "error") errorsG.push(msg.text()); });
+  pageG.on("console", msg => {
+    // Blitzortung WSS sandbox proxy blokuje — to není chyba aplikace
+    if (msg.type() === "error" && !/blitzortung|WebSocket/i.test(msg.text())) errorsG.push(msg.text());
+  });
   await pageG.route("https://unpkg.com/leaflet@1.9.4/dist/leaflet.js", route => route.fulfill({ path: path.join(FIXTURES, "leaflet-stub.js"), contentType: "text/javascript" }));
   await pageG.route("https://unpkg.com/leaflet@1.9.4/dist/leaflet.css", route => route.fulfill({ body: "", contentType: "text/css" }));
   await pageG.route("https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js", route => route.fulfill({ path: path.join(FIXTURES, "chart-stub.js"), contentType: "text/javascript" }));
@@ -551,7 +554,7 @@ async function main() {
     return el?.classList.contains("show") && title.length > 0;
   }, { timeout: 8000 });
   const gTitle = await pageG.evaluate(() => document.getElementById("rc-title")?.textContent || "");
-  assertTrue(/Srážky možné|Déšť|bez srážek/.test(gTitle), `countdown ve světovém režimu funguje ("${gTitle}")`);
+  assertTrue(/Srážky možné|[Dd]éšť|Mrholení|bez srážek/.test(gTitle), `countdown ve světovém režimu funguje ("${gTitle}")`);
 
   // vzorkování RainViewer dlaždic doběhlo (t0 + 2 nowcast snímky, vše suché).
   // POZOR: waitForFunction s async funkcí tu nejde použít — vrácená Promise je
@@ -568,6 +571,17 @@ async function main() {
   }
   assertTrue(gRadar && gRadar.n === 3 && gRadar.allDry,
     `RainViewer dlaždice navzorkované (${gRadar?.n ?? 0} snímků, sucho=${gRadar?.allDry})`);
+
+  // Slovník intenzit — 0.3 mm/h je mrholení, ne "Déšť" (scénář Těšín)
+  const intWords = await pageG.evaluate(async () => {
+    const { precipDescr } = await import("./js/verdict.js");
+    return [precipDescr(0.3, "rain").fut, precipDescr(1.2, "rain").fut,
+      precipDescr(5, "rain").fut, precipDescr(22, "rain").fut, precipDescr(0.3, "snow").fut];
+  });
+  assertTrue(
+    intWords[0] === "Mrholení" && intWords[1] === "Slabý déšť" && intWords[2] === "Déšť"
+    && intWords[3] === "Přívalový déšť" && intWords[4] === "Slabé sněžení",
+    `slovník intenzit odpovídá mm/h (${intWords.join(" / ")})`);
 
   const accShownG = await pageG.evaluate(() =>
     document.getElementById("accuracy-line")?.classList.contains("show") ?? false);

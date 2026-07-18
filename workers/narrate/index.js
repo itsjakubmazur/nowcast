@@ -473,11 +473,14 @@ function localHM(iso) {
     timeZone: "Europe/Prague", hour: "2-digit", minute: "2-digit",
   });
 }
+// Stejné prahy jako precipDescr ve frontendovém verdict.js — 0.3 mm/h je
+// mrholení, ne déšť; notifikace nesmí dramatizovat
 function rainWords(peak) {
-  if (peak < 0.5) return "slabé přeháňky";
+  if (peak < 0.5) return "mrholení";
   if (peak < 2.5) return "slabý déšť";
   if (peak < 7.5) return "mírný déšť";
-  return "vydatný déšť";
+  if (peak < 15) return "vydatný déšť";
+  return "přívalový déšť";
 }
 
 // Radar zná jen intenzitu, ne skupenství — typ srážek (déšť/sníh/smíšené)

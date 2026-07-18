@@ -122,8 +122,15 @@ export function assessRainGlobal(minutely) {
       const startMs = Math.max(g.frames[idx].tMs, idx === 0 ? now : 0);
       const endMs = g.frames[end].tMs + 10 * 60000;
       const status = startMs <= now ? "raining" : "soon";
+      // shoda s modelem — stejná argumentace jako v CZ assessRain
+      let modelAgrees = null;
+      if (minutely?.length) {
+        const mi = Math.max(0, Math.floor(((status === "raining" ? now : startMs) - now) / (15 * 60000)));
+        const mv = mi < minutely.length ? (minutely[mi]?.precip ?? null) : null;
+        modelAgrees = mv == null ? null : mv >= 0.1;
+      }
       return { status, startMs: status === "raining" ? now : startMs, endMs,
-        peak, total: null, nearKm, prob: null, radarAgeMin,
+        peak, total: null, nearKm, prob: null, radarAgeMin, modelAgrees,
         source: nearKm > 0 ? "radar-okolí" : "radar" };
     }
   }
