@@ -620,6 +620,15 @@ async function main() {
   assertTrue(gRadar && gRadar.n === 3 && gRadar.allDry,
     `RainViewer dlaždice navzorkované (${gRadar?.n ?? 0} snímků, sucho=${gRadar?.allDry})`);
 
+  // Strop intenzity z dBZ — pixel 255 (95.5 dBZ, servisní hodnota) dřív dával
+  // "34 000 mm/h" (scénář Bratislava); fyzikální strop 70 dBZ / 150 mm/h
+  const mmhVals = await pageG.evaluate(async () => {
+    const { dbzToMmh } = await import("./js/globalrain.js");
+    return [dbzToMmh(95.5), dbzToMmh(200), dbzToMmh(30)];
+  });
+  assertTrue(mmhVals[0] <= 150 && mmhVals[1] <= 150 && mmhVals[2] > 2 && mmhVals[2] < 4,
+    `dbzToMmh má fyzikální strop (95.5→${mmhVals[0]}, 200→${mmhVals[1]}, 30→${mmhVals[2]} mm/h)`);
+
   // Slovník intenzit — 0.3 mm/h je mrholení, ne "Déšť" (scénář Těšín)
   const intWords = await pageG.evaluate(async () => {
     const { precipDescr } = await import("./js/verdict.js");

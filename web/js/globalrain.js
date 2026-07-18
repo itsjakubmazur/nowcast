@@ -21,9 +21,18 @@ const NEIGH_KM = 12;         // stejné okolí jako assessRain
 const MODEL_RAIN_MM_H = 0.2; // stejný práh modelu jako assessRain
 const FRESH_MS = 15 * 60000; // jak dlouho vzorkům věřit
 
+// Nad ~70 dBZ už nejde o déšť (kroupy/artefakt) a Z–R vztah přestává platit —
+// bez stropu by pixel 255 (servisní/no-data hodnota, dBZ "95.5") vyšel na
+// desítky tisíc mm/h. 250+ v jasu = neplatný pixel, ignoruje se úplně.
+const DBZ_PHYS_MAX = 70;
+const MMH_CAP = 150; // víc než přívalová průtrž radar stejně neumí kvantifikovat
+
 // Marshall–Palmer Z=200·R^1.6 — stejný převod, jakým ČHMÚ škále rozumí web
-function dbzToMmh(dbz) {
-  return Math.round(Math.pow(Math.pow(10, dbz / 10) / 200, 1 / 1.6) * 10) / 10;
+// (export kvůli smoke testu stropu — regrese "34 000 mm/h u Bratislavy")
+export function dbzToMmh(dbz) {
+  const d = Math.min(dbz, DBZ_PHYS_MAX);
+  const r = Math.pow(Math.pow(10, d / 10) / 200, 1 / 1.6);
+  return Math.round(Math.min(r, MMH_CAP) * 10) / 10;
 }
 
 // Přečte dBZ z jedné RainViewer dlaždice: bod + maximum v okolí ≤ 12 km.
@@ -51,7 +60,9 @@ async function sampleTile(host, path, lat, lon) {
   const at = (x, y) => {
     const xi = Math.max(0, Math.min(255, x)), yi = Math.max(0, Math.min(255, y));
     const o = (yi * 256 + xi) * 4;
-    return img[o + 3] === 0 ? -32 : img[o] / 2 - 32; // průhledný pixel = bez ozvěny
+    if (img[o + 3] === 0) return -32;  // průhledný pixel = bez ozvěny
+    if (img[o] >= 250) return -32;     // servisní/no-data hodnota, ne měření
+    return Math.min(img[o] / 2 - 32, DBZ_PHYS_MAX);
   };
   const center = at(px, py);
   let best = -32, bestKm = null;
@@ -120,8 +131,11 @@ export function assessRainGlobal(minutely) {
       const centerWet = g.frames[idx].dbz >= RAIN_DBZ;
       const nearKm = centerWet ? 0 : Math.round(g.frames[idx].nearKm ?? 0);
       const startMs = Math.max(g.frames[idx].tMs, idx === 0 ? now : 0);
-      const endMs = g.frames[end].tMs + 10 * 60000;
       const status = startMs <= now ? "raining" : "soon";
+      // radar t0 bývá pár minut starý — "prší (ještě ~1 min)" by jen blikalo;
+      // když prší teď, drž konec aspoň 10 min před námi
+      const endMs = Math.max(g.frames[end].tMs + 10 * 60000,
+        status === "raining" ? now + 10 * 60000 : 0);
       // shoda s modelem — stejná argumentace jako v CZ assessRain
       let modelAgrees = null;
       if (minutely?.length) {
