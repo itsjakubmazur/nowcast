@@ -3,6 +3,8 @@
 // ~1–2′ pro Slunce, ~2° pro Měsíc a planety; pro "kdy a co pozorovat"
 // bohatě stačí. Časy počítáme vzorkováním výšky nad obzorem po 5 minutách.
 
+import { state } from "./state.js";
+
 const RAD = Math.PI / 180;
 const sin = x => Math.sin(x * RAD), cos = x => Math.cos(x * RAD);
 const asinD = x => Math.asin(x) / RAD, atan2D = (y, x) => Math.atan2(y, x) / RAD;
@@ -181,7 +183,7 @@ function activeShowers(date) {
 const STEP_MIN = 5;
 
 function fmtHM(date) {
-  return date.toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Prague" });
+  return date.toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit", timeZone: state.tz });
 }
 
 // Projde noc (od 12:00 dnes do 12:00 zítra UTC-ish) a najde přechody.

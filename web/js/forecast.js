@@ -1,6 +1,6 @@
 import { state } from "./state.js";
 import { wcIconSvg, wcLabel, mostSevere, wImg } from "./icons.js";
-import { uvClass, esc, revealSwap } from "./utils.js";
+import { uvClass, esc, revealSwap, nowLocStr, locDateStr } from "./utils.js";
 import { isDarkTheme } from "./theme.js";
 
 const N_HOURLY = 6;
@@ -8,13 +8,8 @@ const BLOCK_H = 3;
 
 function _nn(v, def = 0) { return v != null ? v : def; }
 
-function nowPragueStr() {
-  const s = new Date().toLocaleString("sv-SE", { timeZone: "Europe/Prague" });
-  return s.slice(0, 10) + "T" + s.slice(11, 14) + "00";
-}
-
 export function parseFc24(data) {
-  const nowPrague = nowPragueStr();
+  const nowLoc = nowLocStr();
   const h = data.hourly || {};
   const times = h.time || [];
   const wc = h.weather_code || [];
@@ -32,7 +27,7 @@ export function parseFc24(data) {
   const cloud = h.cloud_cover || [];
   const snow = h.snowfall || [];
 
-  let si = times.findIndex(t => t >= nowPrague);
+  let si = times.findIndex(t => t >= nowLoc);
   if (si < 0) si = 0;
 
   const hourly = [];
@@ -89,8 +84,8 @@ export function parseFc24(data) {
 export function parseMinutely15(data) {
   const m = data.minutely_15 || {};
   const times = m.time || [];
-  const nowPrague = nowPragueStr();
-  let si = times.findIndex(t => t >= nowPrague);
+  const nowLoc = nowLocStr();
+  let si = times.findIndex(t => t >= nowLoc);
   if (si < 0) si = 0;
   const out = [];
   for (let k = 0; k < 16 && si + k < times.length; k++) {
@@ -237,7 +232,7 @@ export function renderFc7(data, label) {
   grid.classList.add("fade-swap");
   grid.style.opacity = "0";
   grid.innerHTML = "";
-  const todayStr = new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Prague" });
+  const todayStr = locDateStr();
 
   dates.forEach((dateStr, i) => {
     const dt = new Date(dateStr + "T12:00:00");
@@ -334,7 +329,7 @@ async function loadEnsemble() {
   if (canvasWrap) canvasWrap.innerHTML = `<span class="skel" style="width:100%;height:100%;border-radius:12px"></span>`;
   try {
     const url = `https://ensemble-api.open-meteo.com/v1/ensemble?latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}`
-      + `&hourly=temperature_2m,precipitation&models=icon_seamless&forecast_days=2&timezone=Europe%2FPrague`;
+      + `&hourly=temperature_2m,precipitation&models=icon_seamless&forecast_days=2&timezone=auto`;
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 15000);
     const r = await fetch(url, { signal: ctrl.signal });
@@ -605,7 +600,7 @@ export async function addModelSpread(lat, lon, fc) {
   try {
     const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}`
       + `&hourly=temperature_2m&models=icon_seamless,ecmwf_ifs025,gfs_seamless`
-      + `&forecast_days=3&timezone=Europe%2FPrague`;
+      + `&forecast_days=3&timezone=auto`;
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 12000);
     const r = await fetch(url, { signal: ctrl.signal });
@@ -659,7 +654,7 @@ export async function fetchAndRenderAQ(lat, lon) {
     const url = `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}`
       + `&current=pm10,pm2_5,ozone,nitrogen_dioxide,european_aqi`
       + `&hourly=pm2_5,pm10,ozone,european_aqi,alder_pollen,birch_pollen,grass_pollen,ragweed_pollen`
-      + `&timezone=Europe%2FPrague&forecast_days=3`;
+      + `&timezone=auto&forecast_days=3`;
     const r = await fetch(url);
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const data = await r.json();
@@ -672,8 +667,8 @@ export async function fetchAndRenderAQ(lat, lon) {
 // Výřez hodinové řady od "teď" dopředu (až 72 h) — pro sparkliny 3denního vývoje.
 function hourlySlice(hourly, key) {
   if (!hourly?.time?.length || !hourly[key]) return null;
-  const nowPrague = nowPragueStr();
-  let idx = hourly.time.findIndex(t => t >= nowPrague);
+  const nowLoc = nowLocStr();
+  let idx = hourly.time.findIndex(t => t >= nowLoc);
   if (idx < 0) idx = 0;
   const vals = hourly[key].slice(idx, idx + 72);
   return vals.some(v => v != null) ? vals : null;
@@ -750,7 +745,7 @@ export async function fetchOpenMeteo(lat, lon, signal) {
     + `&minutely_15=precipitation,rain,snowfall,windspeed_10m,windgusts_10m,winddirection_10m,cape`
     + `&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,wind_gusts_10m_max,uv_index_max,sunrise,sunset`
     // past_days=1 kvůli "o X° tepleji/chladněji než včera" (srovnání stejné hodiny)
-    + `&forecast_days=7&past_days=1&timezone=Europe%2FPrague`;
+    + `&forecast_days=7&past_days=1&timezone=auto`;
 
   // Bez vlastního timeoutu umí fetch na slabším mobilním signálu viset
   // donekonečna a volající strana (showFc24) pak zůstane navždy na
@@ -764,10 +759,13 @@ export async function fetchOpenMeteo(lat, lon, signal) {
     const r = await fetch(url, { signal: ctrl.signal });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const data = await r.json();
+    // timezone=auto → API vrací zónu místa; všechny zobrazované časy pak
+    // jedou v ní (utils.localHM / nowLocStr čtou state.tz)
+    state.tz = data.timezone || "Europe/Prague";
     // past_days=1 posouvá i daily o den zpět — ořízni včerejšek, ať všichni
     // konzumenti (fc7, meteogram, astro) dál dostávají [0] = dnešek
     if (data.daily?.time?.length) {
-      const todayStr = new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Prague" });
+      const todayStr = locDateStr();
       const off = data.daily.time.findIndex(t => t >= todayStr);
       if (off > 0) {
         for (const k of Object.keys(data.daily)) {

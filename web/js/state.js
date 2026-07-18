@@ -20,6 +20,13 @@ export const state = {
   currentLat: null, currentLon: null, currentLabel: null,
   fc24Ctrl: null, verdictCtrl: null,
 
+  // Světový režim: místo mimo pokrytí českého radaru → RainViewer + model.
+  // tz = časová zóna vybraného místa (z Open-Meteo timezone=auto) — všechny
+  // zobrazované časy jedou v místním čase daného místa, ne natvrdo v Praze.
+  inCZ: true, tz: "Europe/Prague",
+  _globalRadar: null,   // navzorkované RainViewer dlaždice (globalrain.js)
+  _autoGlobal: false,   // globální radar zapnutý automaticky (ne uživatelem)
+
   pushSubscribed: false,
 };
 

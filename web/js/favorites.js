@@ -105,6 +105,7 @@ export function checkRainNotifications() {
   if (state.GRID.warnings && state.GRID.wmatch) {
     for (const f of favs) {
       const { id } = _nearestPtLocal(f.lat, f.lon);
+      if (id == null) continue; // zahraniční oblíbené místo — český grid neplatí
       const matchIdx = new Set(state.GRID.wmatch[String(id)] || []);
       const activeWarns = state.GRID.warnings.filter((w, wi) => matchIdx.has(wi) && WARN_COLORS[w.color]);
       for (const w of activeWarns) {
@@ -127,6 +128,7 @@ export function checkRainNotifications() {
     const snoozeKey = `rain_${f.label}`;
     if (snooze[snoozeKey] && now - snooze[snoozeKey] < 20 * 60 * 1000) continue;
     const { id } = _nearestPtLocal(f.lat, f.lon);
+    if (id == null) continue; // zahraniční oblíbené místo řeší server (worker push)
     // jednotné vyhodnocení včetně OKOLÍ bodu — bouřka 3 km vedle oblíbeného
     // místa dřív propadla sítem, protože přesně ten jeden pixel byl suchý
     const as = assessRain(id, null);
@@ -158,6 +160,9 @@ function _nearestPtLocal(lat, lon) {
     const d = dLat * dLat + dLon * dLon;
     if (d < bd) { bd = d; best = i; }
   }
+  // ~0.25° ≈ 25 km — dál je místo mimo pokrytí českého gridu → id null,
+  // jinak by zahraniční oblíbené místo „zdědilo" data bodu na hranici ČR
+  if (bd > 0.25 * 0.25) return { id: null };
   return { id: best };
 }
 

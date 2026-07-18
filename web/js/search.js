@@ -13,9 +13,19 @@ function pushHistory(entry) {
   localStorage.setItem(HISTORY_KEY, JSON.stringify(hist.slice(0, HISTORY_MAX)));
 }
 
+// Hledání kdekoli na světě — česká místa řadíme dopředu (většina uživatelů
+// hledá doma), ale Tokio nebo Lisabon najdeš úplně stejně.
 export async function geocode(q) {
-  const r = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=6&language=cs&country=CZ`);
-  return (await r.json()).results || [];
+  const r = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=8&language=cs`);
+  const results = (await r.json()).results || [];
+  return results.sort((a, b) => (a.country_code === "CZ" ? 0 : 1) - (b.country_code === "CZ" ? 0 : 1));
+}
+
+// Popisek výsledku: „Brno, Jihomoravský kraj" doma, „Lisabon, Portugalsko" venku
+export function geoLabel(res) {
+  const isCZ = res.country_code === "CZ";
+  const region = isCZ ? res.admin1 : (res.country || res.admin1);
+  return res.name + (region ? `, ${region}` : "");
 }
 
 // Reverzní geokódování pro GPS tlačítko — ať se místo "Moje poloha" ukáže
@@ -59,7 +69,7 @@ export function initSearch(onSelect) {
       const li = document.createElement("li");
       li.setAttribute("role", "option");
       li.id = `sugg-${i}`;
-      const label = isHistory ? res.label : res.name + (res.admin1 ? `, ${res.admin1}` : "");
+      const label = isHistory ? res.label : geoLabel(res);
       li.innerHTML = isHistory ? `${esc(label)}<span class="sugg-hist">nedávné</span>` : esc(label);
       li.addEventListener("mousedown", e => {
         e.preventDefault();
@@ -76,7 +86,7 @@ export function initSearch(onSelect) {
     const isHistory = res.lat !== undefined && res.latitude === undefined;
     const lat = isHistory ? res.lat : res.latitude;
     const lon = isHistory ? res.lon : res.longitude;
-    const label = isHistory ? res.label : (res.name + (res.admin1 ? `, ${res.admin1}` : ""));
+    const label = isHistory ? res.label : geoLabel(res);
     input.value = isHistory ? res.label : res.name;
     close();
     pushHistory({ lat, lon, label });

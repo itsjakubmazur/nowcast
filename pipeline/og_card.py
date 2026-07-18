@@ -221,9 +221,9 @@ def build_card(radar: Image.Image | None, time_label: str) -> Image.Image:
     f_h = _font(44, 700)
     d.text((x, 288 * S), "Kdy přesně začne pršet?", font=f_h, fill=(*TEXT, 255))
     f_sub = _font(25, 450)
-    d.text((x, 356 * S), "Vlastní 2h radarový nowcast, AI meteorolog", font=f_sub,
+    d.text((x, 356 * S), "Živý radar, 2h nowcast a AI meteorolog", font=f_sub,
            fill=(*TEXT_MUTED, 255))
-    d.text((x, 392 * S), "a výstrahy pro každé místo v Česku.", font=f_sub,
+    d.text((x, 392 * S), "kamkoli na světě. Doma na minuty přesně.", font=f_sub,
            fill=(*TEXT_MUTED, 255))
 
     # Feature chipy

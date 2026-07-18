@@ -23,7 +23,7 @@ Trend teplot a jestli se počasí zlepší, nebo zhorší.
 
 POVINNÁ PRAVIDLA:
 - Uváděj POUZE hodnoty a jevy, které jsou ve vstupním JSON. Nic nevymýšlej.
-- Časy jsou v místním čase (Europe/Prague) — použij přímo.
+- Časy jsou v místním čase daného místa — použij přímo.
 - Pokud nejsou srážky: zaměř se na teploty a vítr.
 - Žádný uvítací odstavec ani zdvořilostní fráze ("dobrý den", "přinášíme vám předpověď") — jdi rovnou k věci.
 
@@ -39,7 +39,7 @@ STYL:
 const CACHE_TTL_S = 1800;             // edge cache pro /verdict
 // Zvyš při každé změně SYSTEM_PROMPT / buildPrompt / generationConfig —
 // jinak stará (třeba uťatá) odpověď přežije v edge cache i nový deploy.
-const CACHE_VERSION = "v3";
+const CACHE_VERSION = "v4";
 const PUSH_SNOOZE_MS = 30 * 60 * 1000;     // 30 min mezi upozorněními na stejné místo
 const WARN_SNOOZE_MS = 60 * 60 * 1000;     // 60 min pro výstrahy
 const RAIN_THRESHOLD_MM_H = 0.1;
@@ -135,7 +135,7 @@ async function handleVerdict(request, url, env, ctx) {
 const ASK_PROMPT = `Jsi meteorolog. Dostaneš JSON s hodinovými daty o počasí pro konkrétní místo
 a otázku uživatele. Odpověz česky, stručně (1–3 věty), POUZE z dat v JSON — nic si nevymýšlej.
 Když se otázka netýká počasí nebo na ni data neodpovídají, řekni to na rovinu jednou větou.
-Časy jsou místní (Europe/Prague). Vítr uváděj v nárazech km/h, srážky v mm, teploty celé °C.`;
+Časy jsou v místním čase daného místa. Vítr uváděj v nárazech km/h, srážky v mm, teploty celé °C.`;
 
 async function handleAsk(url, env) {
   const lat = parseFloat(url.searchParams.get("lat"));
@@ -152,7 +152,7 @@ async function handleAsk(url, env) {
     const omUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}`
       + `&hourly=weather_code,temperature_2m,apparent_temperature,precipitation,precipitation_probability,wind_gusts_10m,cape,uv_index,cloud_cover`
       + `&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,sunrise,sunset`
-      + `&timezone=Europe%2FPrague&forecast_days=3`;
+      + `&timezone=auto&forecast_days=3`;
     const r = await fetch(omUrl);
     if (!r.ok) throw new Error(`OM HTTP ${r.status}`);
     omData = await r.json();
@@ -219,7 +219,7 @@ async function generateVerdict(lat, lon, label, env, radarHint = "") {
   try {
     const omUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}`
       + `&hourly=weather_code,temperature_2m,apparent_temperature,precipitation,precipitation_probability,wind_speed_10m,wind_gusts_10m,cape`
-      + `&timezone=Europe%2FPrague&forecast_days=1`;
+      + `&timezone=auto&forecast_days=1`;
     const r = await fetch(omUrl);
     if (!r.ok) throw new Error(`OM HTTP ${r.status}`);
     omData = await r.json();
@@ -251,9 +251,9 @@ function buildPrompt(om, label, lat, lon, radarHint) {
   const gusts = h.wind_gusts_10m || [];
   const cape = h.cape || [];
 
-  const now = new Date();
-  const pragueHour = new Date(now.toLocaleString("en-US", { timeZone: "Europe/Prague" }));
-  const nowStr = pragueHour.toISOString().slice(0, 14) + "00";
+  const tz = om.timezone || "Europe/Prague";
+  const nowLoc = new Date().toLocaleString("sv-SE", { timeZone: tz });
+  const nowStr = nowLoc.slice(0, 10) + "T" + nowLoc.slice(11, 14) + "00";
 
   let startIdx = times.findIndex(t => t >= nowStr);
   if (startIdx < 0) startIdx = 0;
@@ -439,7 +439,7 @@ async function sendMorningBriefing(key, record, todayStr, env) {
     const r = await fetch(
       `https://api.open-meteo.com/v1/forecast?latitude=${fav.lat.toFixed(4)}&longitude=${fav.lon.toFixed(4)}`
       + `&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,wind_gusts_10m_max`
-      + `&timezone=Europe%2FPrague&forecast_days=1`);
+      + `&timezone=auto&forecast_days=1`);
     if (r.ok) {
       const d = (await r.json()).daily || {};
       const tmax = Math.round(d.temperature_2m_max?.[0]);
@@ -487,7 +487,7 @@ async function precipType(lat, lon) {
   try {
     const r = await fetch(
       `https://api.open-meteo.com/v1/forecast?latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}`
-      + `&current=temperature_2m,snowfall&timezone=Europe%2FPrague`,
+      + `&current=temperature_2m,snowfall&timezone=auto`,
       { signal: AbortSignal.timeout(5000) });
     if (!r.ok) return null;
     const cur = (await r.json()).current || {};
@@ -519,8 +519,29 @@ async function checkAndNotify(key, record, grid, env) {
     const favKey = `${fav.lat.toFixed(2)},${fav.lon.toFixed(2)}`;
     const lastNotified = record.notified?.[favKey] ? Date.parse(record.notified[favKey]) : 0;
 
-    const { id } = nearestPtIdx(grid, fav.lat, fav.lon);
-    if (id == null) continue;
+    const { id, dist } = nearestPtIdx(grid, fav.lat, fav.lon);
+
+    // Oblíbené místo mimo pokrytí českého gridu (> 25 km od nejbližšího bodu)
+    // → světová kontrola přes Open-Meteo minutely_15 místo radaru
+    if (id == null || dist > 25) {
+      if (now - lastNotified <= PUSH_SNOOZE_MS) continue;
+      const g = await globalRainCheck(fav);
+      if (g) {
+        shouldNotify = true;
+        reason = `rainglobal:${favKey}`;
+        const type = (await precipType(fav.lat, fav.lon)) || "rain";
+        notifPayload = g.minsAway <= 0
+          ? { title: type === "snow" ? "🌨️ Právě sněží" : "🌧️ Právě prší",
+              body: `${fav.label || favKey}: ${precipWords(type, g.peakMmH)}, ~${g.peakMmH} mm/h. Podle modelu.`,
+              tag: `rain-${favKey}` }
+          : { title: `${PRECIP_TITLE[type]} za ~${g.minsAway} min`,
+              body: `${fav.label || favKey}: ${precipWords(type, g.peakMmH)} (~${g.peakMmH} mm/h). Podle modelu.`,
+              tag: `rain-${favKey}` };
+        record.notified = record.notified || {};
+        record.notified[favKey] = new Date(now).toISOString();
+      }
+      continue;
+    }
 
     // Výstrahy (CAP) — vyšší priorita, delší snooze
     const matchIdx = new Set(grid.wmatch?.[String(id)] || []);
@@ -588,6 +609,35 @@ async function checkAndNotify(key, record, grid, env) {
   });
   console.log(`push sent (${reason})`);
   return "notified";
+}
+
+// Světová kontrola deště pro oblíbená místa mimo ČR — Open-Meteo minutely_15.
+// Vrací { minsAway, peakMmH } při dešti do ~45 min, jinak null. Jakékoli
+// selhání → null (notifikace nesmí spadnout kvůli jedné zahraniční oblíbené).
+async function globalRainCheck(fav) {
+  try {
+    const r = await fetch(
+      `https://api.open-meteo.com/v1/forecast?latitude=${fav.lat.toFixed(4)}&longitude=${fav.lon.toFixed(4)}`
+      + `&minutely_15=precipitation&forecast_days=1&timezone=auto`,
+      { signal: AbortSignal.timeout(6000) });
+    if (!r.ok) return null;
+    const om = await r.json();
+    const times = om.minutely_15?.time || [];
+    const prec = om.minutely_15?.precipitation || [];
+    const tz = om.timezone || "UTC";
+    const nowLoc = new Date().toLocaleString("sv-SE", { timeZone: tz }).replace(" ", "T").slice(0, 16);
+    let si = times.findIndex(t => t >= nowLoc);
+    if (si < 0) return null;
+    for (let k = 0; k < 4 && si + k < times.length; k++) { // 0–45 min dopředu
+      const v = prec[si + k];
+      if (v != null && v >= RAIN_THRESHOLD_MM_H) {
+        return { minsAway: k * 15, peakMmH: Math.round(v * 4 * 10) / 10 }; // mm/15min → mm/h
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 function nearestPtIdx(grid, lat, lon) {

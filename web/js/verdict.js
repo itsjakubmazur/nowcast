@@ -1,6 +1,7 @@
 import { state, WORKER_BASE } from "./state.js";
 import { wImg } from "./icons.js";
 import { haversine, localHM, esc } from "./utils.js";
+import { assessRainGlobal } from "./globalrain.js";
 
 // ── Geo lookup v GRID ─────────────────────────────────────────────────────────
 export function nearestPt(lat, lon) {
@@ -47,7 +48,9 @@ const PROB_MIN = 30; // % — od kdy stojí ensemble riziko za zmínku
 
 export function assessRain(ptId, minutely) {
   const G = state.GRID;
-  if (!G?.pts?.[ptId]) return null;
+  // ptId == null → místo mimo pokrytí českého radaru: světový režim
+  // (RainViewer vzorky + minutely_15, stejný tvar výsledku)
+  if (ptId == null || !G?.pts?.[ptId]) return assessRainGlobal(minutely);
   minutely = minutely ?? state._lastMinutely ?? null;
   const stepMin = G.step_min || 10;
   const t0ms = new Date(G.t0_utc).getTime();
@@ -140,6 +143,8 @@ function gustsKmh(ms) { return Math.round(ms * 3.6 / 10) * 10; }
 const COLOR_CZ = { yellow: "žlutou", orange: "oranžovou", red: "červenou" };
 
 export function warningsForPt(ptId) {
+  // Výstrahy ČHMÚ existují jen pro body českého gridu
+  if (ptId == null || !state.GRID?.warnings || !state.GRID?.wmatch) return [];
   const matchIdx = new Set(state.GRID.wmatch[String(ptId)] || []);
   return state.GRID.warnings.filter((w, wi) => w.global || matchIdx.has(wi));
 }
@@ -173,7 +178,9 @@ export function templateVerdict(ptId) {
     sentences.push("Srážky se v nejbližších hodinách neočekávají.");
   }
 
-  const nwp = nearestNwp(state.GRID.pts[ptId][0], state.GRID.pts[ptId][1]);
+  // NWP podmřížka pokrývá jen ČR — ve světovém režimu tuhle větu vynech
+  const nwp = ptId != null && state.GRID?.pts?.[ptId]
+    ? nearestNwp(state.GRID.pts[ptId][0], state.GRID.pts[ptId][1]) : null;
   if (nwp && nwp[2]) {
     sentences.push(`Srážky jsou možné i v dalším výhledu, přibližně od ${localHM(nwp[2])}.`);
   }
@@ -229,12 +236,17 @@ export function setPrecipTypeHint(fc) {
 
 export function renderRainCountdown(ptId, minutely) {
   const el = document.getElementById("rain-countdown");
-  if (!el || !state.GRID || !state.MANIFEST) { el?.classList.remove("show"); return; }
+  if (!el) return;
+  // Český režim potřebuje GRID+MANIFEST; světový (ptId null) jede bez nich
+  if (ptId != null && (!state.GRID || !state.MANIFEST)) { el.classList.remove("show"); return; }
 
   clearInterval(_countdownTimer);
   const as = assessRain(ptId, minutely);
-  const radarHM = localHM(state.GRID.t0_utc);
-  const staleNote = as && as.radarAgeMin > 20 ? ` · radar ${radarHM} (${as.radarAgeMin} min starý!)` : "";
+  const radarT0 = ptId != null ? state.GRID.t0_utc
+    : (state._globalRadar?.frames?.[0] ? new Date(state._globalRadar.frames[0].tMs).toISOString() : null);
+  const radarHM = radarT0 ? localHM(radarT0) : null;
+  const staleNote = as && as.radarAgeMin != null && as.radarAgeMin > 20 && radarHM
+    ? ` · radar ${radarHM} (${as.radarAgeMin} min starý!)` : "";
 
   if (as && (as.status === "raining" || as.status === "soon")) {
     _countdownTarget = { ...as };
@@ -260,10 +272,13 @@ export function renderRainCountdown(ptId, minutely) {
 
   document.getElementById("rc-icon").innerHTML = wImg("clear-day");
   document.getElementById("rc-title").textContent = "Nejbližší 2 h bez srážek";
-  const nwp = nearestNwp(state.GRID.pts[ptId][0], state.GRID.pts[ptId][1]);
+  const nwp = ptId != null && state.GRID?.pts?.[ptId]
+    ? nearestNwp(state.GRID.pts[ptId][0], state.GRID.pts[ptId][1]) : null;
   document.getElementById("rc-sub").textContent = (nwp && nwp[2]
     ? `Model naznačuje déšť později, přibližně od ${localHM(nwp[2])}.`
-    : `Radar ${radarHM} i model se shodují: sucho.`) + staleNote;
+    : radarHM
+      ? `Radar ${radarHM} i model se shodují: sucho.`
+      : `Podle modelu se srážky neočekávají.`) + staleNote;
 }
 
 function _tickCountdown() {
@@ -359,9 +374,9 @@ export async function fetchAiVerdict(lat, lon, label) {
   // radarový stav patří do cache klíče — text "prší" nesmí přežít do sucha a naopak
   let radar = "";
   try {
-    const { id } = nearestPt(lat, lon);
+    const id = state.inCZ && state.GRID ? nearestPt(lat, lon).id : null;
     radar = assessRain(id)?.status || "";
-  } catch { /* bez GRIDu jede verdikt bez radarového kontextu */ }
+  } catch { /* bez radarového kontextu jede verdikt dál */ }
   const key = `${lat.toFixed(2)},${lon.toFixed(2)}|${radar}`;
   const cached = aiCacheGet(key);
   if (cached) return cached;
@@ -434,6 +449,8 @@ export function showAiAsk() {
 export function renderAccuracyLine() {
   const el = document.getElementById("accuracy-line");
   if (!el) return;
+  // Statistika přesnosti platí pro český radarový nowcast — mimo ČR ji skryj
+  if (!state.inCZ) { el.classList.remove("show"); return; }
   const acc = state.ACCURACY;
   if (!acc || !acc.leadtime_10min?.mae_mm_h == null || !acc.n_runs) {
     el.classList.remove("show");

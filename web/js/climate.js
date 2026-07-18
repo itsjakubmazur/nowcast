@@ -3,6 +3,8 @@
 // v historii"). Vše z JEDNOHO archivního requestu (daily mean/max/min přes
 // 30 let), cachovaného v localStorage na 30 dní per zaokrouhlenou polohu.
 
+import { state } from "./state.js";
+
 const CACHE_KEY = "nowcast_climate_normals_v2"; // v2: + rekordy max/min
 const CACHE_TTL_MS = 30 * 24 * 3600 * 1000;
 const WINDOW_DAYS = 5;
@@ -32,7 +34,7 @@ function cacheSet(locKey, clim) {
 async function fetchClimatology(lat, lon) {
   const url = `https://archive-api.open-meteo.com/v1/archive?latitude=${lat.toFixed(2)}&longitude=${lon.toFixed(2)}`
     + `&start_date=1991-01-01&end_date=2020-12-31`
-    + `&daily=temperature_2m_mean,temperature_2m_max,temperature_2m_min&timezone=Europe%2FPrague`;
+    + `&daily=temperature_2m_mean,temperature_2m_max,temperature_2m_min&timezone=auto`;
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 30000);
   try {
@@ -117,7 +119,7 @@ export async function renderClimateAnomaly(lat, lon, data) {
   const h = data.hourly || {};
   const times = h.time || [];
   const temp = h.temperature_2m || [];
-  const nowP = new Date().toLocaleString("sv-SE", { timeZone: "Europe/Prague" }).slice(0, 13) + ":00";
+  const nowP = new Date().toLocaleString("sv-SE", { timeZone: state.tz }).slice(0, 13) + ":00";
   let i = times.findIndex(t => t >= nowP);
   if (i < 0) i = 0;
   const next24 = temp.slice(i, i + 24).filter(v => v != null);
@@ -147,7 +149,7 @@ export async function renderDayInHistory(lat, lon, data) {
     panel.classList.remove("show");
     return;
   }
-  const md = new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Prague" }).slice(5);
+  const md = new Date().toLocaleDateString("sv-SE", { timeZone: state.tz }).slice(5);
   const rec = clim.recs?.[md];
   const normal = clim.normals?.[md];
   if (!rec || rec.hiY == null) { panel.classList.remove("show"); return; }

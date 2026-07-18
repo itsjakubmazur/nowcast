@@ -503,6 +503,78 @@ async function main() {
   assertTrue(errorsM.length === 0, `žádné JS chyby na mobilní šířce (nalezeno ${errorsM.length})`);
   await mobile.close();
 
+  // ── Světový režim — místo mimo pokrytí českého radaru (New York) ──────────
+  const pageG = await context.newPage();
+  const errorsG = [];
+  pageG.on("pageerror", e => { errorsG.push(e.message); if (process.env.DEBUG) console.log("[pageG:pageerror]", e.message); });
+  pageG.on("console", msg => { if (msg.type() === "error") errorsG.push(msg.text()); });
+  await pageG.route("https://unpkg.com/leaflet@1.9.4/dist/leaflet.js", route => route.fulfill({ path: path.join(FIXTURES, "leaflet-stub.js"), contentType: "text/javascript" }));
+  await pageG.route("https://unpkg.com/leaflet@1.9.4/dist/leaflet.css", route => route.fulfill({ body: "", contentType: "text/css" }));
+  await pageG.route("https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js", route => route.fulfill({ path: path.join(FIXTURES, "chart-stub.js"), contentType: "text/javascript" }));
+  await pageG.route("https://fonts.googleapis.com/**", route => route.fulfill({ body: "", contentType: "text/css" }));
+  await pageG.route("https://api.open-meteo.com/v1/forecast**", route => route.fulfill({ body: JSON.stringify(omFixture), contentType: "application/json" }));
+  await pageG.route("https://air-quality-api.open-meteo.com/**", route => route.fulfill({ body: "{}", contentType: "application/json" }));
+  await pageG.route("https://archive-api.open-meteo.com/**", route => route.fulfill({ body: JSON.stringify(buildArchiveFixture()), contentType: "application/json" }));
+  await pageG.route("https://ensemble-api.open-meteo.com/**", route => route.fulfill({ body: "{}", contentType: "application/json" }));
+  await pageG.route("https://*.workers.dev/**", route => route.fulfill({ body: "{}", contentType: "application/json" }));
+  const rvNow = Math.floor(Date.now() / 1000 / 600) * 600;
+  await pageG.route("https://api.rainviewer.com/**", route =>
+    route.fulfill({ body: JSON.stringify({
+      host: "https://tilecache.rainviewer.com",
+      radar: {
+        past: [{ time: rvNow - 600, path: "/v2/radar/p1" }, { time: rvNow, path: "/v2/radar/t0" }],
+        nowcast: [{ time: rvNow + 600, path: "/v2/radar/n1" }, { time: rvNow + 1200, path: "/v2/radar/n2" }],
+      },
+    }), contentType: "application/json" }));
+  // 1×1 průhledný PNG = "radar bez ozvěny" — globalrain z něj přečte sucho
+  // a odpočet srážek pak stojí na minutely_15 fixture (model)
+  const dryTilePng = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGBgAAAABQABpfZFQAAAAABJRU5ErkJggg==", "base64");
+  await pageG.route("https://tilecache.rainviewer.com/**", route =>
+    route.fulfill({ body: dryTilePng, contentType: "image/png" }));
+
+  await pageG.goto(`${base}/?lat=40.7128&lon=-74.0060&q=New+York`, { waitUntil: "load" });
+  await pageG.waitForFunction(() => document.getElementById("place")?.textContent?.includes("New York"), { timeout: 8000 });
+  const globalState = await pageG.evaluate(async () => {
+    const { state } = await import("./js/state.js");
+    return { inCZ: state.inCZ, globalMode: state.globalMode,
+      dist: document.getElementById("dist")?.textContent || "" };
+  });
+  assertTrue(globalState.inCZ === false, `New York je mimo český grid (inCZ=${globalState.inCZ})`);
+  assertTrue(globalState.globalMode === true, `světový radar se zapnul automaticky (globalMode=${globalState.globalMode})`);
+  assertTrue(globalState.dist.includes("Světový režim"), `hláška o světovém režimu (${globalState.dist})`);
+
+  // odpočet srážek jede z RainViewer vzorků (sucho) + minutely modelu
+  await pageG.waitForFunction(() => {
+    const el = document.getElementById("rain-countdown");
+    const title = document.getElementById("rc-title")?.textContent || "";
+    return el?.classList.contains("show") && title.length > 0;
+  }, { timeout: 8000 });
+  const gTitle = await pageG.evaluate(() => document.getElementById("rc-title")?.textContent || "");
+  assertTrue(/Srážky možné|Déšť|bez srážek/.test(gTitle), `countdown ve světovém režimu funguje ("${gTitle}")`);
+
+  // vzorkování RainViewer dlaždic doběhlo (t0 + 2 nowcast snímky, vše suché).
+  // POZOR: waitForFunction s async funkcí tu nejde použít — vrácená Promise je
+  // truthy okamžitě, takže by čekání prošlo i bez dat. Polluje se přes evaluate.
+  let gRadar = null;
+  for (let i = 0; i < 40 && !gRadar; i++) {
+    gRadar = await pageG.evaluate(async () => {
+      const { state } = await import("./js/state.js");
+      if (!state._globalRadar) return null;
+      return { n: state._globalRadar.frames.length,
+        allDry: state._globalRadar.frames.every(f => f.dbzNear < 10) };
+    });
+    if (!gRadar) await pageG.waitForTimeout(200);
+  }
+  assertTrue(gRadar && gRadar.n === 3 && gRadar.allDry,
+    `RainViewer dlaždice navzorkované (${gRadar?.n ?? 0} snímků, sucho=${gRadar?.allDry})`);
+
+  const accShownG = await pageG.evaluate(() =>
+    document.getElementById("accuracy-line")?.classList.contains("show") ?? false);
+  assertTrue(!accShownG, "statistika přesnosti CZ nowcastu je mimo ČR skrytá");
+  assertTrue(errorsG.length === 0, `žádné JS chyby ve světovém režimu (nalezeno ${errorsG.length}: ${errorsG[0] || ""})`);
+  await pageG.close();
+
   await browser.close();
   server.close();
   rmrf(SERVE);

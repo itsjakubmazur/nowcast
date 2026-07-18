@@ -3,16 +3,12 @@
 // která už stahujeme (grid série + Open-Meteo hourly/daily).
 
 import { state } from "./state.js";
-import { esc, revealSwap } from "./utils.js";
+import { esc, revealSwap, nowLocStr } from "./utils.js";
 import { moonIconImg, wImg } from "./icons.js";
 import { computeNight } from "./stargaze.js";
 
-function nowPragueStr() {
-  const s = new Date().toLocaleString("sv-SE", { timeZone: "Europe/Prague" });
-  return s.slice(0, 10) + "T" + s.slice(11, 14) + "00";
-}
-function pragueMonth() {
-  return +new Date().toLocaleString("sv-SE", { timeZone: "Europe/Prague" }).slice(5, 7);
+function locMonth() {
+  return +new Date().toLocaleString("sv-SE", { timeZone: state.tz }).slice(5, 7);
 }
 
 // ── Minutový graf srážek 0–120 min ───────────────────────────────────────────
@@ -159,7 +155,7 @@ export function renderDeltaLine(data) {
   const h = data.hourly || {};
   const times = h.time || [];
   const temp = h.temperature_2m || [];
-  const nowP = nowPragueStr();
+  const nowP = nowLocStr();
   let i = times.findIndex(t => t >= nowP);
   if (i < 0 || i - 24 < 0 || temp[i] == null || temp[i - 24] == null) { el.classList.remove("show"); el.innerHTML = ""; return; }
 
@@ -228,7 +224,7 @@ export function renderAstro(data, fc) {
   try {
     sg = computeNight(state.currentLat ?? 50.08, state.currentLon ?? 14.42);
   } catch (e) { console.warn("stargaze:", e); }
-  const hm = dt => dt ? dt.toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Prague" }) : null;
+  const hm = dt => dt ? dt.toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit", timeZone: state.tz }) : null;
 
   let nightQ = null;
   if (nightCloud != null) {
@@ -277,14 +273,14 @@ export function renderWinter(fc, data) {
   const h = data.hourly || {};
   const snowArr = h.snowfall || [];
   const times = h.time || [];
-  const nowP = nowPragueStr();
+  const nowP = nowLocStr();
   let si = times.findIndex(t => t >= nowP);
   if (si < 0) si = 0;
 
   const next48snow = snowArr.slice(si, si + 48).reduce((s, v) => s + (v || 0), 0);
   const frostHours = all.filter(x => (x.tempRaw ?? 99) <= 0).length;
   const iceRisk = all.some(x => (x.tempRaw ?? 99) <= 1 && (x.precip || 0) > 0);
-  const inSeason = [11, 12, 1, 2, 3].includes(pragueMonth());
+  const inSeason = [11, 12, 1, 2, 3].includes(locMonth());
 
   if (!inSeason && next48snow < 0.2 && !iceRisk) { panel.classList.remove("show"); return; }
   if (next48snow < 0.2 && frostHours === 0 && !iceRisk) { panel.classList.remove("show"); return; }

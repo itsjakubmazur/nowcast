@@ -70,7 +70,8 @@ function _showFrameRV(idx) {
 
   const f = state.rvFrames[state.currentFrame];
   const dt = new Date(f.time * 1000);
-  const tStr = dt.toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Prague" });
+  // světový radar → časy v zóně vybraného místa (state.tz), ne natvrdo Praha
+  const tStr = dt.toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit", timeZone: state.tz });
   const isNow = state.currentFrame === state.rvT0idx;
   const isFuture = state.currentFrame > state.rvT0idx;
   const minDiff = Math.round((state.currentFrame - state.rvT0idx) * 10);
@@ -366,7 +367,8 @@ export function updateStormBar() {
 export function drawRainSpark(ptId) {
   const wrap = document.getElementById("rain-spark-wrap");
   const canvas = document.getElementById("rain-spark");
-  if (!state.MANIFEST || !state.GRID) { wrap.style.display = "none"; return; }
+  // ptId null = světový režim — sparkline jede z českého gridu, skryj ho
+  if (ptId == null || !state.MANIFEST || !state.GRID) { wrap.style.display = "none"; return; }
   wrap.style.display = "";
   requestAnimationFrame(() => _drawRainSparkCanvas(ptId, wrap, canvas));
 }

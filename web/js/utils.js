@@ -1,5 +1,7 @@
 // Sdílené drobné utility — bez závislosti na DOM/mapě, snadno testovatelné.
 
+import { state } from "./state.js";
+
 export function esc(s) {
   if (s == null) return "";
   return String(s)
@@ -35,8 +37,22 @@ export function ageMinutes(isoStr) {
   catch { return null; }
 }
 
+// Časy se zobrazují v místním čase VYBRANÉHO MÍSTA (state.tz z Open-Meteo
+// timezone=auto) — pro ČR je to Europe/Prague, pro Tokio Asia/Tokyo atd.
 export function localHM(utcIso) {
-  return new Date(utcIso).toLocaleTimeString("cs-CZ", { timeZone: "Europe/Prague", hour: "2-digit", minute: "2-digit" });
+  return new Date(utcIso).toLocaleTimeString("cs-CZ", { timeZone: state.tz, hour: "2-digit", minute: "2-digit" });
+}
+
+// "Teď" jako naivní lokální řetězec místa (YYYY-MM-DDTHH:00) — pro hledání
+// aktuálního indexu v hodinových řadách Open-Meteo (ty chodí v local time).
+export function nowLocStr() {
+  const s = new Date().toLocaleString("sv-SE", { timeZone: state.tz });
+  return s.slice(0, 10) + "T" + s.slice(11, 14) + "00";
+}
+
+// Dnešní datum místa (YYYY-MM-DD) — pro ořez daily řad a denní srovnání.
+export function locDateStr() {
+  return new Date().toLocaleDateString("sv-SE", { timeZone: state.tz });
 }
 
 export function uvClass(uv) {

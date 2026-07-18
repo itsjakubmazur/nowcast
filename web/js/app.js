@@ -36,6 +36,7 @@ import { toggleHydro } from "./hydro.js";
 import { initLightning } from "./lightning.js";
 import { showLoadingSkeletons } from "./skeleton.js";
 import { shareCurrentView, copyEmbedLink, initEmbedMode } from "./share.js";
+import { prefetchGlobalRadar } from "./globalrain.js";
 import { esc } from "./utils.js";
 
 // ── Data fetch (graceful degradation — radar/grid kritické, zbytek volitelné) ─
@@ -96,15 +97,14 @@ async function showFc24(lat, lon, label) {
     fetchAndRenderAQ(lat, lon);
     // v2.0 doplňky — každý panel se sám schová, když pro něj nejsou data
     try {
-      const ptId = state.GRID ? nearestPt(lat, lon).id : null;
+      const ptId = state.inCZ && state.GRID ? nearestPt(lat, lon).id : null;
       // typ srážek z modelu (déšť/sníh/smíšené) → countdown karta ho převezme;
       // minutely si schovej pro assessRain (jednotné vyhodnocení srážek)
       state._lastMinutely = minutely;
       setPrecipTypeHint(fc);
-      if (ptId != null) {
-        renderRainCountdown(ptId, minutely); // s modelem — konzistentní verdikt
-        renderRainBadge(ptId);
-      }
+      // ptId null = světový režim — countdown/badge jedou z RainViewer+modelu
+      renderRainCountdown(ptId, minutely);
+      renderRainBadge(ptId);
       renderAstro(data, fc);            // před aktivitami — nastavuje svit měsíce
       renderMinutely(ptId, minutely);
       renderActivities(fc, data);
@@ -169,7 +169,8 @@ function renderLocationVerdict(fc, lat, lon, label) {
 
   let chips = "";
   try {
-    const ptId = nearestPt(state.currentLat ?? lat, state.currentLon ?? lon).id;
+    const ptId = state.inCZ && state.GRID
+      ? nearestPt(state.currentLat ?? lat, state.currentLon ?? lon).id : null;
     renderRainBadge(ptId);
     renderRainCountdown(ptId);
     chips = templateVerdict(ptId).chips;
@@ -188,27 +189,54 @@ function renderLocationVerdict(fc, lat, lon, label) {
 }
 
 // ── Výběr místa ───────────────────────────────────────────────────────────────
+// Hranice světového režimu: dál než ~25 km od nejbližšího bodu českého gridu
+// znamená mimo pokrytí radaru ČHMÚ → RainViewer + model (globalrain.js).
+const CZ_GRID_MAX_KM = 25;
+
 function showForecast(lat, lon, label) {
   state.currentLat = lat; state.currentLon = lon; state.currentLabel = label;
   saveLastLocation(lat, lon, label);
   state._lastMinutely = null; // model předchozího místa tu neplatí
+  state._globalRadar = null;  // radarové vzorky předchozího místa taky ne
 
-  const { id, dist } = nearestPt(lat, lon);
+  const near = state.GRID ? nearestPt(lat, lon) : null;
+  const inCZ = !!near && near.dist <= CZ_GRID_MAX_KM;
+  state.inCZ = inCZ;
+  if (inCZ) state.tz = "Europe/Prague"; // světová tz se nastaví z Open-Meteo
+  const id = inCZ ? near.id : null;
+
   const { chips } = templateVerdict(id);
   renderRainBadge(id);
   renderRainCountdown(id);
-  const pt = state.GRID.pts[id];
 
   document.getElementById("place").textContent = label || "Vybrané místo";
-  document.getElementById("dist").textContent = `Nejbližší bod mřížky: ${dist.toFixed(1)} km`;
+  document.getElementById("dist").textContent = inCZ
+    ? `Nejbližší bod mřížky: ${near.dist.toFixed(1)} km`
+    : "Světový režim — radar RainViewer + model";
   updateFavBtn(lat, lon, label, () => renderFavRow(showForecast));
   showAiAsk();
 
   renderVerdictText(chips, `<span style="color:var(--muted)">Načítám předpověď…</span>`, null);
 
   if (state.locationMarker) state.locationMarker.remove();
-  state.locationMarker = L.marker([pt[0], pt[1]], { zIndexOffset: 500 }).addTo(state.map);
-  state.map.setView([lat, lon], Math.max(state.map.getZoom(), 9));
+  const mpos = inCZ ? state.GRID.pts[id] : [lat, lon];
+  state.locationMarker = L.marker(mpos, { zIndexOffset: 500 }).addTo(state.map);
+  state.map.setView([lat, lon], inCZ ? Math.max(state.map.getZoom(), 9) : 7);
+
+  // Mimo ČR: automaticky zapni světový radar (a při návratu domů zase vypni,
+  // pokud ho nezapnul uživatel sám) + navzorkuj RainViewer pro odpočet deště
+  if (!inCZ) {
+    if (!state.globalMode) { toggleGlobalMode(); state._autoGlobal = true; }
+    prefetchGlobalRadar(lat, lon).then(g => {
+      if (g && state.currentLat === lat && state.currentLon === lon) {
+        renderRainCountdown(null);
+        renderRainBadge(null);
+      }
+    });
+  } else if (state.globalMode && state._autoGlobal) {
+    toggleGlobalMode();
+    state._autoGlobal = false;
+  }
 
   drawRainSpark(id);
   updateStormBar();
@@ -431,7 +459,7 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   // ── Motiv (přerenderuj sparkline/legendu po přepnutí — barvy se liší) ──────
   window.addEventListener("nowcast:theme-changed", () => {
-    if (state.currentLat !== null) {
+    if (state.currentLat !== null && state.inCZ && state.GRID) {
       const { id } = nearestPt(state.currentLat, state.currentLon);
       drawRainSpark(id);
     }
