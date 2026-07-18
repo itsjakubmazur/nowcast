@@ -139,10 +139,23 @@ def main():
     print(f"verify.py: +1 záznam, {len(history)} v okně {WINDOW_DAYS} dní "
           f"(MAE₁₀={m1['mae_mm_h']} hit₁₀={m1['hit_rate']:.0%})")
 
+    # Denní rozpad (posledních 7 dní) — pro webovou kartu "Trefili jsme se?":
+    # transparentní verifikace po dnech, ne jen jedno souhrnné číslo
+    by_day: dict[str, list] = {}
+    for e in history:
+        by_day.setdefault(e.get("run_utc", "")[:10], []).append(e)
+    daily = []
+    for day in sorted(by_day)[-7:]:
+        agg = _aggregate(by_day[day], "leadtime_1")
+        if agg["hit_rate_pct"] is not None:
+            daily.append({"date": day, "hit_rate_pct": agg["hit_rate_pct"],
+                          "mae_mm_h": agg["mae_mm_h"], "n_runs": len(by_day[day])})
+
     out = {
         "generated_at_utc": now_utc.isoformat(),
         "window_days":      WINDOW_DAYS,
         "n_runs":           len(history),
+        "daily":            daily,
         "method": ("Zpětná (leave-out) hindcast validace: extrapolace natrénovaná "
                    "bez posledních 2 stažených snímků porovnaná s tím, co radar "
                    "skutečně zachytil. Stejný kód jako produkční nowcast."),

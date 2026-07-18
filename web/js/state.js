@@ -14,6 +14,7 @@ export const state = {
   CHMI: null, chmiMarkers: [], chmiLayer: "temp", CHMI_STATS: null,
 
   warningsLayerGroup: null,
+  stormLayer: null,      // dráhy bouřkových buněk (stormtrack.js)
 
   globalMode: false, rvFrames: [], rvT0idx: 0, rvLayer: null,
 

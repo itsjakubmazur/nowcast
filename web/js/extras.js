@@ -3,8 +3,8 @@
 // která už stahujeme (grid série + Open-Meteo hourly/daily).
 
 import { state } from "./state.js";
-import { esc, revealSwap, nowLocStr } from "./utils.js";
-import { moonIconImg, wImg } from "./icons.js";
+import { esc, revealSwap, nowLocStr, haversine, ageMinutes } from "./utils.js";
+import { moonIconImg, wImg, wcIconSvg, mostSevere } from "./icons.js";
 import { computeNight } from "./stargaze.js";
 
 function locMonth() {
@@ -291,4 +291,95 @@ export function renderWinter(fc, data) {
   if (iceRisk) rows.push(`<div class="astro-row"><span class="a-k">Náledí</span><span class="a-v" style="color:var(--red)">riziko</span><span class="a-d">srážky při teplotě ≤ 1 °C</span></div>`);
   revealSwap(body, rows.join(""));
   panel.classList.add("show");
+}
+
+// ── Průběh dne — den jako příběh po fázích ──────────────────────────────────
+// Špičkové aplikace umí říct "ráno mlha, odpoledne slunečno, večer bouřky"
+// jedním pohledem. Segmentace příštích ~24 h do fází dne, každá s dominantní
+// ikonou (nejzávažnější weather_code), teplotami a srážkami.
+const DAY_PHASES = [
+  [0, 6, "Noc"], [6, 10, "Ráno"], [10, 13, "Dopoledne"],
+  [13, 17, "Odpoledne"], [17, 21, "Večer"], [21, 24, "Noc"],
+];
+
+export function renderDayTimeline(fc) {
+  const panel = document.getElementById("daytl-panel");
+  if (!panel) return;
+  const hours = fc?.hourlyFull || [];
+  if (hours.length < 6) { panel.classList.remove("show"); return; }
+
+  // Seskup hodiny do fází v pořadí, jak jdou za sebou (fáze se může přes
+  // půlnoc objevit podruhé — pak je to "Noc (zítra)" atd., max 5 segmentů)
+  const segs = [];
+  for (const h of hours.slice(0, 24)) {
+    const hr = +h.t.slice(0, 2);
+    const phase = DAY_PHASES.find(([a, b]) => hr >= a && hr < b);
+    if (!phase) continue;
+    const last = segs[segs.length - 1];
+    if (last && last.name === phase[2] && last.hours.length < 12) last.hours.push(h);
+    else segs.push({ name: phase[2], hours: [h] });
+  }
+  const shown = segs.filter(s => s.hours.length >= 2).slice(0, 5);
+  if (shown.length < 2) { panel.classList.remove("show"); return; }
+
+  const html = shown.map(s => {
+    const temps = s.hours.map(h => h.tempRaw).filter(v => v != null);
+    const precip = s.hours.reduce((a, h) => a + (h.precip || 0), 0);
+    const maxProb = Math.max(...s.hours.map(h => h.prob || 0));
+    const wc = mostSevere(s.hours.map(h => h.wc).filter(v => v != null));
+    const midHr = +s.hours[Math.floor(s.hours.length / 2)].t.slice(0, 2);
+    const tStr = temps.length
+      ? (Math.round(Math.min(...temps)) === Math.round(Math.max(...temps))
+        ? `${Math.round(temps[0])}°`
+        : `${Math.round(Math.min(...temps))}–${Math.round(Math.max(...temps))}°`)
+      : "—";
+    const precStr = precip >= 0.2 ? `<span class="dtl-prec">${Math.round(precip * 10) / 10} mm</span>`
+      : maxProb >= 40 ? `<span class="dtl-prec">${maxProb} %</span>` : "";
+    return `<div class="dtl-seg">
+      <div class="dtl-name">${esc(s.name)}</div>
+      <div class="dtl-icon">${wcIconSvg(wc, midHr)}</div>
+      <div class="dtl-temp">${tStr}</div>
+      ${precStr}
+      <div class="dtl-range">${esc(s.hours[0].t.slice(0, 2))}–${esc(s.hours[s.hours.length - 1].t.slice(0, 2))} h</div>
+    </div>`;
+  }).join("");
+
+  panel.innerHTML = `<div class="dtl-title">Průběh dne</div><div class="dtl-strip">${html}</div>`;
+  panel.classList.add("show");
+}
+
+// ── Kontrola proti nejbližší meteostanici — hyperlokální bias modelu ────────
+// "U tebe je reálně o 2 °C chladněji, než říká model." Porovnání aktuální
+// teploty modelu s nejbližší stanicí ČHMÚ/WU do 15 km s čerstvým měřením.
+export function renderStationCheck(fc) {
+  const el = document.getElementById("station-check");
+  if (!el) return;
+  el.classList.remove("show");
+  const lat = state.currentLat, lon = state.currentLon;
+  const modelT = fc?.hourlyFull?.[0]?.tempRaw;
+  if (lat == null || modelT == null) return;
+
+  const all = [
+    ...(state.CHMI?.stations || []),
+    ...(state.WU?.stations || []),
+  ];
+  let best = null, bd = Infinity;
+  for (const s of all) {
+    if (s.temp == null || s.lat == null) continue;
+    const age = ageMinutes(s.time_utc);
+    if (age == null || age > 90) continue; // zastaralé měření nic nedokazuje
+    const d = haversine(lat, lon, s.lat, s.lon);
+    if (d < bd) { bd = d; best = s; }
+  }
+  if (!best || bd > 15) return;
+
+  const diff = Math.round((best.temp - modelT) * 10) / 10;
+  const absD = Math.abs(diff);
+  const diffStr = absD >= 1
+    ? ` — o <b>${absD.toFixed(1).replace(".", ",")} °C ${diff > 0 ? "tepleji" : "chladněji"}</b> než model`
+    : " — model sedí";
+  el.innerHTML = `📡 Stanice <b>${esc(best.name)}</b> (${bd.toFixed(0)} km) hlásí `
+    + `<b>${best.temp.toFixed(1).replace(".", ",")} °C</b>${diffStr}.`;
+  el.classList.toggle("station-off", absD >= 2);
+  el.classList.add("show");
 }

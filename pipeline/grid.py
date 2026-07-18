@@ -229,6 +229,90 @@ def compute_probability(maxz_stack, start_rr, n_leadtimes, threshold):
         return None
 
 
+# ── Detekce a tracking konvektivních buněk ────────────────────────────────────
+CELL_MIN_DBZ  = 40.0   # práh konvektivního jádra
+CELL_HAIL_DBZ = 55.0   # MAX_Z ≥ 55 dBZ = kroupy pravděpodobné (sloupcové maximum
+                       # je bez volume dat nejlepší dostupný proxy)
+CELL_MIN_KM2  = 8.0    # menší skvrny = šum/jednopixelové echo
+CELL_MAX      = 12     # nejsilnějších N buněk do JSONu
+CELL_STEPS    = 6      # predikce pozic +10..+60 min
+
+
+def detect_storm_cells(maxz_stack, meta) -> list:
+    """
+    Bouřkové buňky z posledního MAX_Z snímku: souvislé oblasti ≥ CELL_MIN_DBZ,
+    per buňka dBZ-vážené těžiště (lat/lon), špička, plocha, pohybový vektor
+    z pysteps (průměr přes buňku) → rychlost, směr a predikovaná dráha
+    +10..+60 min. Stejné pohybové pole jako produkční extrapolace, takže
+    dráha buňky přesně odpovídá tomu, co ukazuje radarová smyčka.
+    """
+    try:
+        from scipy import ndimage as ndi
+        from pysteps import motion as ps_motion
+
+        dbz = np.nan_to_num(maxz_stack[-1], nan=0.0)
+        mask = dbz >= CELL_MIN_DBZ
+        if not mask.any():
+            return []
+        labels, n_lbl = ndi.label(mask)
+        if not n_lbl:
+            return []
+
+        V = ps_motion.get_method("lucaskanade")(np.nan_to_num(maxz_stack, nan=0.0))
+
+        fwd = Transformer.from_crs("EPSG:4326", meta["projdef"], always_xy=True)
+        inv = Transformer.from_crs(meta["projdef"], "EPSG:4326", always_xy=True)
+        ll_x, _ = fwd.transform(meta["LL_lon"], meta["LL_lat"])
+        _, ur_y = fwd.transform(meta["UR_lon"], meta["UR_lat"])
+        xscale, yscale = meta["xscale"], meta["yscale"]
+        px_km2 = (xscale / 1000.0) * (yscale / 1000.0)
+
+        def rc_to_latlon(row, col):
+            lon, lat = inv.transform(ll_x + col * xscale, ur_y - row * yscale)
+            return round(lat, 3), round(lon, 3)
+
+        cells = []
+        for i in range(1, n_lbl + 1):
+            m = labels == i
+            area_km2 = float(m.sum()) * px_km2
+            if area_km2 < CELL_MIN_KM2:
+                continue
+            peak = float(dbz[m].max())
+            rows, cols = np.nonzero(m)
+            w = dbz[rows, cols]
+            cr = float((rows * w).sum() / w.sum())
+            cc = float((cols * w).sum() / w.sum())
+
+            # V je posun v px na jeden krok extrapolace (stejná konvence jako
+            # run_extrapolation: 1 krok = TIMESTEP_MIN)
+            u = float(V[0][m].mean())   # směr sloupců (x)
+            v = float(V[1][m].mean())   # směr řádků (y, roste k jihu)
+            speed_kmh = math.hypot(u * xscale, v * yscale) / 1000.0 * (60.0 / TIMESTEP_MIN)
+
+            track = [rc_to_latlon(cr + v * k, cc + u * k) for k in range(1, CELL_STEPS + 1)]
+            lat0, lon0 = rc_to_latlon(cr, cc)
+            # azimut pohybu z prvního kroku dráhy
+            dlat = track[0][0] - lat0
+            dlon = (track[0][1] - lon0) * math.cos(math.radians(lat0))
+            dir_deg = round(math.degrees(math.atan2(dlon, dlat))) % 360
+
+            cells.append({
+                "lat": lat0, "lon": lon0,
+                "dbz": round(peak, 1),
+                "area_km2": round(area_km2),
+                "speed_kmh": round(speed_kmh),
+                "dir_deg": dir_deg,
+                "hail": peak >= CELL_HAIL_DBZ,
+                "track": track,
+            })
+
+        cells.sort(key=lambda c: -c["dbz"])
+        return cells[:CELL_MAX]
+    except Exception as e:
+        print(f"  Detekce buněk selhala ({e}) — pokračuji bez ní", file=sys.stderr)
+        return []
+
+
 def main():
     meta_path = DATA_DIR / "radar_meta.json"
     if not meta_path.exists():
@@ -294,6 +378,15 @@ def main():
             series_out[str(idx)] = [round(v, 1) for v in vals]
             active_count += 1
     print(f"  Aktivních bodů (srážky ≥ {RAIN_THRESHOLD_MM_H} mm/h): {active_count}")
+
+    # ── 2a2. Bouřkové buňky + predikce dráhy ────────────────────────────────────
+    print("\n=== Bouřkové buňky (≥ 40 dBZ) ===")
+    cells = detect_storm_cells(maxz_stack, meta)
+    for c in cells:
+        print(f"  {c['lat']:.2f},{c['lon']:.2f}  {c['dbz']} dBZ  {c['area_km2']} km²  "
+              f"{c['speed_kmh']} km/h → {c['dir_deg']}°{'  ⚠ KROUPY' if c['hail'] else ''}")
+    if not cells:
+        print("  žádné konvektivní jádro")
 
     # ── 2b. P(déšť) z ensemble perturbované advekce ─────────────────────────────
     print(f"\n=== Pravděpodobnostní nowcast ({len(ENS_MEMBERS)} členů) ===")
@@ -394,6 +487,7 @@ def main():
         "series":          series_out,
         "prob":            prob_out,          # P(déšť) v % per bod, jen kde ≥ PROB_MIN_PCT
         "prob_members":    len(ENS_MEMBERS) if prob_out else 0,
+        "cells":           cells,             # bouřkové buňky + predikovaná dráha
         "warnings":        warnings_out,
         "wmatch":          wmatch,
         "nwp": {

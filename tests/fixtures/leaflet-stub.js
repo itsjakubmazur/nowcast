@@ -64,6 +64,7 @@
     circleMarker(latlng, opts) { return makeLayer({ _latlng: latlng, options: opts }); },
     divIcon(opts) { return { options: opts }; },
     polygon(latlngs) { return makeLayer({ _latlngs: latlngs }); },
+    polyline(latlngs) { return makeLayer({ _latlngs: latlngs }); },
     layerGroup() {
       const g = makeLayer({ _sub: [] });
       g.addLayer = function (l) { this._sub.push(l); return this; };

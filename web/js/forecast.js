@@ -274,6 +274,74 @@ export function renderFc7(data, label) {
   requestAnimationFrame(() => { grid.style.opacity = "1"; });
 }
 
+// ── Ensemble vějíř pro 7denní výhled ────────────────────────────────────────
+// Jedna čára na 7 dní je iluze jistoty. ICON ensemble (40 členů) dá pro
+// každý den rozptyl denních maxim a podíl členů se srážkami — "sobota:
+// 60 % scénářů beze srážek, maxima 22–29 °C". Načítá se líně po vykreslení
+// fc7 a jen doplní řádek do už stojících denních buněk.
+export async function addEnsembleFan(lat, lon, data) {
+  const grid = document.getElementById("fc7-grid");
+  const dates = data?.daily?.time;
+  if (!grid || !dates?.length) return;
+  try {
+    const url = `https://ensemble-api.open-meteo.com/v1/ensemble?latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}`
+      + `&hourly=temperature_2m,precipitation&models=icon_seamless&forecast_days=7&timezone=auto`;
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 15000);
+    const r = await fetch(url, { signal: ctrl.signal });
+    clearTimeout(timer);
+    if (!r.ok) return;
+    const ens = await r.json();
+    const h = ens.hourly || {};
+    const times = h.time || [];
+    if (!times.length) return;
+
+    const memberKeys = Object.keys(h).filter(k => k.startsWith("temperature_2m"));
+    if (memberKeys.length < 5) return; // bez členů není vějíř
+
+    // index hodin → den (lokální datum je prefix času)
+    const dayIdx = new Map(dates.map((d, i) => [d, i]));
+    const perDay = dates.map(() => ({ tmax: [], wet: 0, members: 0 }));
+    for (const tk of memberKeys) {
+      const pk = tk.replace("temperature_2m", "precipitation");
+      const tArr = h[tk], pArr = h[pk];
+      const dTmax = new Array(dates.length).fill(null);
+      const dPrec = new Array(dates.length).fill(0);
+      for (let i = 0; i < times.length; i++) {
+        const di = dayIdx.get(times[i].slice(0, 10));
+        if (di == null) continue;
+        const t = tArr?.[i];
+        if (t != null && (dTmax[di] == null || t > dTmax[di])) dTmax[di] = t;
+        dPrec[di] += pArr?.[i] ?? 0;
+      }
+      dTmax.forEach((t, di) => {
+        if (t == null) return;
+        perDay[di].tmax.push(t);
+        perDay[di].members++;
+        if (dPrec[di] >= 1) perDay[di].wet++;
+      });
+    }
+
+    // mezitím se mohlo přepnout místo — fc7 by už patřil jinam
+    if (state.currentLat?.toFixed(4) !== lat.toFixed(4)) return;
+
+    const cols = grid.querySelectorAll(".fc7-day");
+    perDay.forEach((d, di) => {
+      const col = cols[di];
+      if (!col || d.tmax.length < 5) return;
+      const lo = Math.round(Math.min(...d.tmax)), hi = Math.round(Math.max(...d.tmax));
+      const wetPct = Math.round(d.wet / d.members * 100);
+      const wetStr = wetPct >= 20 ? ` · <span class="prec">${wetPct} % scénářů déšť</span>` : "";
+      const div = document.createElement("div");
+      div.className = "fc7-ens";
+      div.title = `ICON ensemble, ${d.members} členů: rozptyl denních maxim ${lo}–${hi} °C, `
+        + `${wetPct} % členů se srážkami ≥ 1 mm`;
+      div.innerHTML = `<span>${lo}–${hi}°</span>${wetStr}`;
+      col.appendChild(div);
+    });
+  } catch { /* vějíř je bonus — bez něj fc7 funguje dál */ }
+}
+
 // ── Meteogram — přepínatelný graf (Přehled / Srážky / Vítr / Tlak) ──────────
 let _meteoChart = null;
 let _meteoData = null;   // { fc, daily } posledního vykresleného místa

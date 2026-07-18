@@ -569,3 +569,35 @@ export function renderAccuracyLine() {
   el.classList.add("show");
   el.title = acc.method || "";
 }
+
+// ── "Trefili jsme se?" — verifikace po dnech ─────────────────────────────────
+// Radikální transparentnost: sloupec za každý z posledních 7 dní ukazuje,
+// v kolika % out-of-sample hindcastů (+10 min) nowcast správně řekl
+// prší/neprší. Žádná velká aplikace tohle nepublikuje — my měříme, tak
+// můžeme.
+export function renderVerifCard() {
+  const el = document.getElementById("verif-panel");
+  if (!el) return;
+  const daily = state.ACCURACY?.daily;
+  if (!state.inCZ || !daily?.length) { el.classList.remove("show"); return; }
+
+  const bars = daily.map(d => {
+    const pct = Math.round(d.hit_rate_pct);
+    const day = new Date(d.date + "T12:00:00");
+    const label = ["Ne", "Po", "Út", "St", "Čt", "Pá", "So"][day.getDay()];
+    const cls = pct >= 90 ? "good" : pct >= 75 ? "mid" : "bad";
+    return `<div class="vf-col" title="${d.date}: shoda ${pct} % (${d.n_runs} běhů, MAE ${d.mae_mm_h} mm/h)">
+      <div class="vf-bar-wrap"><div class="vf-bar ${cls}" style="height:${Math.max(8, pct)}%"></div></div>
+      <div class="vf-pct">${pct}</div>
+      <div class="vf-day">${label}</div>
+    </div>`;
+  }).join("");
+
+  const last = daily[daily.length - 1];
+  el.innerHTML = `
+    <div class="vf-title">Trefili jsme se? <span class="vf-sub">shoda prší/neprší v +10 min, po dnech</span></div>
+    <div class="vf-row">${bars}</div>
+    <div class="vf-note">Poctivá out-of-sample verifikace: predikci vždy porovnáme s tím, co radar
+    následně skutečně změřil. Včera: <b>${Math.round(last.hit_rate_pct)} %</b>.</div>`;
+  el.classList.add("show");
+}

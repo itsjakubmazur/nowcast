@@ -1070,6 +1070,64 @@ button.ctrl.active { background: var(--accent); color: #fff;
 .warn-popup .warn-meta { color: var(--muted); font-size: .72rem; margin-bottom: .35rem; }
 .warn-popup .warn-desc { font-size: .78rem; line-height: 1.4; }
 
+/* ── Bouřkové buňky — dráhy a časové značky ─────────────────────────────── */
+.storm-popup { font-size: .82rem; max-width: 250px; }
+.storm-popup h4 { font-size: .86rem; margin: 0 0 .25rem; font-weight: 700; }
+.storm-popup .storm-meta { color: var(--muted); font-size: .72rem; margin-top: .2rem; }
+.storm-popup .storm-hail { color: var(--red); font-size: .76rem; font-weight: 700; margin-top: .3rem; }
+.storm-eta-label span {
+  display: inline-block; padding: 0 .3rem; border-radius: 6px;
+  background: var(--glass); border: 1px solid; font-size: .62rem; font-weight: 700;
+  color: var(--text); white-space: nowrap; transform: translate(-50%, -50%);
+}
+
+/* ── "Trefili jsme se?" — verifikace po dnech ───────────────────────────── */
+#verif-panel { display: none; margin: .35rem 0 .2rem; }
+#verif-panel.show { display: block; }
+#verif-panel .vf-title { font-size: .78rem; font-weight: 700; margin-bottom: .3rem; }
+#verif-panel .vf-sub { font-weight: 500; color: var(--muted); font-size: .68rem; }
+#verif-panel .vf-row { display: flex; gap: .45rem; align-items: flex-end; }
+#verif-panel .vf-col { flex: 1; text-align: center; min-width: 0; }
+#verif-panel .vf-bar-wrap { height: 42px; display: flex; align-items: flex-end; justify-content: center; }
+#verif-panel .vf-bar { width: 70%; border-radius: 4px 4px 0 0; min-height: 4px; }
+#verif-panel .vf-bar.good { background: var(--green, #30D158); }
+#verif-panel .vf-bar.mid { background: var(--orange); }
+#verif-panel .vf-bar.bad { background: var(--red); }
+#verif-panel .vf-pct { font-size: .66rem; font-weight: 700; margin-top: .15rem; }
+#verif-panel .vf-day { font-size: .62rem; color: var(--muted); }
+#verif-panel .vf-note { font-size: .68rem; color: var(--muted); line-height: 1.45; margin-top: .35rem; }
+
+/* ── Kontrola proti stanici (bias modelu) ───────────────────────────────── */
+#station-check { display: none; font-size: .72rem; color: var(--muted); margin-top: .35rem; line-height: 1.45; }
+#station-check.show { display: block; }
+#station-check.station-off b { color: var(--orange); }
+
+/* ── Průběh dne — fáze dne jako pás ─────────────────────────────────────── */
+#daytl-panel {
+  display: none; background: var(--glass); border: 1px solid var(--glass-border);
+  border-radius: var(--radius, 16px); padding: .7rem .9rem; backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+#daytl-panel.show { display: block; }
+#daytl-panel .dtl-title { font-size: .78rem; font-weight: 700; margin-bottom: .45rem; }
+#daytl-panel .dtl-strip { display: flex; gap: .3rem; }
+#daytl-panel .dtl-seg {
+  flex: 1; min-width: 0; text-align: center; padding: .35rem .15rem;
+  border-radius: 10px; background: rgba(255, 255, 255, .04);
+}
+#daytl-panel .dtl-name {
+  font-size: .58rem; font-weight: 700; color: var(--muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 .1rem;
+}
+#daytl-panel .dtl-icon .wicon { width: 30px; height: 30px; }
+#daytl-panel .dtl-temp { font-size: .76rem; font-weight: 700; }
+#daytl-panel .dtl-prec { display: block; font-size: .62rem; color: var(--blue); font-weight: 700; }
+#daytl-panel .dtl-range { font-size: .6rem; color: var(--muted); margin-top: .1rem; }
+
+/* ── Ensemble rozptyl v 7denním výhledu ─────────────────────────────────── */
+.fc7-ens { font-size: .62rem; color: var(--muted); margin-top: .15rem; }
+.fc7-ens .prec { color: var(--blue); font-weight: 600; }
+
 /* ── Hlásné profily (hydrologie) ────────────────────────────────────────── */
 .hydro-popup { font-size: .82rem; max-width: 240px; }
 .hydro-popup h4 { font-size: .86rem; margin: 0 0 .25rem; font-weight: 700; }

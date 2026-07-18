@@ -14,13 +14,14 @@ import {
 import {
   fetchOpenMeteo, parseFc24, parseMinutely15,
   renderFcHero, renderFcNow, renderFc24, renderFc7, renderMeteogram, fetchAndRenderAQ,
-  addModelSpread,
+  addModelSpread, addEnsembleFan,
 } from "./forecast.js";
 import {
   nearestPt, templateVerdict, renderRainBadge, renderRainCountdown,
-  fetchAiVerdict, renderVerdictText, renderAccuracyLine, initAiAsk, showAiAsk,
-  setPrecipTypeHint,
+  fetchAiVerdict, renderVerdictText, renderAccuracyLine, renderVerifCard,
+  initAiAsk, showAiAsk, setPrecipTypeHint,
 } from "./verdict.js";
+import { renderStormTracks } from "./stormtrack.js";
 import {
   loadFavs, renderFavRow, updateFavBtn, saveLastLocation, loadLastLocation,
   checkRainNotifications, clearRainSnooze, initPushButton,
@@ -28,6 +29,7 @@ import {
 import { initSearch, reverseGeocode } from "./search.js";
 import {
   renderMinutely, renderActivities, renderDeltaLine, renderAstro, renderWinter,
+  renderDayTimeline, renderStationCheck,
 } from "./extras.js";
 import { renderClimateAnomaly, renderDayInHistory } from "./climate.js";
 import { initSettingsPanel, applySettingsOnLoad, saveSettings } from "./settings.js";
@@ -110,7 +112,11 @@ async function showFc24(lat, lon, label) {
       renderActivities(fc, data);
       renderDeltaLine(data);
       renderWinter(fc, data);
+      renderDayTimeline(fc);                  // den jako příběh po fázích
+      renderStationCheck(fc);                 // bias modelu vs. nejbližší stanice
+      renderVerifCard();                      // "Trefili jsme se?" po dnech
       addModelSpread(lat, lon, fc);           // async — pásmo nejistoty do meteogramu
+      addEnsembleFan(lat, lon, data);         // async — rozptyl ensemble do 7 dní
       renderClimateAnomaly(lat, lon, data);   // async — odchylka od normálu
       renderDayInHistory(lat, lon, data);     // async — rekordy pro dnešní den
       showCompareBtn();
@@ -328,6 +334,7 @@ async function refreshAll() {
     preloadFrames();
     applyManifestUI();
     renderWuOwnPanel(); renderWuMarkers(); renderChmiMarkers(); renderWarningsLayer();
+    renderStormTracks();
     if (state.currentLat !== null) showFc24(state.currentLat, state.currentLon, state.currentLabel);
   } catch (e) {
     document.getElementById("refresh-time").textContent = "Chyba: " + e.message;
@@ -364,6 +371,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   applyManifestUI();
   renderFavRow(showForecast);
   renderWuOwnPanel(); renderWuMarkers(); renderChmiMarkers(); renderWarningsLayer();
+  renderStormTracks();
   checkRainNotifications();
   initPushButton();
   initSearch(showForecast);

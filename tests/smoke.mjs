@@ -139,6 +139,28 @@ function prepareServeDir() {
     j.generated_at_utc = nowIso;
     fs.writeFileSync(p, JSON.stringify(j));
   }
+
+  // Stanice potřebují čerstvý time_utc (kontrola biasu ignoruje měření > 90 min)
+  for (const name of ["chmi_stations.json", "wu_stations.json"]) {
+    const p = path.join(SERVE, "data", name);
+    if (!fs.existsSync(p)) continue;
+    const j = JSON.parse(fs.readFileSync(p, "utf8"));
+    for (const s of j.stations || []) s.time_utc = nowIso;
+    fs.writeFileSync(p, JSON.stringify(j));
+  }
+
+  // accuracy.json: denní rozpad pro kartu "Trefili jsme se?" — datumy
+  // posledních 7 dní relativně k dnešku (fixture s pevnými daty by zastarala)
+  {
+    const p = path.join(SERVE, "data", "accuracy.json");
+    const j = JSON.parse(fs.readFileSync(p, "utf8"));
+    j.daily = Array.from({ length: 7 }, (_, i) => ({
+      date: new Date(Date.now() - (6 - i) * 86400000).toISOString().slice(0, 10),
+      hit_rate_pct: [95, 88, 91, 72, 93, 86, 90][i],
+      mae_mm_h: 0.4, n_runs: 100,
+    }));
+    fs.writeFileSync(p, JSON.stringify(j));
+  }
 }
 
 function startServer() {
@@ -304,6 +326,32 @@ async function main() {
   await page.waitForSelector("#aq-panel.show", { timeout: 5000 });
   const aqText = await page.textContent("#aq-panel");
   assertTrue(aqText.includes("PM2.5"), "panel kvality ovzduší se vykreslil");
+
+  // ── Vlna PRO: bouřkové buňky, verifikace, bias stanice, průběh dne ────────
+  const stormInfo = await page.evaluate(async () => {
+    const { state } = await import("./js/state.js");
+    const subs = state.stormLayer?._sub || [];
+    return { hasLayer: !!state.stormLayer, n: subs.length,
+      popup: subs.map(s => s._popupHtml || "").join(" ") };
+  });
+  // 2 buňky: 2 markery + 2 dráhy + časové značky (+20/+40/+60 = 3 per buňka)
+  assertTrue(stormInfo.hasLayer && stormInfo.n >= 8,
+    `dráhy bouřkových buněk na mapě (${stormInfo.n} prvků vrstvy)`);
+  assertTrue(stormInfo.popup.includes("krupobití"),
+    "buňka ≥ 55 dBZ nese varování před krupobitím");
+
+  await page.waitForSelector("#verif-panel.show", { timeout: 5000 });
+  const verifText = await page.textContent("#verif-panel");
+  assertTrue(verifText.includes("Trefili jsme se?") && (await page.locator("#verif-panel .vf-col").count()) === 7,
+    "karta 'Trefili jsme se?' ukazuje 7 dní verifikace");
+
+  await page.waitForSelector("#station-check.show", { timeout: 5000 });
+  const stText = await page.textContent("#station-check");
+  assertTrue(/Stanice .+ hlásí .+ °C/.test(stText), `kontrola proti stanici funguje ("${stText.slice(0, 60)}…")`);
+
+  await page.waitForSelector("#daytl-panel.show", { timeout: 5000 });
+  const dtlSegs = await page.locator("#daytl-panel .dtl-seg").count();
+  assertTrue(dtlSegs >= 2 && dtlSegs <= 5, `průběh dne má ${dtlSegs} fází`);
 
   // ── WU vlastní stanice ────────────────────────────────────────────────────
   const wuRows = await page.locator(".wu-mini-row").count();
