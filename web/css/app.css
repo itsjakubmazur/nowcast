@@ -84,30 +84,19 @@
 }
 [data-theme="light"] #map { filter: none; }
 
-/* ── Alcyone (atipo foundry) — self-hostovaný brand font ─────────────────────
-   Soubory patří do web/fonts/ (viz web/fonts/README.md). Až tam budou,
-   ODKOMENTUJ bloky níž — do té doby by odkaz na neexistující soubor jen
-   sypal 404 do konzole. "Alcyone" ve font-family stacku už je: komu je
-   font nainstalovaný v systému, tomu se chytne i bez @font-face.
-
+/* ── Figtree — brand font (variabilní 300–900, SIL OFL, self-hostovaný) ──────
+   Jediný 27kB woff2 pokrývá všechny váhy; licence ve fonts/Figtree-OFL.txt. */
 @font-face {
-  font-family: "Alcyone";
-  src: url("fonts/Alcyone-Medium.woff2") format("woff2");
-  font-weight: 300 500;
+  font-family: "Figtree";
+  src: url("../fonts/Figtree.woff2") format("woff2"); /* relativně k css/ */
+  font-weight: 300 900;
   font-display: swap;
 }
-@font-face {
-  font-family: "Alcyone";
-  src: url("fonts/Alcyone-Bold.woff2") format("woff2");
-  font-weight: 600 900;
-  font-display: swap;
-}
-*/
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html, body {
   height: 100%; overflow: hidden;
-  font-family: "Alcyone", -apple-system, BlinkMacSystemFont, 'Inter', system-ui, 'Segoe UI', Roboto, sans-serif;
+  font-family: "Figtree", -apple-system, BlinkMacSystemFont, system-ui, 'Segoe UI', Roboto, sans-serif;
   background: var(--bg); color: var(--fg);
 }
 body { height: 100dvh; }

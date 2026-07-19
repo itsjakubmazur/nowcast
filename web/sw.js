@@ -1,4 +1,4 @@
-const CACHE_VERSION = "v4";
+const CACHE_VERSION = "v5";
 const STATIC_CACHE = `nowcast-static-${CACHE_VERSION}`;
 const DATA_CACHE = `nowcast-data-${CACHE_VERSION}`;
 
@@ -32,6 +32,9 @@ const STATIC_ASSETS = [
   "./js/compare.js",
   "./js/stargaze.js",
   "./js/hydro.js",
+  "./js/globalrain.js",
+  "./js/stormtrack.js",
+  "./fonts/Figtree.woff2",
   "./icon.svg",
   "./icons/icon-192.png",
   "./manifest.json",

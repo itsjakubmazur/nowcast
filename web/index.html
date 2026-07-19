@@ -30,8 +30,8 @@
   <meta http-equiv="Content-Security-Policy" content="
     default-src 'self';
     script-src 'self' https://unpkg.com https://cdn.jsdelivr.net;
-    style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com;
-    font-src 'self' https://fonts.gstatic.com;
+    style-src 'self' 'unsafe-inline' https://unpkg.com;
+    font-src 'self';
     img-src 'self' data: blob: https://*.basemaps.cartocdn.com https://*.rainviewer.com https://unpkg.com;
     connect-src 'self' https://api.open-meteo.com https://geocoding-api.open-meteo.com https://air-quality-api.open-meteo.com https://archive-api.open-meteo.com https://ensemble-api.open-meteo.com https://api.rainviewer.com https://*.rainviewer.com https://*.workers.dev https://nominatim.openstreetmap.org wss://*.blitzortung.org;
     manifest-src 'self';
@@ -43,11 +43,11 @@
   <link rel="icon" href="icons/icon-192.png" type="image/png" sizes="192x192" />
   <!-- iOS neumí SVG apple-touch-icon — musí být PNG, jinak spadne na screenshot stránky -->
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
-  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <!-- Brand font Figtree je self-hostovaný — preload ať text nepřeblikává -->
+  <link rel="preload" href="fonts/Figtree.woff2" as="font" type="font/woff2" crossorigin>
   <!-- Data API, na která se sahá hned po startu — ušetří TLS handshake při prvním fetch -->
   <link rel="preconnect" href="https://api.open-meteo.com" crossorigin>
   <link rel="preconnect" href="https://air-quality-api.open-meteo.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <link rel="stylesheet" href="css/app.css" />
   <!-- defer: Chart.js neblokuje první vykreslení; meteogram se kreslí až po fetch dat -->

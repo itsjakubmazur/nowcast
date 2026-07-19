@@ -8,8 +8,8 @@ Průhledné prvky se kreslí na oddělené overlay vrstvy skládané přes
 Image.alpha_composite — ImageDraw totiž alfu nemíchá, ale zapisuje, takže
 polopropustný tvar kreslený přímo do podkladu by vyšel plnou barvou.
 
-Font: Inter (variabilní, assets/fonts/InterVariable.ttf, licence SIL OFL);
-fallback DejaVu Sans, kdyby soubor chyběl.
+Font: Figtree (variabilní, assets/fonts/Figtree.ttf, licence SIL OFL) —
+stejný brand font jako na webu; fallback DejaVu Sans, kdyby soubor chyběl.
 """
 
 from pathlib import Path
@@ -30,7 +30,7 @@ TEXT_MUTED = (167, 180, 208)
 TEXT_DIM   = (108, 130, 174)
 CARD_BG    = (10, 17, 32)
 
-_FONT_PATH = Path(__file__).parent.parent / "assets" / "fonts" / "InterVariable.ttf"
+_FONT_PATH = Path(__file__).parent.parent / "assets" / "fonts" / "Figtree.ttf"
 _DEJAVU    = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 
 
