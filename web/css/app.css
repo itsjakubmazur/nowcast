@@ -877,6 +877,27 @@ button.glass-btn svg { width: 17px; height: 17px; display: block; }
 .legend-bar { width: 160px; height: 7px; border-radius: 4px; margin: .3rem 0 .2rem; }
 .legend-labels { display: flex; justify-content: space-between; }
 
+/* ── Legenda úhrnu srážek ───────────────────────────────────────────────── */
+#accum-legend {
+  position: fixed;
+  bottom: calc(var(--radar-bar-h) + var(--layer-selector-h) + 24px);
+  left: 316px; z-index: 110; border-radius: 14px;
+  padding: .4rem .7rem .5rem; display: none;
+  font-size: .62rem; color: var(--muted);
+  background: var(--glass); border: 1px solid var(--glass-border);
+  backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+}
+#accum-legend.show { display: block; }
+#accum-legend .accum-scale { display: flex; margin-top: .3rem; }
+#accum-legend .accum-scale span {
+  flex: 1; text-align: center; font-size: .56rem; color: #fff;
+  padding: 2px 0; min-width: 20px; font-weight: 600;
+}
+#accum-legend .accum-scale span:first-child { border-radius: 4px 0 0 4px; }
+#accum-legend .accum-scale span:last-child { border-radius: 0 4px 4px 0; }
+.accum-popup { font-size: .8rem; }
+.accum-popup span { color: var(--muted); font-size: .68rem; }
+
 /* ── Layer selector ─────────────────────────────────────────────────────── */
 #layer-selector {
   position: fixed; bottom: calc(var(--radar-bar-h) + 14px); left: 316px;

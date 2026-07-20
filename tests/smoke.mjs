@@ -487,6 +487,26 @@ async function main() {
   assertTrue(!hydroCheck.mode && !hydroCheck.hasLayer && !hydroCheck.onMap,
     `rychlé zap→vyp hydrologie (se zpožděnou odpovědí) nevzkřísilo vrstvu po vypnutí (mode=${hydroCheck.mode}, hasLayer=${hydroCheck.hasLayer}, onMap=${hydroCheck.onMap})`);
 
+  // ── Úhrnová mapa (24h srážky z NWP podmřížky) ─────────────────────────────
+  await page.click("#btn-accum");
+  await page.waitForTimeout(200);
+  const accum = await page.evaluate(async () => {
+    const { state } = await import("./js/state.js");
+    const sub = state.accumLayer?._sub || [];
+    return { mode: state.accumMode, n: sub.length,
+      legend: document.getElementById("accum-legend")?.classList.contains("show") };
+  });
+  // 2 body fixtury mají accum24 ≥ 1 (8.5 a 22.0), třetí je 0 → 2 polygony
+  assertTrue(accum.mode && accum.n === 2 && accum.legend,
+    `úhrnová mapa vykreslila mokré buňky (mode=${accum.mode}, buněk=${accum.n}, legenda=${accum.legend})`);
+  await page.click("#btn-accum");
+  await page.waitForTimeout(100);
+  const accumOff = await page.evaluate(async () => {
+    const { state } = await import("./js/state.js");
+    return { mode: state.accumMode, hasLayer: !!state.accumLayer };
+  });
+  assertTrue(!accumOff.mode && !accumOff.hasLayer, "úhrnová mapa se vypnula");
+
   // ── Vyhledávání s klávesovou navigací ─────────────────────────────────────
   await page.fill("#search", "Brno");
   await page.waitForSelector("#suggestions li", { timeout: 3000 });

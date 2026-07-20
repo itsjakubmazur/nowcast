@@ -15,6 +15,7 @@ export const state = {
 
   warningsLayerGroup: null,
   stormLayer: null,      // dráhy bouřkových buněk (stormtrack.js)
+  accumMode: false, accumLayer: null,   // úhrnová mapa 24 h (accum.js)
 
   globalMode: false, rvFrames: [], rvT0idx: 0, rvLayer: null,
 

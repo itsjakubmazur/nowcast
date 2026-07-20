@@ -12,7 +12,7 @@ import json
 import math
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import numpy as np
@@ -126,6 +126,7 @@ def fetch_nwp_grid(nwp_points: list) -> tuple[list, int]:
             "hourly":      "precipitation,windgusts_10m,cape",
             "timezone": "UTC",
             "forecast_days": 1,
+            "past_days": 1,          # kvůli 24h úhrnu srážek (mapa "kolik spadlo")
             "models": "icon_d2",
         }
         # 2 pokusy — Open-Meteo z CI runneru občas nestihne první odpověď
@@ -149,13 +150,14 @@ def fetch_nwp_grid(nwp_points: list) -> tuple[list, int]:
         items = data if isinstance(data, list) else [data]
         for p, item in zip(chunk, items):
             rec = _summarize_nwp(item, now_utc)
-            results.append([p[2], p[3], rec[0], rec[1], rec[2]])
+            results.append([p[2], p[3], rec[0], rec[1], rec[2], rec[3]])
 
     return results, http_calls
 
 
 def _summarize_nwp(item: dict, now_utc: datetime):
-    """Z jedné Open-Meteo odpovědi vytáhne (rain_from_utc, peak_gusts_ms, max_cape)."""
+    """Z jedné Open-Meteo odpovědi vytáhne
+    (rain_from_utc, peak_gusts_ms, max_cape, accum24_mm)."""
     def _to_utc(s):
         return s if ("+" in s or s.endswith("Z")) else s + "+00:00"
 
@@ -193,7 +195,18 @@ def _summarize_nwp(item: dict, now_utc: datetime):
     cape_vals = [c for c in h_cape if c is not None]
     max_cape = round(max(cape_vals)) if cape_vals else None
 
-    return rain_from, peak_gusts_ms, max_cape
+    # 24h úhrn srážek: součet hodinových precip za posledních 24 h (past_days=1)
+    accum24 = 0.0
+    day_ago = now_utc - timedelta(hours=24)
+    for t, v in zip(h_times, h_precip):
+        if v is None:
+            continue
+        tt = datetime.fromisoformat(_to_utc(t))
+        if day_ago <= tt <= now_utc:
+            accum24 += v
+    accum24 = round(accum24, 1)
+
+    return rain_from, peak_gusts_ms, max_cape, accum24
 
 
 # ── Hlavní tok ───────────────────────────────────────────────────────────────────

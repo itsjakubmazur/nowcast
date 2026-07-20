@@ -88,6 +88,7 @@
     <button class="ctrl" id="btn-satellite" title="Satelitní IR vrstva — oblačnost (RainViewer)">🛰️ Družice</button>
     <button class="ctrl" id="btn-wind" title="Animované částice větru (10 m)">🌬️ Vítr</button>
     <button class="ctrl" id="btn-hydro" title="Hlásné profily — stavy a průtoky toků (ČHMÚ)">🌊 Hladiny</button>
+    <button class="ctrl" id="btn-accum" title="Úhrn srážek za posledních 24 h (model)">💧 Úhrn</button>
     <span id="radar-updated" style="font-size:.68rem;color:var(--muted)"></span>
   </div>
   <div class="rain-spark-wrap" id="rain-spark-wrap" style="display:none">
@@ -341,6 +342,14 @@
   🌩️ Nejbližší jádro: <span id="storm-dist">—</span>
   <span id="storm-dir"></span>
   <span id="storm-trend" style="font-size:.75rem;margin-left:.3rem"></span>
+</div>
+
+<!-- Legenda úhrnu srážek -->
+<div id="accum-legend">
+  <div>Úhrn 24 h (mm) · model</div>
+  <div class="accum-scale">
+    <span style="background:#9fd0ff">1</span><span style="background:#4da3ff">5</span><span style="background:#1f6fe0">10</span><span style="background:#2ec26b">20</span><span style="background:#f5c400">30</span><span style="background:#ff8a00">40</span><span style="background:#ff3b30">60</span><span style="background:#bf5af2">100+</span>
+  </div>
 </div>
 
 <!-- Legenda radaru -->

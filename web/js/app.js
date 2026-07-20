@@ -36,6 +36,7 @@ import { renderClimateAnomaly, renderDayInHistory } from "./climate.js";
 import { initSettingsPanel, applySettingsOnLoad, saveSettings } from "./settings.js";
 import { initCompare, showCompareBtn } from "./compare.js";
 import { toggleHydro } from "./hydro.js";
+import { initAccumButton } from "./accum.js";
 import { initLightning } from "./lightning.js";
 import { showLoadingSkeletons } from "./skeleton.js";
 import { shareCurrentView, copyEmbedLink, initEmbedMode } from "./share.js";
@@ -443,6 +444,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   document.getElementById("btn-satellite")?.addEventListener("click", toggleSatellite);
   document.getElementById("btn-wind")?.addEventListener("click", toggleWindLayer);
   document.getElementById("btn-hydro")?.addEventListener("click", toggleHydro);
+  initAccumButton();
   setInterval(() => { refreshAll(); checkRainNotifications(); }, AUTO_REFRESH_MS);
 
   document.getElementById("chmi-detail-close").addEventListener("click", closeChmiDetail);
