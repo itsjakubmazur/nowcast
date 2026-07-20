@@ -10,12 +10,17 @@ const BBOX = { latMin: 47.5, latMax: 52.5, lonMin: 10.0, lonMax: 20.5 }; // ČR 
 const MAX_MARKERS = 150;
 const MARKER_TTL_MS = 10 * 60 * 1000;
 
+const NOTIFY_KM = 12;              // úder blíž = upozorni
+const NOTIFY_SNOOZE_MS = 10 * 60 * 1000;
+
 let _ws = null;
 let _hostIdx = 0;
 let _markers = [];       // { marker, time, lat, lon }
 let _lastStrike = null;  // { lat, lon, time }
 let _chipTimer = null;
 let _reconnectTimer = null;
+let _prevNearKm = null;  // nejbližší úder z minulého tiku — pro trend
+let _lastNotify = 0;
 
 // LZW dekodér Blitzortung streamu (publikovaný komunitní postup)
 function decode(b) {
@@ -73,24 +78,64 @@ function pruneMarkers() {
   });
 }
 
+// Nejbližší ŽIVÝ úder (do TTL) k danému místu — pro trend a upozornění.
+// Bereme minimum přes markery, ne jen poslední úder: poslední mohl padnout
+// daleko, zatímco bouřka je blízko z jiného směru.
+function nearestStrikeKm(lat, lon) {
+  const cutoff = Date.now() - MARKER_TTL_MS;
+  let best = Infinity;
+  for (const m of _markers) {
+    if (m.time < cutoff) continue;
+    const d = haversineKm(lat, lon, m.lat, m.lon);
+    if (d < best) best = d;
+  }
+  return best === Infinity ? null : best;
+}
+
 function updateChip() {
   const chip = document.getElementById("lightning-chip");
   const distEl = document.getElementById("lightning-dist");
   const ageEl = document.getElementById("lightning-age");
+  const trendEl = document.getElementById("lightning-trend");
   if (!chip || !distEl) return;
-  if (!_lastStrike || state.currentLat == null
-      || Date.now() - _lastStrike.time > MARKER_TTL_MS) {
-    chip.classList.remove("show");
-    return;
-  }
-  const d = haversineKm(state.currentLat, state.currentLon, _lastStrike.lat, _lastStrike.lon);
-  if (d > 150) { chip.classList.remove("show"); return; } // daleko — nezajímavé
-  distEl.textContent = `${Math.round(d)} km`;
-  if (ageEl) {
+  if (state.currentLat == null) { chip.classList.remove("show"); return; }
+
+  const near = nearestStrikeKm(state.currentLat, state.currentLon);
+  if (near == null || near > 150) { chip.classList.remove("show"); _prevNearKm = null; return; }
+
+  distEl.textContent = `${Math.round(near)} km`;
+  if (_lastStrike && ageEl) {
     const s = Math.round((Date.now() - _lastStrike.time) / 1000);
     ageEl.textContent = s < 90 ? `před ${s} s` : `před ${Math.round(s / 60)} min`;
   }
+
+  // trend přibližuje/vzdaluje (hystereze ±2 km, ať to nepobliká)
+  let approaching = false;
+  if (trendEl) {
+    if (_prevNearKm != null) {
+      const diff = near - _prevNearKm;
+      if (diff < -2) { trendEl.textContent = "↘ přibližuje se"; trendEl.className = "approaching"; approaching = true; }
+      else if (diff > 2) { trendEl.textContent = "↗ vzdaluje se"; trendEl.className = "receding"; }
+      else { trendEl.textContent = "→ stacionární"; trendEl.className = ""; }
+    } else { trendEl.textContent = ""; }
+  }
+  _prevNearKm = near;
+
+  chip.classList.toggle("near", near <= NOTIFY_KM);
   chip.classList.add("show");
+
+  // Upozornění: bouřka blízko (a spíš se blíží). Respektuje snooze i to,
+  // jestli má uživatel notifikace vůbec povolené.
+  if (near <= NOTIFY_KM && Date.now() - _lastNotify > NOTIFY_SNOOZE_MS) {
+    _lastNotify = Date.now();
+    const msg = `⚡ Blesky ${Math.round(near)} km${approaching ? " a přibližují se" : ""} — bouřka nablízku.`;
+    try {
+      if ("Notification" in window && Notification.permission === "granted") {
+        new Notification("⚡ Bouřka nablízku", { body: msg, icon: "icon.svg", tag: "lightning-near" });
+      }
+    } catch { /* notifikace jsou bonus */ }
+    window.dispatchEvent(new CustomEvent("nowcast:lightning-near", { detail: { km: Math.round(near), approaching } }));
+  }
 }
 
 function connect() {

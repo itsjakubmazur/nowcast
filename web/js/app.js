@@ -22,6 +22,7 @@ import {
   initAiAsk, showAiAsk, setPrecipTypeHint,
 } from "./verdict.js";
 import { renderStormTracks } from "./stormtrack.js";
+import { renderStormImpact, renderOutlookWindows } from "./safety.js";
 import {
   loadFavs, renderFavRow, updateFavBtn, saveLastLocation, loadLastLocation,
   checkRainNotifications, clearRainSnooze, initPushButton,
@@ -108,6 +109,8 @@ async function showFc24(lat, lon, label) {
       // ptId null = světový režim — countdown/badge jedou z RainViewer+modelu
       renderRainCountdown(ptId, minutely);
       renderRainBadge(ptId);
+      renderStormImpact(lat, lon);            // zásah bouřkou (dráha buňky)
+      renderOutlookWindows(minutely, fc);     // 12h okna beze srážek
       renderAstro(data, fc);            // před aktivitami — nastavuje svit měsíce
       renderMinutely(ptId, minutely);
       renderActivities(fc, data);

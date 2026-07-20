@@ -1133,6 +1133,49 @@ button.ctrl.active { background: var(--accent); color: #fff;
 #daytl-panel .dtl-prec { display: block; font-size: .62rem; color: var(--blue); font-weight: 700; }
 #daytl-panel .dtl-range { font-size: .6rem; color: var(--muted); margin-top: .1rem; }
 
+/* ── Zásah bouřkou — nápadný banner ─────────────────────────────────────── */
+#storm-impact { display: none; margin: 0 0 .5rem; padding: .6rem .8rem; border-radius: 14px; }
+#storm-impact.show { display: block; animation: si-pulse 2s ease-in-out infinite; }
+#storm-impact.warn { background: rgba(255, 159, 10, .16); border: 1px solid rgba(255, 159, 10, .5); }
+#storm-impact.sev  { background: rgba(255, 69, 58, .18); border: 1px solid rgba(255, 69, 58, .6); }
+#storm-impact .si-title { font-weight: 800; font-size: .92rem; }
+#storm-impact .si-sub { font-size: .74rem; color: var(--muted); margin-top: .15rem; }
+@keyframes si-pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(255,69,58,0); } 50% { box-shadow: 0 0 0 4px rgba(255,69,58,.12); } }
+
+/* ── Jistota výhledu (shoda modelů) ─────────────────────────────────────── */
+#confidence-chip { display: none; align-items: center; gap: .4rem; font-size: .72rem; margin: .1rem 0 .35rem; }
+#confidence-chip.show { display: inline-flex; }
+#confidence-chip .cf-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+#confidence-chip.high .cf-dot { background: var(--green, #30D158); }
+#confidence-chip.mid  .cf-dot { background: var(--orange); }
+#confidence-chip.low  .cf-dot { background: var(--red); }
+#confidence-chip b { font-weight: 700; }
+
+/* ── Kdy vyrazit — 12h okna beze srážek ─────────────────────────────────── */
+#outlook-panel {
+  display: none; background: var(--glass); border: 1px solid var(--glass-border);
+  border-radius: var(--radius, 16px); padding: .7rem .9rem;
+  backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+}
+#outlook-panel.show { display: block; }
+#outlook-panel .ow-title { font-size: .78rem; font-weight: 700; margin-bottom: .3rem; }
+#outlook-panel .ow-sub { font-weight: 500; color: var(--muted); font-size: .66rem; }
+#outlook-panel .ow-msg { font-size: .78rem; line-height: 1.5; margin-bottom: .45rem; }
+#outlook-panel .ow-bars { display: flex; align-items: flex-end; gap: 2px; height: 40px; }
+#outlook-panel .ow-bars i {
+  flex: 1; min-width: 0; border-radius: 3px 3px 0 0; display: block; align-self: flex-end;
+}
+#outlook-panel .ow-bars i.wet { background: var(--blue, #0A84FF); }
+#outlook-panel .ow-bars i.dry { background: rgba(255, 255, 255, .1); }
+#outlook-panel .ow-bars i.dry-good { background: var(--green, #30D158); opacity: .55; }
+#outlook-panel .ow-axis { display: flex; justify-content: space-between; font-size: .6rem; color: var(--muted); margin-top: .2rem; }
+
+/* ── Blesky: trend + blízko ─────────────────────────────────────────────── */
+#lightning-trend { font-size: .72rem; font-weight: 600; }
+#lightning-trend.approaching { color: var(--red); }
+#lightning-trend.receding { color: var(--green, #30D158); }
+#lightning-chip.near { border-color: rgba(255, 69, 58, .6); background: rgba(255, 69, 58, .14); }
+
 /* ── Modely pro tohle místo (9 modelů + přesnost) ───────────────────────── */
 #models-panel {
   display: none; background: var(--glass); border: 1px solid var(--glass-border);

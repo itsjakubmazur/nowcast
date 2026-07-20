@@ -142,6 +142,27 @@ function mae(errs) {
   return Math.round(errs.reduce((a, b) => a + b, 0) / errs.length * 10) / 10;
 }
 
+// ── Shoda modelů → chip důvěry v hlavní kartě ───────────────────────────────
+function renderConfidence(rows) {
+  const el = document.getElementById("confidence-chip");
+  if (!el) return;
+  const temps = rows.map(r => r.tmax).filter(v => v != null);
+  if (temps.length < 3) { el.classList.remove("show"); return; }
+  const spread = Math.max(...temps) - Math.min(...temps);       // °C rozptyl maxim
+  const wetFrac = rows.filter(r => r.rain >= 0.2).length / rows.length; // podíl "prší"
+  const rainSplit = wetFrac > 0.2 && wetFrac < 0.8;             // neshoda na dešti?
+
+  let level, cls, txt;
+  if (spread <= 2 && !rainSplit) { level = "vysoká"; cls = "high"; txt = "modely se shodují"; }
+  else if (spread <= 4 && !rainSplit) { level = "střední"; cls = "mid"; txt = `teploty ±${Math.round(spread)} °C`; }
+  else { level = "nižší"; cls = "low"; txt = rainSplit ? "modely se neshodují na srážkách" : `rozptyl teplot ±${Math.round(spread)} °C`; }
+
+  el.className = `confidence-chip show ${cls}`;
+  el.title = `Rozptyl denních maxim mezi ${rows.length} modely: ${spread.toFixed(1)} °C; `
+    + `srážky předpovídá ${Math.round(wetFrac * 100)} % modelů.`;
+  el.innerHTML = `<span class="cf-dot"></span>Jistota výhledu: <b>${level}</b> · ${esc(txt)}`;
+}
+
 // ── Panel "Modely pro tohle místo" ──────────────────────────────────────────
 export async function renderModelsPanel(lat, lon, signal) {
   const panel = document.getElementById("models-panel");
@@ -176,6 +197,10 @@ export async function renderModelsPanel(lat, lon, signal) {
         n: sc?.errs.length || 0 };
     }).filter(r => r.tmax != null);
     if (rows.length < 3) { panel.classList.remove("show"); return; }
+
+    // Shoda modelů = důvěra ve výhled. Když se 9 modelů shodne na teplotě i
+    // na tom, jestli prší, je jistota vysoká; když se rozcházejí, řekni to.
+    renderConfidence(rows);
 
     const ranked = rows.some(r => r.mae != null);
     rows.sort((a, b) => (a.mae ?? 99) - (b.mae ?? 99) || a.label.localeCompare(b.label));

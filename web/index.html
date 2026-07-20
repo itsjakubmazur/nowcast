@@ -135,6 +135,9 @@
 <div id="left-card">
   <div id="wu-own-panel"></div>
 
+  <!-- Zásah bouřkou — nápadný banner, když predikovaná dráha buňky protne místo -->
+  <div id="storm-impact"></div>
+
   <!-- Hero countdown -->
   <div id="rain-countdown">
     <div class="rc-icon" id="rc-icon"><img class="wicon" src="icons/weather/clear-day.svg" alt="" decoding="async"></div>
@@ -151,6 +154,9 @@
     <div class="minutely-axis"><span>teď</span><span>+30</span><span>+60</span><span>+90</span><span>+120</span></div>
   </div>
 
+  <!-- Kdy vyrazit — 12h okna beze srážek -->
+  <div id="outlook-panel"></div>
+
   <div id="forecast-panel">
     <div class="place" id="place">Zvolte místo</div>
     <div class="dist" id="dist"></div>
@@ -165,6 +171,8 @@
     <!-- včera vs dnes + odchylka od normálu -->
     <div id="delta-line"></div>
     <div id="rain-badge-wrap"></div>
+    <!-- Shoda modelů → jistota výhledu -->
+    <div id="confidence-chip"></div>
     <div class="verdict-text" id="verdict">
       <span class="hint">Vyhledejte obec, klikněte do mapy nebo použijte polohu.</span>
     </div>
@@ -248,7 +256,7 @@
 <div id="offline-badge"><i></i><span id="offline-text">Offline — ukazuji poslední data</span></div>
 
 <!-- Blesky — nejbližší úder -->
-<div id="lightning-chip">⚡ poslední blesk <b id="lightning-dist">—</b>&nbsp;<span id="lightning-age" style="color:var(--muted)"></span></div>
+<div id="lightning-chip">⚡ blesky <b id="lightning-dist">—</b>&nbsp;<span id="lightning-trend"></span>&nbsp;<span id="lightning-age" style="color:var(--muted)"></span></div>
 
 <!-- ČHMÚ detail panel -->
 <div id="chmi-detail">

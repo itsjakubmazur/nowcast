@@ -546,6 +546,27 @@ async function checkAndNotify(key, record, grid, env) {
       continue;
     }
 
+    // Zásah bouřkou — nejvyšší priorita. Predikovaná dráha buňky (grid.cells)
+    // protne oblíbené místo → "Bouřka za ~25 min". Bezpečnostní věc, kratší
+    // snooze než déšť, ať upozornění dorazí včas.
+    const imp = stormImpactFor(grid, fav.lat, fav.lon);
+    if (imp && now - lastNotified > PUSH_SNOOZE_MS) {
+      shouldNotify = true;
+      reason = `storm:${favKey}`;
+      const sev = imp.cell.hail ? "silná bouřka s možnými kroupami"
+        : imp.cell.dbz >= 50 ? "silná bouřka" : "bouřka";
+      notifPayload = imp.etaMin <= 0
+        ? { title: "⛈️ Bouřka právě nad tebou",
+            body: `${fav.label || favKey}: ${sev}, ${imp.cell.dbz} dBZ. Podle radaru.`,
+            tag: `storm-${favKey}` }
+        : { title: `⛈️ Bouřka za ~${imp.etaMin} min`,
+            body: `${fav.label || favKey}: ${sev} postupuje ${imp.cell.speed_kmh} km/h. Podle radaru.`,
+            tag: `storm-${favKey}` };
+      record.notified = record.notified || {};
+      record.notified[favKey] = new Date(now).toISOString();
+      continue;
+    }
+
     // Výstrahy (CAP) — vyšší priorita, delší snooze
     const matchIdx = new Set(grid.wmatch?.[String(id)] || []);
     const activeWarn = (grid.warnings || []).find((w, wi) =>
@@ -641,6 +662,28 @@ async function globalRainCheck(fav) {
   } catch {
     return null;
   }
+}
+
+// Zásah bouřkou pro server-side push — zrcadlí stormImpact() na klientu.
+// Vrací { cell, etaMin } nejdřívějšího zásahu, nebo null.
+function stormImpactFor(grid, lat, lon) {
+  const cells = grid.cells || [];
+  const stepMin = grid.step_min || 10;
+  let soonest = null;
+  for (const c of cells) {
+    const path = [[c.lat, c.lon], ...(c.track || [])];
+    let bestD = Infinity, bestIdx = 0;
+    path.forEach((p, i) => {
+      const d = haversineKm(lat, lon, p[0], p[1]);
+      if (d < bestD) { bestD = d; bestIdx = i; }
+    });
+    const hitKm = Math.sqrt((c.area_km2 || 50) / Math.PI) + 4;
+    if (bestD <= hitKm) {
+      const etaMin = bestIdx * stepMin;
+      if (!soonest || etaMin < soonest.etaMin) soonest = { cell: c, etaMin };
+    }
+  }
+  return soonest;
 }
 
 function nearestPtIdx(grid, lat, lon) {

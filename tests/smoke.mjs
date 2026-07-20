@@ -366,6 +366,24 @@ async function main() {
   const dtlSegs = await page.locator("#daytl-panel .dtl-seg").count();
   assertTrue(dtlSegs >= 2 && dtlSegs <= 5, `průběh dne má ${dtlSegs} fází`);
 
+  // ── Vlna SAFETY: zásah bouřkou, okna beze srážek, shoda modelů ────────────
+  // Fixture buňka (49.95,14.2, hail) má dráhu vedoucí přes ~50.07,14.40, tedy
+  // ~2 km od testovací lokace 50.09,14.40 → zásah cca za 40 min.
+  await page.waitForSelector("#storm-impact.show", { timeout: 5000 });
+  const siText = await page.textContent("#storm-impact");
+  assertTrue(/za ~\d+ min|právě nad tebou/.test(siText) && /kroup|bouřka/i.test(siText),
+    `banner zásahu bouřkou funguje ("${siText.replace(/\s+/g, " ").slice(0, 70)}…")`);
+
+  await page.waitForSelector("#outlook-panel.show", { timeout: 5000 });
+  const owBars = await page.locator("#outlook-panel .ow-bars i").count();
+  const owWet = await page.locator("#outlook-panel .ow-bars i.wet").count();
+  assertTrue(owBars >= 6 && owWet >= 1,
+    `panel 'Kdy vyrazit' má pás s mokrými i suchými sloty (${owBars} slotů, ${owWet} mokrých)`);
+
+  await page.waitForSelector("#confidence-chip.show", { timeout: 5000 });
+  const cfText = await page.textContent("#confidence-chip");
+  assertTrue(/Jistota výhledu/.test(cfText), `chip jistoty výhledu z modelů ("${cfText.slice(0, 50)}…")`);
+
   // ── WU vlastní stanice ────────────────────────────────────────────────────
   const wuRows = await page.locator(".wu-mini-row").count();
   assertTrue(wuRows === 1, `WU vlastní stanice panel má 1 řádek (má ${wuRows})`);
