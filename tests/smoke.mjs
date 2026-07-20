@@ -597,6 +597,36 @@ async function main() {
   assertTrue(errors2.length === 0, `žádné JS chyby při auto-obnově místa (nalezeno ${errors2.length})`);
   await page2.close();
 
+  // ── Auto-poloha při startu: geolokace nahradí placeholder ─────────────────
+  const geoCtx = await browser.newContext({
+    serviceWorkers: "block",
+    permissions: ["geolocation"],
+    geolocation: { latitude: 49.84, longitude: 18.29 }, // Ostrava
+  });
+  const pageG0 = await geoCtx.newPage();
+  const errG0 = [];
+  pageG0.on("pageerror", e => errG0.push(e.message));
+  await pageG0.route("https://unpkg.com/leaflet@1.9.4/dist/leaflet.js", route => route.fulfill({ path: path.join(FIXTURES, "leaflet-stub.js"), contentType: "text/javascript" }));
+  await pageG0.route("https://unpkg.com/leaflet@1.9.4/dist/leaflet.css", route => route.fulfill({ body: "", contentType: "text/css" }));
+  await pageG0.route("https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js", route => route.fulfill({ path: path.join(FIXTURES, "chart-stub.js"), contentType: "text/javascript" }));
+  await pageG0.route("https://fonts.googleapis.com/**", route => route.fulfill({ body: "", contentType: "text/css" }));
+  await pageG0.route("https://api.open-meteo.com/v1/forecast**", route =>
+    route.fulfill({ body: JSON.stringify(route.request().url().includes("models=") ? mmFixture : omFixture), contentType: "application/json" }));
+  await pageG0.route("https://air-quality-api.open-meteo.com/**", route => route.fulfill({ body: "{}", contentType: "application/json" }));
+  await pageG0.route("https://archive-api.open-meteo.com/**", route => route.fulfill({ body: JSON.stringify(buildArchiveFixture()), contentType: "application/json" }));
+  await pageG0.route("https://ensemble-api.open-meteo.com/**", route => route.fulfill({ body: "{}", contentType: "application/json" }));
+  await pageG0.route("https://*.workers.dev/**", route => route.fulfill({ body: "{}", contentType: "application/json" }));
+  await pageG0.route("https://nominatim.openstreetmap.org/**", route =>
+    route.fulfill({ body: JSON.stringify({ address: { city: "Ostrava" } }), contentType: "application/json" }));
+  // localStorage má JINÉ poslední místo — geolokace ho musí přebít
+  await pageG0.addInitScript(() => localStorage.setItem("nowcast_last_location",
+    JSON.stringify({ lat: 50.09, lon: 14.40, label: "StaréMísto" })));
+  await pageG0.goto(`${base}/`, { waitUntil: "load" });
+  await pageG0.waitForFunction(() => document.getElementById("place")?.textContent?.includes("Ostrava"), { timeout: 8000 });
+  assertTrue(true, "start bez URL: geolokace nahradila placeholder aktuální polohou (Ostrava)");
+  assertTrue(errG0.length === 0, `žádné JS chyby při auto-poloze (nalezeno ${errG0.length})`);
+  await geoCtx.close();
+
   // ── Mobilní šířka ─────────────────────────────────────────────────────────
   const mobile = await browser.newContext({ viewport: { width: 390, height: 844 }, serviceWorkers: "block" });
   const pageM = await mobile.newPage();

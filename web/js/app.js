@@ -480,20 +480,51 @@ window.addEventListener("DOMContentLoaded", async () => {
     }
   });
 
-  // ── Obnov stav: URL params > poslední místo > první oblíbené > nic ────────
+  // ── Obnov stav: URL params > (poslední/oblíbené jako rychlý paint) → poloha ─
   const u = new URL(window.location);
   const qLat = parseFloat(u.searchParams.get("lat"));
   const qLon = parseFloat(u.searchParams.get("lon"));
   const q = u.searchParams.get("q");
   if (!isNaN(qLat) && !isNaN(qLon)) {
+    // Sdílený odkaz má přednost — polohu nezjišťujeme, ať odkaz míří tam, kam má
     showForecast(qLat, qLon, q || "Vybrané místo");
   } else {
+    // Rychlý první paint z posledního/oblíbeného místa (ať není prázdno),
+    // pak se pokusíme o aktuální polohu a případně ji nahradíme.
     const last = loadLastLocation();
     const favs = loadFavs();
     if (last) showForecast(last.lat, last.lon, last.label);
     else if (favs.length) showForecast(favs[0].lat, favs[0].lon, favs[0].label);
+    autoLocateOnStart();
   }
 });
+
+// Při startu zkus zobrazit počasí podle aktuální polohy uživatele. Placeholder
+// (poslední/oblíbené místo) je už vykreslený, takže tohle jen dobehne a nahradí
+// ho — ale JEN pokud uživatel mezitím sám nezvolil jiné místo, a NIKDY když už
+// polohu dřív odmítl (žádné otravné opakované dotazy).
+async function autoLocateOnStart() {
+  if (!navigator.geolocation) return;
+  try {
+    const st = await navigator.permissions?.query({ name: "geolocation" });
+    if (st && st.state === "denied") return; // dřív zamítnuto → neptej se znovu
+  } catch { /* Permissions API nemusí být — pokračuj, getCurrentPosition si prompt vyřeší */ }
+
+  const before = state.currentLat; // co je teď zobrazeno (placeholder nebo null)
+  navigator.geolocation.getCurrentPosition(
+    async pos => {
+      // Uživatel mezitím sám vybral místo? Nepřepisuj mu ho.
+      if (state.currentLat !== before) return;
+      const { latitude, longitude } = pos.coords;
+      let label = "Moje poloha";
+      try { const name = await reverseGeocode(latitude, longitude); if (name) label = name; }
+      catch { /* fallback na "Moje poloha" */ }
+      showForecast(latitude, longitude, label);
+    },
+    () => { /* zamítnuto / nedostupné — placeholder zůstává */ },
+    { timeout: 10000, maximumAge: 10 * 60 * 1000 }
+  );
+}
 
 // ── Service Worker ────────────────────────────────────────────────────────────
 if ("serviceWorker" in navigator) {
