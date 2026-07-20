@@ -12,6 +12,7 @@ import { state } from "./state.js";
 import { esc, haversine, ageMinutes, nowLocStr, locDateStr } from "./utils.js";
 
 export const MODELS = [
+  ["icon_d2",              "ICON-D2", "DWD · 2 km, ČR"],   // nejvyšší rozlišení pro Česko
   ["icon_seamless",        "ICON",    "DWD · Německo"],
   ["ecmwf_ifs025",         "ECMWF",   "Evropa (IFS)"],
   ["gfs_seamless",         "GFS",     "NOAA · USA"],

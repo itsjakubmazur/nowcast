@@ -734,8 +734,9 @@ button.glass-btn svg { width: 17px; height: 17px; display: block; }
 .aq-badge { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:.3rem; }
 /* 3denní sparkline vývoje uvnitř aq karty + osa dnů pod gridem */
 .aq-spark { display:block; width:100%; height:20px; margin-top:.3rem; opacity:.85; }
-.aq-days { display:flex; justify-content:space-between; font-size:.6rem;
-  color:var(--muted); margin-top:.35rem; padding:0 .1rem; }
+/* osa dnů PER sparkline (ne přes celý 2sloupcový grid — tam neseděla) */
+.aq-item-axis { display:flex; justify-content:space-between; font-size:.54rem;
+  color:var(--muted); margin-top:.15rem; padding:0 .05rem; }
 .aq-title-days { margin-left:auto; font-weight:400; text-transform:none;
   letter-spacing:0; font-size:.62rem; color:var(--muted); }
 .aq-good { background:var(--green); } .aq-fair { background:#84cc16; } .aq-moderate { background:var(--orange); }
@@ -756,12 +757,15 @@ button.glass-btn svg { width: 17px; height: 17px; display: block; }
 }
 #astro-panel.show { display: block; }
 .astro-row { display: flex; align-items: baseline; gap: .6rem; padding: .32rem 0;
-  border-top: 1px solid var(--rowline); font-size: .78rem; }
+  border-top: 1px solid var(--rowline); font-size: .78rem; flex-wrap: wrap; }
 .astro-row:first-of-type { border-top: none; }
 .astro-row .a-k { font-size: .62rem; font-weight: 700; letter-spacing: .05em;
-  text-transform: uppercase; color: var(--muted); min-width: 4.4rem; }
-.astro-row .a-v { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.astro-row .a-d { color: var(--muted); font-size: .68rem; }
+  text-transform: uppercase; color: var(--muted); min-width: 4.4rem; flex: none; }
+/* a-v smí zalomit (dlouhé hodnoty jako "Perseidy (ZHR 100), Delta Akvaridy …")
+   dřív s white-space:nowrap přetékaly ven z karty */
+.astro-row .a-v { font-weight: 700; font-variant-numeric: tabular-nums;
+  min-width: 0; overflow-wrap: anywhere; }
+.astro-row .a-d { color: var(--muted); font-size: .68rem; min-width: 0; overflow-wrap: anywhere; }
 /* podsekce "Pozorování dnes v noci" + pásek noční oblačnosti */
 .astro-sub { font-size: .64rem; font-weight: 700; color: var(--muted);
   text-transform: uppercase; letter-spacing: .06em; margin: .55rem 0 .1rem;

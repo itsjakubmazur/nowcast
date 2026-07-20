@@ -124,7 +124,7 @@ function buildOpenMeteoFixture() {
 // Multi-model odpověď (models=…) — suffixované klíče per model, jak je vrací
 // Open-Meteo. Slouží panelu "Modely pro tohle místo" i spreadu v meteogramu.
 function buildMultiModelFixture(om) {
-  const ids = ["icon_seamless", "ecmwf_ifs025", "gfs_seamless", "meteofrance_seamless", "ukmo_seamless"];
+  const ids = ["icon_d2", "icon_seamless", "ecmwf_ifs025", "gfs_seamless", "meteofrance_seamless", "ukmo_seamless"];
   const hourly = { time: [...om.hourly.time] };
   ids.forEach((id, k) => {
     hourly[`temperature_2m_${id}`] = om.hourly.temperature_2m.map(t => t + (k - 2) * 0.7);

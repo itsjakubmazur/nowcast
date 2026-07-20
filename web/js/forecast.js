@@ -802,8 +802,9 @@ function renderAQ(data) {
       <div class="aq-item-label">${esc(it.label)}</div>
       <div class="aq-item-val">${it.val}</div>
       ${sparkSvg(it.series, it.color)}
-    </div>`).join("")}</div>
-    ${anySpark ? `<div class="aq-days"><span>teď</span><span>zítra</span><span>pozítří</span></div>` : ""}`);
+      ${it.series ? `<div class="aq-item-axis"><span>teď</span><span>+3 dny</span></div>` : ""}
+    </div>`).join("")}</div>`);
+  void anySpark;
   panel.classList.add("show");
 }
 
