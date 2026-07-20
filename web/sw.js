@@ -1,4 +1,4 @@
-const CACHE_VERSION = "v5";
+const CACHE_VERSION = "v6";
 const STATIC_CACHE = `nowcast-static-${CACHE_VERSION}`;
 const DATA_CACHE = `nowcast-data-${CACHE_VERSION}`;
 
@@ -34,6 +34,7 @@ const STATIC_ASSETS = [
   "./js/hydro.js",
   "./js/globalrain.js",
   "./js/stormtrack.js",
+  "./js/models.js",
   "./fonts/Figtree.woff2",
   "./icon.svg",
   "./icons/icon-192.png",

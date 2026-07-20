@@ -121,6 +121,18 @@ function buildOpenMeteoFixture() {
   return { hourly, minutely_15: m15, daily, timezone: "Europe/Prague" };
 }
 
+// Multi-model odpověď (models=…) — suffixované klíče per model, jak je vrací
+// Open-Meteo. Slouží panelu "Modely pro tohle místo" i spreadu v meteogramu.
+function buildMultiModelFixture(om) {
+  const ids = ["icon_seamless", "ecmwf_ifs025", "gfs_seamless", "meteofrance_seamless", "ukmo_seamless"];
+  const hourly = { time: [...om.hourly.time] };
+  ids.forEach((id, k) => {
+    hourly[`temperature_2m_${id}`] = om.hourly.temperature_2m.map(t => t + (k - 2) * 0.7);
+    hourly[`precipitation_${id}`] = om.hourly.precipitation.map(p => p * (1 + k * 0.1));
+  });
+  return { hourly, timezone: "Europe/Prague" };
+}
+
 function rmrf(p) { fs.rmSync(p, { recursive: true, force: true }); }
 
 function prepareServeDir() {
@@ -223,8 +235,9 @@ async function main() {
 
   // ── Route interception: externí API → fixture data ─────────────────────────
   const omFixture = buildOpenMeteoFixture();
+  const mmFixture = buildMultiModelFixture(omFixture);
   await page.route("https://api.open-meteo.com/v1/forecast**", route =>
-    route.fulfill({ body: JSON.stringify(omFixture), contentType: "application/json" }));
+    route.fulfill({ body: JSON.stringify(route.request().url().includes("models=") ? mmFixture : omFixture), contentType: "application/json" }));
   await page.route("https://air-quality-api.open-meteo.com/**", route =>
     route.fulfill({ body: JSON.stringify({
       current: { pm10: 12.3, pm2_5: 8.1, ozone: 55, nitrogen_dioxide: 10, european_aqi: 22 },
@@ -550,6 +563,44 @@ async function main() {
   assertTrue(ctrlBox && ctrlBox.height >= 40, `radar ovládací tlačítka mají dost velký dotykový cíl na mobilu (výška=${ctrlBox?.height})`);
   assertTrue(errorsM.length === 0, `žádné JS chyby na mobilní šířce (nalezeno ${errorsM.length})`);
   await mobile.close();
+
+  // ── Modely pro tohle místo: panel + učící se verifikace ───────────────────
+  const pageMod = await context.newPage();
+  const errorsMod = [];
+  pageMod.on("pageerror", e => errorsMod.push(e.message));
+  await pageMod.route("https://unpkg.com/leaflet@1.9.4/dist/leaflet.js", route => route.fulfill({ path: path.join(FIXTURES, "leaflet-stub.js"), contentType: "text/javascript" }));
+  await pageMod.route("https://unpkg.com/leaflet@1.9.4/dist/leaflet.css", route => route.fulfill({ body: "", contentType: "text/css" }));
+  await pageMod.route("https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js", route => route.fulfill({ path: path.join(FIXTURES, "chart-stub.js"), contentType: "text/javascript" }));
+  await pageMod.route("https://fonts.googleapis.com/**", route => route.fulfill({ body: "", contentType: "text/css" }));
+  await pageMod.route("https://api.open-meteo.com/v1/forecast**", route =>
+    route.fulfill({ body: JSON.stringify(route.request().url().includes("models=") ? mmFixture : omFixture), contentType: "application/json" }));
+  await pageMod.route("https://air-quality-api.open-meteo.com/**", route => route.fulfill({ body: "{}", contentType: "application/json" }));
+  await pageMod.route("https://archive-api.open-meteo.com/**", route => route.fulfill({ body: JSON.stringify(buildArchiveFixture()), contentType: "application/json" }));
+  await pageMod.route("https://ensemble-api.open-meteo.com/**", route => route.fulfill({ body: "{}", contentType: "application/json" }));
+  await pageMod.route("https://*.workers.dev/**", route => route.fulfill({ body: "{}", contentType: "application/json" }));
+  // Před-nasetý 4 h starý snapshot: ICON sliboval na TUHLE hodinu 30 °C.
+  // Stanice (fixture, přepsaná na čerstvý čas) měří 22 °C → po načtení musí
+  // verifikace zapsat chybu 8.0 pro icon_seamless.
+  await pageMod.addInitScript(() => {
+    const s = new Date().toLocaleString("sv-SE", { timeZone: "Europe/Prague" });
+    const nowHour = s.slice(0, 10) + "T" + s.slice(11, 14) + "00";
+    localStorage.setItem("nowcast_model_scores_v1", JSON.stringify({
+      "50.09,14.40": { t: Date.now() - 4 * 3600000, scores: {},
+        snaps: [{ t: Date.now() - 4 * 3600000, h: { [nowHour]: { icon_seamless: 30 } }, done: [] }] },
+    }));
+  });
+  await pageMod.goto(`${base}/?lat=50.09&lon=14.40&q=TestObec`, { waitUntil: "load" });
+  await pageMod.waitForSelector("#models-panel.show", { timeout: 8000 });
+  const mdlRows = await pageMod.locator("#models-panel .mdl-row").count();
+  assertTrue(mdlRows >= 5, `panel modelů ukazuje ${mdlRows} modelů`);
+  const mdlScore = await pageMod.evaluate(() => {
+    const s = JSON.parse(localStorage.getItem("nowcast_model_scores_v1") || "{}");
+    return s["50.09,14.40"]?.scores?.icon_seamless?.errs || [];
+  });
+  assertTrue(mdlScore.length === 1 && Math.abs(mdlScore[0] - 8) < 0.61,
+    `verifikace zapsala chybu ICONu proti stanici (errs=${JSON.stringify(mdlScore)})`);
+  assertTrue(errorsMod.length === 0, `žádné JS chyby v panelu modelů (${errorsMod[0] || 0})`);
+  await pageMod.close();
 
   // ── Světový režim — místo mimo pokrytí českého radaru (New York) ──────────
   const pageG = await context.newPage();

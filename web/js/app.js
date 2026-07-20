@@ -39,6 +39,7 @@ import { initLightning } from "./lightning.js";
 import { showLoadingSkeletons } from "./skeleton.js";
 import { shareCurrentView, copyEmbedLink, initEmbedMode } from "./share.js";
 import { prefetchGlobalRadar } from "./globalrain.js";
+import { renderModelsPanel } from "./models.js";
 import { esc } from "./utils.js";
 
 // ── Data fetch (graceful degradation — radar/grid kritické, zbytek volitelné) ─
@@ -117,6 +118,7 @@ async function showFc24(lat, lon, label) {
       renderVerifCard();                      // "Trefili jsme se?" po dnech
       addModelSpread(lat, lon, fc);           // async — pásmo nejistoty do meteogramu
       addEnsembleFan(lat, lon, data);         // async — rozptyl ensemble do 7 dní
+      renderModelsPanel(lat, lon, ctrl.signal); // async — 9 modelů + přesnost
       renderClimateAnomaly(lat, lon, data);   // async — odchylka od normálu
       renderDayInHistory(lat, lon, data);     // async — rekordy pro dnešní den
       showCompareBtn();
