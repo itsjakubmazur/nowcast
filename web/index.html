@@ -134,8 +134,14 @@
 
 <!-- Levá floating karta -->
 <div id="left-card">
-  <!-- Zásah bouřkou — nápadný banner, když predikovaná dráha buňky protne místo -->
+  <!-- Zásah bouřkou — nápadný banner, když predikovaná dráha buňky protne místo.
+       Je první, aby při aktivní bouřce vyhrál; jinak je skrytý (display:none)
+       a nezabírá místo, takže proužek vlastních stanic níž je fakticky nahoře. -->
   <div id="storm-impact"></div>
+
+  <!-- Vlastní/sledované WU stanice — tenký minimalistický proužek na koukání
+       jedním pohledem; uživatel na ně chodí často, patří nahoru -->
+  <div id="wu-own-panel"></div>
 
   <!-- Hero countdown -->
   <div id="rain-countdown">
@@ -195,9 +201,6 @@
     <div class="act-label"><span>Aktivity dnes</span><span>z hodinových dat</span></div>
     <div class="act-grid" id="act-grid"></div>
   </div>
-
-  <!-- Nejbližší cizí meteostanice (WU) — sekundární data, ne headline: až za předpovědí -->
-  <div id="wu-own-panel"></div>
 
   <div id="fav-row"></div>
   <button id="btn-compare" title="Porovnat aktuální místo s jinou obcí">⇄ Porovnat s jiným místem</button>
