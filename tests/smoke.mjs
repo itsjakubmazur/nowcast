@@ -173,6 +173,21 @@ function prepareServeDir() {
     }));
     fs.writeFileSync(p, JSON.stringify(j));
   }
+
+  // aladin.json: běh "teď", jeden bod na testovací lokaci (50.09,14.40),
+  // 12 h teploty → panel modelů má ukázat ALADIN vedle Open-Meteo modelů
+  {
+    const startMs = Math.floor(Date.now() / 3.6e6) * 3.6e6;
+    const temp = Array.from({ length: 12 }, (_, i) => 20 + Math.round(Math.sin(i / 3) * 4 * 10) / 10);
+    fs.writeFileSync(path.join(SERVE, "data", "aladin.json"), JSON.stringify({
+      run_utc: new Date().toISOString(),
+      start_utc: new Date(startMs).toISOString(),
+      step_hours: 1, n_hours: 12, grid_step_deg: 0.25,
+      pts: [[50.09, 14.40]],
+      temp: { "0": temp },
+      precip: { "0": temp.map(() => 0) },
+    }));
+  }
 }
 
 function startServer() {
@@ -631,6 +646,9 @@ async function main() {
   await pageMod.waitForSelector("#models-panel.show", { timeout: 8000 });
   const mdlRows = await pageMod.locator("#models-panel .mdl-row").count();
   assertTrue(mdlRows >= 5, `panel modelů ukazuje ${mdlRows} modelů`);
+  // ALADIN/ČHMÚ (z data/aladin.json, mimo Open-Meteo) se přidal jako model
+  const mdlText = await pageMod.textContent("#models-panel");
+  assertTrue(mdlText.includes("ALADIN"), "ALADIN/ČHMÚ je v panelu modelů");
   const mdlScore = await pageMod.evaluate(() => {
     const s = JSON.parse(localStorage.getItem("nowcast_model_scores_v1") || "{}");
     return s["50.09,14.40"]?.scores?.icon_seamless?.errs || [];

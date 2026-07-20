@@ -1,120 +1,202 @@
 """
-ALADIN/ČHMÚ — numerická předpověď z opendata.chmi.cz (GRIB1, 1 km, 72 h).
-Zdroj: https://opendata.chmi.cz/meteorology/weather/nwp_aladin/CZ_1km/
+ALADIN/ČHMÚ — numerická předpověď z opendata.chmi.cz → data/aladin.json.
 
-Struktura (zjištěno sondou):
-  CZ_1km/{00,06,12,18}/   — podadresáře podle hodiny běhu modelu (UTC)
-  ALADCZ1K4opendata_{YYYYMMDDHH}_{VAR}.grb.bz2 — bz2 GRIB, jeden na proměnnou,
-  uvnitř všechny časové kroky. VAR mj.: CLSTEMPERATURE (2m T),
-  SURFPREC_TOTAL (srážky), CLSRAFAL_MOD_XFU (nárazy), SURFCAPE_POS_F00 (CAPE).
+Jediný veřejný high-res model přímo od ČHMÚ (1 km, 72 h, běhy 00/06/12/18 UTC).
+Open-Meteo ho nenabízí, tak si ho stahujeme a parsujeme sami z GRIB1.
 
-FÁZE 2 = SONDA GRIB: stáhni nejnovější běh CLSTEMPERATURE, rozbal, vypiš tvar
-GRIB zpráv (kroky, geometrie mřížky, hodnota v Praze) — podle toho pak parser.
+Struktura na serveru (zjištěno sondou):
+  CZ_1km/{00,06,12,18}/ALADCZ1K4opendata_{YYYYMMDDHH}_{VAR}.grb.bz2
+  bz2 GRIB, jeden soubor na proměnnou, uvnitř 73 hodinových kroků (0–72 h).
+  Mřížka regular_ll 501×290 od (48.5N,12.0E), krok 0.014°/0.009°, S→N, Z→V.
+  CLSTEMPERATURE = 2m teplota (K), SURFPREC_TOTAL = kumul. srážky od začátku běhu.
+
+Výstup data/aladin.json: řídká mřížka bodů nad ČR, per bod hodinová teplota
+(°C) a hodinové srážky (mm, deakumulované) na prvních HOURS hodin. Klient
+(models.js) najde nejbližší bod a zapojí ALADIN do panelu modelů i do
+učícího se žebříčku přesnosti.
 """
 
 import bz2
+import json
 import re
 import sys
-from datetime import datetime, timezone
+import time
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
+import numpy as np
 import requests
+
+sys.path.insert(0, str(Path(__file__).parent))
+from ingest import DATA_DIR
 
 BASE = "https://opendata.chmi.cz/meteorology/weather/nwp_aladin/CZ_1km/"
 RUN_HOURS = ["18", "12", "06", "00"]
+HOURS = 48          # kolik hodin dopředu uložit (72 je zbytečně velké)
+GRID_STEP = 0.25    # ° — řídká mřížka nad ČR (klient sampluje nejbližší bod)
+CZ = dict(lat_min=48.6, lat_max=51.0, lon_min=12.2, lon_max=18.8)
+BUDGET_S = 90
+
 SESSION = requests.Session()
 SESSION.headers.update({"User-Agent": "nowcast-pipeline/1.0 (+github actions)"})
-
-PRAHA = (50.088, 14.42)
 
 
 def list_dir(url: str) -> list[str]:
     r = SESSION.get(url, timeout=30)
     r.raise_for_status()
-    hrefs = re.findall(r'href="([^"]+)"', r.text)
-    return [h for h in hrefs if h not in ("../", "/") and not h.startswith("?")]
+    return [h for h in re.findall(r'href="([^"]+)"', r.text)
+            if h not in ("../", "/") and not h.startswith("?")]
 
 
-def latest_file(var: str) -> tuple[str, str] | None:
-    """Najde nejnovější běh dané proměnné napříč hodinovými podadresáři.
-    Vrací (url, run_iso) nebo None."""
-    best = None  # (run_ts_int, url, run_iso)
+def latest_run() -> str | None:
+    """Nejnovější dostupný běh (YYYYMMDDHH) — hledá napříč hodinovými adresáři
+    podle CLSTEMPERATURE (ta je vždy)."""
+    best = None
     for hh in RUN_HOURS:
         try:
             files = list_dir(BASE + hh + "/")
-        except Exception as e:
-            print(f"  {hh}/ výpis selhal: {e}")
+        except Exception:
             continue
         for f in files:
-            m = re.match(rf"ALADCZ1K4opendata_(\d{{10}})_{var}\.grb\.bz2$", f)
-            if not m:
-                continue
-            ts = int(m.group(1))  # YYYYMMDDHH
-            if best is None or ts > best[0]:
-                iso = datetime.strptime(m.group(1), "%Y%m%d%H").replace(tzinfo=timezone.utc).isoformat()
-                best = (ts, BASE + hh + "/" + f, iso)
-    return (best[1], best[2]) if best else None
+            m = re.match(r"ALADCZ1K4opendata_(\d{10})_CLSTEMPERATURE\.grb\.bz2$", f)
+            if m and (best is None or int(m.group(1)) > int(best)):
+                best = m.group(1)
+    return best
 
 
-def probe():
-    print("=== ALADIN sonda GRIB ===")
-    found = latest_file("CLSTEMPERATURE")
-    if not found:
-        print("  CLSTEMPERATURE nenalezena")
-        return
-    url, run_iso = found
-    print(f"  Nejnovější běh: {run_iso}\n  {url}")
+def var_url(run: str, var: str) -> str:
+    return f"{BASE}{run[8:10]}/ALADCZ1K4opendata_{run}_{var}.grb.bz2"
 
+
+def download_grib(url: str) -> bytes | None:
     try:
         raw = SESSION.get(url, timeout=120).content
-        grib = bz2.decompress(raw)
-        print(f"  staženo {len(raw)//1024} kB, rozbaleno {len(grib)//1024} kB")
+        return bz2.decompress(raw)
     except Exception as e:
-        print(f"  stažení/rozbalení selhalo: {e}")
-        return
+        print(f"  {url.split('/')[-1]}: {e}")
+        return None
 
-    tmp = "/tmp/aladin_t.grib"
-    open(tmp, "wb").write(grib)
 
-    try:
-        import eccodes as ec
-    except Exception as e:
-        print(f"  eccodes import selhal: {e}")
-        return
+def build_targets():
+    """Řídká mřížka bodů nad ČR: (lat, lon) list + jejich indexy do ALADIN pole."""
+    lats = np.arange(CZ["lat_min"], CZ["lat_max"] + 1e-9, GRID_STEP)
+    lons = np.arange(CZ["lon_min"], CZ["lon_max"] + 1e-9, GRID_STEP)
+    pts = [(round(float(la), 3), round(float(lo), 3)) for la in lats for lo in lons]
+    return pts
 
-    # geometrie z první zprávy + kroky/hodnoty všech zpráv
+
+def read_field_stack(grib: bytes, n_steps: int):
+    """Vrátí (values[n_steps, Nj, Ni], geo, valid_times[list ISO])."""
+    import eccodes as ec
+    tmp = Path("/tmp/aladin.grib")
+    tmp.write_bytes(grib)
+    fields, times, geo = [], [], None
     with open(tmp, "rb") as f:
-        n = 0
-        while True:
+        while len(fields) < n_steps:
             gid = ec.codes_grib_new_from_file(f)
             if gid is None:
                 break
-            n += 1
-            def g(k):
-                try: return ec.codes_get(gid, k)
-                except Exception: return "?"
-            if n == 1:
-                print(f"  geometrie: gridType={g('gridType')} Ni={g('Ni')} Nj={g('Nj')} "
-                      f"latFirst={g('latitudeOfFirstGridPointInDegrees')} "
-                      f"lonFirst={g('longitudeOfFirstGridPointInDegrees')} "
-                      f"latLast={g('latitudeOfLastGridPointInDegrees')} "
-                      f"lonLast={g('longitudeOfLastGridPointInDegrees')} "
-                      f"iInc={g('iDirectionIncrementInDegrees')} jInc={g('jDirectionIncrementInDegrees')} "
-                      f"shortName={g('shortName')} units={g('units')} "
-                      f"scanNeg-i={g('iScansNegatively')} scanPos-j={g('jScansPositively')}")
-                # hodnota v Praze přes nearest
-                try:
-                    nr = ec.codes_grib_find_nearest(gid, PRAHA[0], PRAHA[1])[0]
-                    print(f"  Praha nearest: lat={nr.lat:.3f} lon={nr.lon:.3f} value={nr.value:.2f} (K?)")
-                except Exception as e:
-                    print(f"  find_nearest selhal: {e}")
-            if n <= 8:
-                print(f"    [msg {n}] step={g('stepRange')} startStep={g('startStep')} endStep={g('endStep')} "
-                      f"validityDate={g('validityDate')} validityTime={g('validityTime')} "
-                      f"dataDate={g('dataDate')} dataTime={g('dataTime')}")
+            if geo is None:
+                geo = dict(
+                    Ni=ec.codes_get(gid, "Ni"), Nj=ec.codes_get(gid, "Nj"),
+                    lat0=ec.codes_get(gid, "latitudeOfFirstGridPointInDegrees"),
+                    lon0=ec.codes_get(gid, "longitudeOfFirstGridPointInDegrees"),
+                    di=ec.codes_get(gid, "iDirectionIncrementInDegrees"),
+                    dj=ec.codes_get(gid, "jDirectionIncrementInDegrees"),
+                )
+            vd = ec.codes_get(gid, "validityDate")
+            vt = ec.codes_get(gid, "validityTime")
+            dt = datetime.strptime(f"{vd:08d}{vt:04d}", "%Y%m%d%H%M").replace(tzinfo=timezone.utc)
+            times.append(dt.isoformat())
+            vals = np.array(ec.codes_get_values(gid), dtype=np.float32)
+            fields.append(vals.reshape(geo["Nj"], geo["Ni"]))  # j: S→N, i: Z→V
             ec.codes_release(gid)
-        print(f"  zpráv (časových kroků) celkem: {n}")
+    return np.stack(fields) if fields else None, geo, times
+
+
+def sample(stack, geo, pts):
+    """Bilineární výběr [n_steps, n_pts] pro cílové body z pravidelné mřížky."""
+    n_steps = stack.shape[0]
+    out = np.full((n_steps, len(pts)), np.nan, dtype=np.float32)
+    Ni, Nj = geo["Ni"], geo["Nj"]
+    for k, (la, lo) in enumerate(pts):
+        fi = (lo - geo["lon0"]) / geo["di"]
+        fj = (la - geo["lat0"]) / geo["dj"]
+        i0, j0 = int(np.floor(fi)), int(np.floor(fj))
+        if not (0 <= i0 < Ni - 1 and 0 <= j0 < Nj - 1):
+            continue
+        ti, tj = fi - i0, fj - j0
+        v = (stack[:, j0, i0] * (1 - ti) * (1 - tj) + stack[:, j0, i0 + 1] * ti * (1 - tj)
+             + stack[:, j0 + 1, i0] * (1 - ti) * tj + stack[:, j0 + 1, i0 + 1] * ti * tj)
+        out[:, k] = v
+    return out
+
+
+def main():
+    t_start = time.time()
+    run = latest_run()
+    if not run:
+        print("aladin.py: žádný běh nenalezen — přeskakuji", file=sys.stderr)
+        return
+    run_iso = datetime.strptime(run, "%Y%m%d%H").replace(tzinfo=timezone.utc).isoformat()
+    print(f"=== ALADIN/ČHMÚ běh {run_iso} ===")
+
+    pts = build_targets()
+    print(f"  cílových bodů nad ČR: {len(pts)}  (krok {GRID_STEP}°)")
+
+    # Teplota (povinná)
+    tg = download_grib(var_url(run, "CLSTEMPERATURE"))
+    if tg is None:
+        print("aladin.py: teplota se nestáhla — přeskakuji", file=sys.stderr)
+        return
+    tstack, geo, times = read_field_stack(tg, HOURS)
+    if tstack is None:
+        print("aladin.py: teplota bez zpráv — přeskakuji", file=sys.stderr)
+        return
+    temp_c = sample(tstack, geo, pts) - 273.15  # K → °C
+    print(f"  teplota: {tstack.shape[0]} kroků, mřížka {geo['Ni']}×{geo['Nj']}")
+
+    # Srážky (volitelné) — SURFPREC_TOTAL je kumulativní od začátku běhu → deakumuluj
+    precip_h = None
+    if time.time() - t_start < BUDGET_S:
+        pg = download_grib(var_url(run, "SURFPREC_TOTAL"))
+        if pg is not None:
+            pstack, _, _ = read_field_stack(pg, tstack.shape[0])
+            if pstack is not None:
+                pc = sample(pstack, geo, pts)
+                dif = np.diff(pc, axis=0, prepend=pc[:1])
+                precip_h = np.clip(dif, 0, None)
+                print(f"  srážky: {pstack.shape[0]} kroků (deakumulováno)")
+
+    n_steps = tstack.shape[0]
+    out = {
+        "run_utc": run_iso,
+        "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+        "start_utc": times[0],
+        "step_hours": 1,
+        "n_hours": n_steps,
+        "grid_step_deg": GRID_STEP,
+        "pts": [list(p) for p in pts],
+        "temp": {}, "precip": {},
+    }
+    for k in range(len(pts)):
+        col = temp_c[:, k]
+        if np.isnan(col).all():
+            continue
+        out["temp"][str(k)] = [round(float(v), 1) if not np.isnan(v) else None for v in col]
+        if precip_h is not None:
+            out["precip"][str(k)] = [round(float(v), 1) if not np.isnan(v) else None
+                                     for v in precip_h[:, k]]
+
+    path = DATA_DIR / "aladin.json"
+    path.write_text(json.dumps(out, ensure_ascii=False, separators=(",", ":")))
+    kb = path.stat().st_size / 1024
+    # kontrolní bod: Praha
+    pj = min(range(len(pts)), key=lambda i: abs(pts[i][0] - 50.09) + abs(pts[i][1] - 14.42))
+    t0 = out["temp"].get(str(pj), [None])[0]
+    print(f"✓ aladin.json — {len(out['temp'])} bodů, {n_steps} h, {kb:.0f} kB  "
+          f"(Praha t0 ≈ {t0} °C)  [{time.time()-t_start:.1f}s]")
 
 
 if __name__ == "__main__":
-    probe()
-    sys.exit(0)
+    main()

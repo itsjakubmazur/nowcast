@@ -24,6 +24,13 @@ export const MODELS = [
   ["dmi_seamless",         "DMI",     "Harmonie · Dánsko"],
 ];
 
+// ALADIN/ČHMÚ není v Open-Meteo — stahuje se zvlášť z data/aladin.json
+// (pipeline/aladin.py z opendata GRIB). Meta drží stejný tvar jako MODELS.
+const ALADIN = ["aladin_chmi", "ALADIN", "ČHMÚ · 1 km"];
+function metaFor(id) {
+  return MODELS.find(m => m[0] === id) || (id === ALADIN[0] ? ALADIN : [id, id, ""]);
+}
+
 const STORE_KEY = "nowcast_model_scores_v1";
 const SNAP_MIN_AGE_H = 3;    // predikci hodnotíme až po ≥ 3 h (jinak je to opis)
 const SNAP_MAX_AGE_H = 30;   // starší sliby už nemá s čím poctivě srovnat
@@ -143,6 +150,52 @@ function mae(errs) {
   return Math.round(errs.reduce((a, b) => a + b, 0) / errs.length * 10) / 10;
 }
 
+// ── ALADIN/ČHMÚ z data/aladin.json — nejbližší bod → hodinová řada ──────────
+// Klíče (lokální hodina "YYYY-MM-DDTHH:00") ladí s Open-Meteo časy, takže
+// ALADIN zapadne do stejného prostoru jako ostatní modely.
+let _aladinCache = undefined; // undefined = nenačteno, null = nedostupné
+
+async function loadAladin() {
+  if (_aladinCache !== undefined) return _aladinCache;
+  try {
+    const r = await fetch(`data/aladin.json?v=${Math.floor(Date.now() / 3.6e6)}`, { cache: "no-store" });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const a = await r.json();
+    // starší než 18 h = běh vypadl, nepoužívej
+    if (Date.now() - new Date(a.run_utc).getTime() > 18 * 3.6e6) throw new Error("starý běh");
+    _aladinCache = a;
+  } catch { _aladinCache = null; }
+  return _aladinCache;
+}
+
+function localHourKey(ms) {
+  const s = new Date(ms).toLocaleString("sv-SE", { timeZone: state.tz });
+  return s.slice(0, 10) + "T" + s.slice(11, 13) + ":00"; // "2026-07-20T14:00"
+}
+
+// { temp: {iso: °C}, precip: {iso: mm} } pro nejbližší ALADIN bod, nebo null
+async function aladinSeries(lat, lon) {
+  const a = await loadAladin();
+  if (!a?.pts?.length) return null;
+  let best = 0, bd = Infinity;
+  for (let i = 0; i < a.pts.length; i++) {
+    const d = (a.pts[i][0] - lat) ** 2 + (a.pts[i][1] - lon) ** 2;
+    if (d < bd) { bd = d; best = i; }
+  }
+  if (bd > 0.3 * 0.3) return null; // > ~30 km od mřížky ČR → mimo ALADIN
+  const t = a.temp?.[String(best)];
+  if (!t) return null;
+  const p = a.precip?.[String(best)] || null;
+  const start = new Date(a.start_utc).getTime();
+  const temp = {}, precip = {};
+  for (let i = 0; i < t.length; i++) {
+    const iso = localHourKey(start + i * 3.6e6);
+    if (t[i] != null) temp[iso] = t[i];
+    if (p && p[i] != null) precip[iso] = p[i];
+  }
+  return { temp, precip };
+}
+
 // ── Shoda modelů → chip důvěry v hlavní kartě ───────────────────────────────
 function renderConfidence(rows) {
   const el = document.getElementById("confidence-chip");
@@ -171,6 +224,23 @@ export async function renderModelsPanel(lat, lon, signal) {
   try {
     const data = await fetchModels(lat, lon, signal);
     const series = modelSeries(data);
+    const h = data.hourly || {};
+    const times = h.time || [];
+
+    // srážková řada per Open-Meteo model (zarovnaná na times → {iso: mm})
+    const precipSeries = {};
+    for (const id of Object.keys(series)) {
+      const arr = h[`precipitation_${id}`];
+      if (!arr) continue;
+      const m = {};
+      for (let i = 0; i < times.length; i++) if (arr[i] != null) m[times[i]] = arr[i];
+      precipSeries[id] = m;
+    }
+
+    // ALADIN/ČHMÚ (mimo Open-Meteo) — přidej jako plnohodnotný model
+    const ala = state.inCZ ? await aladinSeries(lat, lon) : null;
+    if (ala) { series[ALADIN[0]] = ala.temp; precipSeries[ALADIN[0]] = ala.precip; }
+
     const ids = Object.keys(series);
     if (ids.length < 3) { panel.classList.remove("show"); return; }
     // mezitím se mohlo přepnout místo
@@ -178,19 +248,17 @@ export async function renderModelsPanel(lat, lon, signal) {
 
     const scores = verifyAndSnapshot(lat, lon, series);
 
-    // dnešek per model: max teplota + srážky (z precipitation_<model>)
-    const h = data.hourly || {};
-    const times = h.time || [];
+    // dnešek per model: max teplota + úhrn srážek — obojí z {iso: hodnota} řad,
+    // takže ALADIN (jiný zdroj) se počítá úplně stejně jako Open-Meteo modely
     const today = locDateStr();
     const rows = ids.map(id => {
-      const meta = MODELS.find(m => m[0] === id);
+      const meta = metaFor(id);
       let tmax = null, rain = 0;
-      const pArr = h[`precipitation_${id}`] || null;
-      for (let i = 0; i < times.length; i++) {
-        if (!times[i].startsWith(today)) continue;
-        const t = series[id][times[i]];
+      for (const iso of Object.keys(series[id])) {
+        if (!iso.startsWith(today)) continue;
+        const t = series[id][iso];
         if (t != null && (tmax == null || t > tmax)) tmax = t;
-        rain += pArr?.[i] ?? 0;
+        rain += precipSeries[id]?.[iso] ?? 0;
       }
       const sc = scores[id];
       return { id, label: meta[1], src: meta[2], tmax, rain,
