@@ -121,6 +121,43 @@ export function renderFcHero(fc) {
   hero.style.display = "flex";
 }
 
+// ── Shrnutí dne jednou větou (at a glance) ──────────────────────────────────
+// Syntetizuje příštích ~24 h do jedné čitelné věty: rozsah teplot + hlavní
+// jev (kdy déšť / jak zataženo) + případně silný vítr. To je ten "hero
+// moment" — než uživatel začne studovat grafy, ví, na čem je.
+const PHASE_WORD = hr => hr < 6 ? "v noci" : hr < 10 ? "ráno" : hr < 13 ? "dopoledne"
+  : hr < 17 ? "odpoledne" : hr < 21 ? "večer" : "v noci";
+
+export function renderDayHeadline(fc) {
+  const el = document.getElementById("fc-headline");
+  if (!el) return;
+  const h = fc.hourlyFull || [];
+  const temps = h.map(x => x.tempRaw).filter(v => v != null);
+  if (temps.length < 4) { el.style.display = "none"; return; }
+
+  const lo = Math.round(Math.min(...temps)), hi = Math.round(Math.max(...temps));
+  const parts = [lo === hi ? `${hi} °C` : `${lo}–${hi} °C`];
+
+  const rainIdx = h.findIndex(x => (x.precip || 0) >= 0.2);
+  if (rainIdx >= 0) {
+    const peak = Math.max(...h.map(x => x.precip || 0));
+    const word = peak >= 7.5 ? "vydatný déšť" : peak >= 2.5 ? "déšť" : "přeháňky";
+    parts.push(`${PHASE_WORD(+h[rainIdx].t.slice(0, 2))} ${word}`);
+    if (h.slice(rainIdx + 1).some(x => (x.precip || 0) < 0.1 && (x.cloud ?? 100) < 40))
+      parts.push("pak jasněji");
+  } else {
+    const win = h.slice(0, 12);
+    const cloud = win.reduce((s, x) => s + (x.cloud ?? 50), 0) / win.length;
+    parts.push(cloud < 30 ? "převážně jasno" : cloud < 70 ? "polojasno" : "zataženo, beze srážek");
+  }
+
+  const gust = Math.max(...h.slice(0, 12).map(x => x.gust || 0));
+  if (gust >= 45) parts.push(`nárazy až ${Math.round(gust)} km/h`);
+
+  el.textContent = parts.join(" · ");
+  el.style.display = "block";
+}
+
 export function renderFcNow(fc, minutely) {
   const el = document.getElementById("fc-now");
   const now = fc.hourly[0];

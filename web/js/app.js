@@ -13,7 +13,7 @@ import {
 } from "./stations.js";
 import {
   fetchOpenMeteo, parseFc24, parseMinutely15,
-  renderFcHero, renderFcNow, renderFc24, renderFc7, renderMeteogram, fetchAndRenderAQ,
+  renderFcHero, renderDayHeadline, renderFcNow, renderFc24, renderFc7, renderMeteogram, fetchAndRenderAQ,
   addModelSpread, addEnsembleFan,
 } from "./forecast.js";
 import {
@@ -95,6 +95,7 @@ async function showFc24(lat, lon, label) {
     const fc = parseFc24(data);
     const minutely = parseMinutely15(data);
     renderFcHero(fc);
+    renderDayHeadline(fc);
     renderFc24(fc, label);
     renderFcNow(fc, minutely);
     renderFc7(data, label);

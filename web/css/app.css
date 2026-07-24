@@ -1210,6 +1210,7 @@ button.ctrl.active { background: var(--accent); color: #fff;
 #lightning-trend.receding { color: var(--green, #30D158); }
 #lightning-chip.near { border-color: rgba(255, 69, 58, .6); background: rgba(255, 69, 58, .14); }
 
+#fc-headline { display: none; font-size: .82rem; font-weight: 600; color: var(--text); margin: .15rem 0 .4rem; line-height: 1.45; }
 /* ── Progresivní odhalování — pokročilá data ve sbalitelné sekci ─────────── */
 #more-panels { display: none; }             /* skryto, dokud panely nemají data */
 #more-panels.has-content { display: block; }
