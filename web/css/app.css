@@ -1207,6 +1207,27 @@ button.ctrl.active { background: var(--accent); color: #fff;
 #lightning-trend.receding { color: var(--green, #30D158); }
 #lightning-chip.near { border-color: rgba(255, 69, 58, .6); background: rgba(255, 69, 58, .14); }
 
+/* ── Progresivní odhalování — pokročilá data ve sbalitelné sekci ─────────── */
+#more-panels { display: none; }             /* skryto, dokud panely nemají data */
+#more-panels.has-content { display: block; }
+#more-toggle {
+  width: 100%; display: flex; align-items: center; justify-content: space-between;
+  background: var(--glass); border: 1px solid var(--glass-border); color: var(--text);
+  border-radius: var(--r-card); padding: .62rem .9rem; font: inherit;
+  font-size: .82rem; font-weight: 700; cursor: pointer;
+  backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+  transition: background .15s;
+}
+#more-toggle:hover { background: color-mix(in srgb, var(--text) 6%, var(--glass)); }
+.more-caret {
+  width: 7px; height: 7px; flex: none;
+  border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted);
+  transform: rotate(-45deg); transition: transform .2s; margin-right: 3px;
+}
+#more-panels:not(.collapsed) .more-caret { transform: rotate(45deg); margin-top: -3px; }
+.more-body { display: flex; flex-direction: column; gap: .5rem; margin-top: .5rem; }
+#more-panels.collapsed .more-body { display: none; }
+
 /* ── Modely pro tohle místo (9 modelů + přesnost) ───────────────────────── */
 #models-panel {
   display: none; background: var(--glass); border: 1px solid var(--glass-border);

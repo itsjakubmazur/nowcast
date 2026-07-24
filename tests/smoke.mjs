@@ -220,6 +220,10 @@ async function main() {
   // same-origin fixture routy (vendor/leaflet-velocity.min.js) — dřívější
   // fixtures byly všechny cross-origin, kde SW záměrně nezasahuje.
   const context = await browser.newContext({ serviceWorkers: "block" });
+  // Pokročilé panely (modely/ovzduší/obloha/…) jsou defaultně ve sbalené sekci
+  // "Podrobnější data" (display:none) → rozbal je, ať jsou viditelné pro
+  // waitForSelector(...show) v testech i pro vizuální kontrolu.
+  await context.addInitScript(() => localStorage.setItem("nowcast_more_open", "1"));
   await context.grantPermissions(["clipboard-read", "clipboard-write"]).catch(() => {});
   const page = await context.newPage();
 
@@ -354,6 +358,21 @@ async function main() {
   await page.waitForSelector("#aq-panel.show", { timeout: 5000 });
   const aqText = await page.textContent("#aq-panel");
   assertTrue(aqText.includes("PM2.5"), "panel kvality ovzduší se vykreslil");
+
+  // ── Sbalitelná sekce "Podrobnější data" ───────────────────────────────────
+  const moreHasContent = await page.evaluate(() =>
+    document.getElementById("more-panels")?.classList.contains("has-content"));
+  assertTrue(moreHasContent, "sekce Podrobnější data se ukázala (panely mají data)");
+  // teď je rozbalená (localStorage v testu) → sbal a ověř, že se tělo skryje
+  await page.click("#more-toggle");
+  await page.waitForTimeout(150);
+  const collapsedHidden = await page.evaluate(() => {
+    const b = document.getElementById("more-body");
+    return getComputedStyle(b).display === "none";
+  });
+  assertTrue(collapsedHidden, "klepnutí sbalí Podrobnější data (tělo skryté)");
+  await page.click("#more-toggle"); // zpět rozbalit pro další kontroly
+  await page.waitForTimeout(150);
 
   // ── Vlna PRO: bouřkové buňky, verifikace, bias stanice, průběh dne ────────
   const stormInfo = await page.evaluate(async () => {

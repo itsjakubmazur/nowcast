@@ -237,23 +237,33 @@
     <div class="fc7-title">7 dní — <span id="fc7-place">—</span></div>
     <div class="fc7-grid" id="fc7-grid"></div>
   </div>
-  <!-- 9 modelů + hodnocení přesnosti pro konkrétní místo -->
-  <div id="models-panel"></div>
-  <div class="aq-panel" id="aq-panel"></div>
-  <!-- Astro — slunce, měsíc, kvalita noci -->
-  <div id="astro-panel">
-    <div class="astro-title">Obloha &amp; astro</div>
-    <div id="astro-body"></div>
-  </div>
-  <!-- Zimní panel — jen v sezóně (sníh, náledí) -->
-  <div id="winter-panel">
-    <div class="astro-title">❄️ Zimní podmínky</div>
-    <div id="winter-body"></div>
-  </div>
-  <!-- Tento den v historii — rekordy ERA5 1991–2020 -->
-  <div id="history-panel">
-    <div class="astro-title">📜 Tento den v historii</div>
-    <div id="history-body"></div>
+  <!-- Pokročilá data — sbaleno, ať jádro (24h / průběh dne / meteogram / 7 dní)
+       dýchá; rozbalí se jedním klepnutím, stav se pamatuje -->
+  <div id="more-panels" class="collapsed">
+    <button id="more-toggle" type="button" aria-expanded="false" aria-controls="more-body">
+      <span>Podrobnější data</span>
+      <span class="more-caret" aria-hidden="true"></span>
+    </button>
+    <div class="more-body" id="more-body">
+      <!-- 9 modelů + hodnocení přesnosti pro konkrétní místo -->
+      <div id="models-panel"></div>
+      <div class="aq-panel" id="aq-panel"></div>
+      <!-- Astro — slunce, měsíc, kvalita noci -->
+      <div id="astro-panel">
+        <div class="astro-title">Obloha a astro</div>
+        <div id="astro-body"></div>
+      </div>
+      <!-- Zimní panel — jen v sezóně (sníh, náledí) -->
+      <div id="winter-panel">
+        <div class="astro-title">Zimní podmínky</div>
+        <div id="winter-body"></div>
+      </div>
+      <!-- Tento den v historii — rekordy ERA5 1991–2020 -->
+      <div id="history-panel">
+        <div class="astro-title">Tento den v historii</div>
+        <div id="history-body"></div>
+      </div>
+    </div>
   </div>
 </div>
 
