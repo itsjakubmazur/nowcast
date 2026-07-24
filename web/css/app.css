@@ -10,7 +10,7 @@
   --bg: #080C14;
   --text: #EDF2F9;
   --fg: #EDF2F9;
-  --muted: #94A2B5;
+  --muted: #AAB7C9;   /* zesíleno z #94A2B5 — nízký kontrast na skle (WCAG) */
   --rowline: rgba(237,242,249,.09);
 
   /* sklo */
@@ -44,7 +44,7 @@
   :root:not([data-theme]) {
     --bg: #E9EDF2;
     --text: #0E1A2B; --fg: #0E1A2B;
-    --muted: #5E6C80;
+    --muted: #51607A;   /* ztmaveno pro kontrast na světlém skle (WCAG) */
     --rowline: rgba(14,26,43,.09);
     --glass: rgba(255,255,255,.66);
     --glass2: rgba(255,255,255,.44);
@@ -66,7 +66,7 @@
 [data-theme="light"] {
   --bg: #E9EDF2;
   --text: #0E1A2B; --fg: #0E1A2B;
-  --muted: #5E6C80;
+  --muted: #51607A;   /* ztmaveno pro kontrast na světlém skle (WCAG) */
   --rowline: rgba(14,26,43,.09);
   --glass: rgba(255,255,255,.66);
   --glass2: rgba(255,255,255,.44);
@@ -395,6 +395,7 @@ button.glass-btn svg { width: 17px; height: 17px; display: block; }
 .rain-badge.yellow { background: color-mix(in srgb, var(--yellow) 20%, transparent); color: var(--orange); }
 .rain-badge.orange { background: color-mix(in srgb, var(--orange) 18%, transparent); color: var(--orange); }
 .rain-badge.red    { background: color-mix(in srgb, var(--red) 18%, transparent);    color: var(--red); }
+.rain-badge .rb-dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; flex: none; }
 .hint { color: var(--muted); font-size: .82rem; }
 .updated { color: var(--muted); font-size: .68rem; margin-top: .3rem; font-variant-numeric: tabular-nums; }
 
@@ -917,6 +918,10 @@ button.glass-btn svg { width: 17px; height: 17px; display: block; }
   min-height: 30px;
 }
 .layer-btn:hover { color: var(--text); }
+/* jednotné inline SVG ikony v ovládacích tlačítkách (místo emoji) */
+.layer-btn[data-icon], button.ctrl[data-icon] { display: inline-flex; align-items: center; gap: .34rem; }
+.uicon { width: 1.02em; height: 1.02em; flex: none; opacity: .92; }
+button.ctrl .uicon { width: 1.12em; height: 1.12em; }
 .layer-btn.active {
   color: var(--accent);
   box-shadow: var(--gshadow), inset 0 1px 0 var(--spec), inset 0 0 0 1.5px var(--accent);
@@ -1217,6 +1222,14 @@ button.ctrl.active { background: var(--accent); color: #fff;
 }
 #models-panel .mdl-head { color: var(--muted); font-size: .62rem; text-transform: uppercase; letter-spacing: .04em; }
 #models-panel .mdl-row.best { background: rgba(10, 132, 255, .08); border-radius: 8px; }
+#models-panel .mdl-rank {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 16px; height: 16px; border-radius: 50%; font-size: .58rem; font-weight: 800;
+  color: #fff; background: var(--muted);
+}
+#models-panel .mdl-rank.r1 { background: #F5C400; color: #3a2e00; }
+#models-panel .mdl-rank.r2 { background: #B8C2D0; color: #2a3140; }
+#models-panel .mdl-rank.r3 { background: #C88A5A; color: #3a2412; }
 #models-panel .mdl-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #models-panel .mdl-tmax { font-weight: 700; text-align: right; }
 #models-panel .mdl-rain { color: var(--blue); text-align: right; font-variant-numeric: tabular-nums; }

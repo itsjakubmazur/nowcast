@@ -1,4 +1,4 @@
-const CACHE_VERSION = "v8";
+const CACHE_VERSION = "v9";
 const STATIC_CACHE = `nowcast-static-${CACHE_VERSION}`;
 const DATA_CACHE = `nowcast-data-${CACHE_VERSION}`;
 
@@ -37,6 +37,7 @@ const STATIC_ASSETS = [
   "./js/models.js",
   "./js/safety.js",
   "./js/accum.js",
+  "./js/uiicons.js",
   "./fonts/Figtree.woff2",
   "./icon.svg",
   "./icons/icon-192.png",

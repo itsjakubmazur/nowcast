@@ -273,11 +273,10 @@ export async function renderModelsPanel(lat, lon, signal) {
 
     const ranked = rows.some(r => r.mae != null);
     rows.sort((a, b) => (a.mae ?? 99) - (b.mae ?? 99) || a.label.localeCompare(b.label));
-    const medals = ["🥇", "🥈", "🥉"];
 
     const body = rows.map((r, i) => `
       <div class="mdl-row${i === 0 && ranked && r.mae != null ? " best" : ""}">
-        <span class="mdl-medal">${ranked && r.mae != null && i < 3 ? medals[i] : ""}</span>
+        <span class="mdl-medal">${ranked && r.mae != null && i < 3 ? `<span class="mdl-rank r${i + 1}">${i + 1}</span>` : ""}</span>
         <span class="mdl-name" title="${esc(r.src)}">${esc(r.label)}</span>
         <span class="mdl-tmax">${Math.round(r.tmax)}°</span>
         <span class="mdl-rain">${r.rain >= 0.2 ? `${Math.round(r.rain * 10) / 10} mm` : "—"}</span>

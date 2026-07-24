@@ -210,27 +210,27 @@ export function renderRainBadge(ptId) {
   const as = assessRain(ptId);
   const warns = warningsForPt(ptId);
   const hasThunder = warns.some(w => /bouř|thunder/i.test(w.event));
-  let cls = "green", icon = "🟢", msg = "Bez srážek v nejbližší době";
+  let cls = "green", msg = "Bez srážek v nejbližší době";
   if (hasThunder) {
-    cls = "red"; icon = "🔴"; msg = "Výstraha: " + warns.find(w => /bouř/i.test(w.event))?.event;
+    cls = "red"; msg = "Výstraha: " + warns.find(w => /bouř/i.test(w.event))?.event;
   } else if (as && (as.status === "raining" || as.status === "soon")) {
     const when = localHM(new Date(as.startMs).toISOString());
     const peak = as.peak ?? 0;
     const descr = precipDescr(as.peak);
     if (as.status === "raining") {
       // mrholení není poplach — žlutá místo červené
-      cls = peak < 0.5 ? "yellow" : "red"; icon = peak < 0.5 ? "🟡" : "🔴";
+      cls = peak < 0.5 ? "yellow" : "red";
       msg = `${descr.now}${as.nearKm > 5 ? ` (~${as.nearKm} km)` : ""}`;
     }
-    else if (peak >= 7.5) { cls = "red"; icon = "🔴"; msg = `${descr.fut} od ${when}`; }
-    else if (peak >= 2.5) { cls = "orange"; icon = "🟠"; msg = `${descr.fut} od ${when}`; }
-    else { cls = "yellow"; icon = "🟡"; msg = `${descr.fut} od ${when}`; }
+    else if (peak >= 7.5) { cls = "red"; msg = `${descr.fut} od ${when}`; }
+    else if (peak >= 2.5) { cls = "orange"; msg = `${descr.fut} od ${when}`; }
+    else { cls = "yellow"; msg = `${descr.fut} od ${when}`; }
   } else if (as?.status === "possible") {
-    cls = "yellow"; icon = "🟡"; msg = `Srážky možné od ~${localHM(new Date(as.startMs).toISOString())}`;
+    cls = "yellow"; msg = `Srážky možné od ~${localHM(new Date(as.startMs).toISOString())}`;
   } else if (warns.length) {
-    cls = "yellow"; icon = "🟡"; msg = warns[0].event;
+    cls = "yellow"; msg = warns[0].event;
   }
-  wrap.innerHTML = `<div class="rain-badge ${cls}">${icon} ${esc(msg)}</div>`;
+  wrap.innerHTML = `<div class="rain-badge ${cls}"><span class="rb-dot"></span>${esc(msg)}</div>`;
 }
 
 // ── Hero countdown "Déšť za X min" ────────────────────────────────────────────

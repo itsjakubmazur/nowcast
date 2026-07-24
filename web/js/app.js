@@ -43,6 +43,7 @@ import { shareCurrentView, copyEmbedLink, initEmbedMode } from "./share.js";
 import { prefetchGlobalRadar } from "./globalrain.js";
 import { renderModelsPanel } from "./models.js";
 import { esc } from "./utils.js";
+import { initUiIcons } from "./uiicons.js";
 
 // ── Data fetch (graceful degradation — radar/grid kritické, zbytek volitelné) ─
 async function loadData() {
@@ -355,6 +356,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   initTheme();
   initToastClose();
   initEmbedMode();
+  initUiIcons();   // emoji v tlačítkách → jednotná SVG ikonografie
 
   try {
     await loadData();

@@ -84,11 +84,11 @@
       <input type="range" id="opacity-slider" min="0" max="100" value="70" style="width:70px" />
       <span id="opacity-val" style="font-size:.72rem;color:var(--muted);min-width:30px">70 %</span>
     </div>
-    <button class="ctrl" id="btn-global" title="Globální radarové dlaždice (RainViewer)">🌍 Svět</button>
-    <button class="ctrl" id="btn-satellite" title="Satelitní IR vrstva — oblačnost (RainViewer)">🛰️ Družice</button>
-    <button class="ctrl" id="btn-wind" title="Animované částice větru (10 m)">🌬️ Vítr</button>
-    <button class="ctrl" id="btn-hydro" title="Hlásné profily — stavy a průtoky toků (ČHMÚ)">🌊 Hladiny</button>
-    <button class="ctrl" id="btn-accum" title="Úhrn srážek za posledních 24 h (model)">💧 Úhrn</button>
+    <button class="ctrl" id="btn-global" data-icon="globe" title="Globální radarové dlaždice (RainViewer)">Svět</button>
+    <button class="ctrl" id="btn-satellite" data-icon="satellite" title="Satelitní IR vrstva — oblačnost (RainViewer)">Družice</button>
+    <button class="ctrl" id="btn-wind" data-icon="wind" title="Animované částice větru (10 m)">Vítr</button>
+    <button class="ctrl" id="btn-hydro" data-icon="waves" title="Hlásné profily — stavy a průtoky toků (ČHMÚ)">Hladiny</button>
+    <button class="ctrl" id="btn-accum" data-icon="droplets" title="Úhrn srážek za posledních 24 h (model)">Úhrn</button>
     <span id="radar-updated" style="font-size:.68rem;color:var(--muted)"></span>
   </div>
   <div class="rain-spark-wrap" id="rain-spark-wrap" style="display:none">
@@ -365,15 +365,15 @@
 
 <!-- Vrstvový selektor ČHMÚ markerů -->
 <div id="layer-selector">
-  <button class="layer-btn active" data-layer="temp">🌡️ Teplota</button>
-  <button class="layer-btn" data-layer="dewpoint">🌫️ Rosný bod</button>
-  <button class="layer-btn" data-layer="humidity">💧 Vlhkost</button>
-  <button class="layer-btn" data-layer="wind_kmh">🌬️ Vítr</button>
-  <button class="layer-btn" data-layer="precip_1h">🌧️ Srážky/hod</button>
-  <button class="layer-btn" data-layer="snow_cm">❄️ Sníh</button>
-  <button class="layer-btn" data-layer="pressure">🔵 Tlak</button>
-  <button class="layer-btn" data-layer="solar">☀️ Záření</button>
-  <button class="layer-btn" data-layer="visibility_m">👁️ Viditelnost</button>
+  <button class="layer-btn active" data-layer="temp" data-icon="thermometer">Teplota</button>
+  <button class="layer-btn" data-layer="dewpoint" data-icon="droplet">Rosný bod</button>
+  <button class="layer-btn" data-layer="humidity" data-icon="droplets">Vlhkost</button>
+  <button class="layer-btn" data-layer="wind_kmh" data-icon="wind">Vítr</button>
+  <button class="layer-btn" data-layer="precip_1h" data-icon="rain">Srážky/hod</button>
+  <button class="layer-btn" data-layer="snow_cm" data-icon="snow">Sníh</button>
+  <button class="layer-btn" data-layer="pressure" data-icon="gauge">Tlak</button>
+  <button class="layer-btn" data-layer="solar" data-icon="sun">Záření</button>
+  <button class="layer-btn" data-layer="visibility_m" data-icon="eye">Viditelnost</button>
 </div>
 
 <footer>Data: ČHMÚ (CC BY) · Open-Meteo (CC BY) · Radar: vlastní nowcast (pysteps) + RainViewer (globální dlaždice) · Stanice: Weather Underground · Verdikt: šablona + AI (Gemini) · Ikony: Meteocons (Bas Milius, MIT) · Blesky: Blitzortung.org</footer>
