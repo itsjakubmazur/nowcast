@@ -1170,6 +1170,10 @@ button.ctrl.active { background: var(--accent); color: #fff;
 #storm-impact.warn { background: rgba(255, 159, 10, .16); border: 1px solid rgba(255, 159, 10, .5); }
 #storm-impact.sev  { background: rgba(255, 69, 58, .18); border: 1px solid rgba(255, 69, 58, .6); }
 #storm-impact .si-title { font-weight: 800; font-size: .92rem; }
+#storm-impact .si-title { display: flex; align-items: center; gap: .4rem; }
+#storm-impact .si-bolt { width: 1.05em; height: 1.05em; flex: none; }
+#lightning-chip .uicon { width: 1em; height: 1em; vertical-align: -2px; margin-right: .25rem; }
+
 #storm-impact .si-sub { font-size: .74rem; color: var(--muted); margin-top: .15rem; }
 @keyframes si-pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(255,69,58,0); } 50% { box-shadow: 0 0 0 4px rgba(255,69,58,.12); } }
 
@@ -1192,13 +1196,12 @@ button.ctrl.active { background: var(--accent); color: #fff;
 #outlook-panel .ow-title { font-size: .78rem; font-weight: 700; margin-bottom: .3rem; }
 #outlook-panel .ow-sub { font-weight: 500; color: var(--muted); font-size: .66rem; }
 #outlook-panel .ow-msg { font-size: .78rem; line-height: 1.5; margin-bottom: .45rem; }
-#outlook-panel .ow-bars { display: flex; align-items: flex-end; gap: 2px; height: 40px; }
-#outlook-panel .ow-bars i {
-  flex: 1; min-width: 0; border-radius: 3px 3px 0 0; display: block; align-self: flex-end;
-}
+/* plochý časový pruh (odlišený od sloupcového minutového grafu nad ním) */
+#outlook-panel .ow-bars { display: flex; gap: 2px; height: 14px; border-radius: 7px; overflow: hidden; }
+#outlook-panel .ow-bars i { flex: 1; min-width: 0; display: block; }
 #outlook-panel .ow-bars i.wet { background: var(--blue, #0A84FF); }
-#outlook-panel .ow-bars i.dry { background: rgba(255, 255, 255, .1); }
-#outlook-panel .ow-bars i.dry-good { background: var(--green, #30D158); opacity: .55; }
+#outlook-panel .ow-bars i.dry { background: rgba(255, 255, 255, .09); }
+#outlook-panel .ow-bars i.dry-good { background: var(--green, #30D158); }
 #outlook-panel .ow-axis { display: flex; justify-content: space-between; font-size: .6rem; color: var(--muted); margin-top: .2rem; }
 
 /* ── Blesky: trend + blízko ─────────────────────────────────────────────── */

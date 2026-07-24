@@ -16,6 +16,7 @@ const P = {
   gauge: '<path d="M4.5 18a8 8 0 1 1 15 0"/><path d="M12 14l3.5-3"/>',
   sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M19.1 4.9l-1.8 1.8M6.7 17.3l-1.8 1.8"/>',
   eye: '<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>',
+  bolt: '<path d="M13 2 5 13h6l-1 9 8-12h-6z"/>',
 };
 
 export function uiIcon(name, cls = "uicon") {

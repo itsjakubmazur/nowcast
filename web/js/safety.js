@@ -7,6 +7,7 @@
 
 import { state } from "./state.js";
 import { haversine, esc, localHM } from "./utils.js";
+import { uiIcon } from "./uiicons.js";
 
 // ── 1) Zásah bouřkou ────────────────────────────────────────────────────────
 const HIT_MARGIN_KM = 4;   // okraj jádra + rezerva na nepřesnost dráhy
@@ -55,15 +56,14 @@ export function renderStormImpact(lat, lon) {
 
   const { cell, etaMin } = imp;
   const sev = stormSeverity(cell.dbz, cell.hail);
-  const title = etaMin <= 0
-    ? `⚡ ${sev.word[0].toUpperCase()}${sev.word.slice(1)} právě nad tebou`
-    : `⚡ ${sev.word[0].toUpperCase()}${sev.word.slice(1)} tě zasáhne za ~${etaMin} min`;
+  const w = `${sev.word[0].toUpperCase()}${sev.word.slice(1)}`;
+  const title = etaMin <= 0 ? `${w} právě nad tebou` : `${w} tě zasáhne za ~${etaMin} min`;
   const dirs = ["S", "SSV", "SV", "VSV", "V", "VJV", "JV", "JJV", "J", "JJZ", "JZ", "ZJZ", "Z", "ZSZ", "SZ", "SSZ"];
   const from = dirs[Math.round(((cell.dir_deg + 180) % 360) / 22.5) % 16];
   const sub = `${cell.dbz} dBZ · postupuje od ${from} rychlostí ${cell.speed_kmh} km/h`
     + (cell.hail ? " · riziko krup" : "");
   el.className = `storm-impact show ${sev.cls}`;
-  el.innerHTML = `<div class="si-title">${esc(title)}</div><div class="si-sub">${esc(sub)}</div>`;
+  el.innerHTML = `<div class="si-title">${uiIcon("bolt", "si-bolt")}${esc(title)}</div><div class="si-sub">${esc(sub)}</div>`;
 }
 
 // ── 2) Kdy vyrazit — 12h pás srážek + nejbližší suché okno ───────────────────
@@ -131,14 +131,16 @@ export function renderOutlookWindows(minutely, fc) {
     }
   }
 
-  // pás: sloupec za slot, mokrý = modrý, suchý = tlumený; nejbližší dobré okno zvýrazněné
+  // Plochý časový PRUH (ne sloupce — ať se to nepletlo s minutovým grafem
+  // srážek nad ním): každý segment = slot, mokrý modrý / suchý tlumený /
+  // nejbližší dobré okno zeleně. Intenzita jen tónem, ne výškou.
   const maxRate = Math.max(...tl.map(p => p.rate), 1);
   const bars = tl.map(p => {
     const wet = p.rate >= WET_RATE;
     const inGood = nextGood && p.ms >= nextGood[0] && p.ms < nextGood[1];
-    const h = wet ? Math.max(20, Math.round(p.rate / maxRate * 100)) : 10;
     const cls = wet ? "wet" : inGood ? "dry-good" : "dry";
-    return `<i class="${cls}" style="height:${h}%" title="${localHM(new Date(p.ms).toISOString())} · ${p.rate.toFixed(1)} mm/h"></i>`;
+    const op = wet ? (0.5 + 0.5 * Math.min(p.rate / maxRate, 1)).toFixed(2) : "";
+    return `<i class="${cls}"${op ? ` style="opacity:${op}"` : ""} title="${localHM(new Date(p.ms).toISOString())} · ${p.rate.toFixed(1)} mm/h"></i>`;
   }).join("");
 
   const ticks = [0, Math.floor(tl.length / 2), tl.length - 1]
