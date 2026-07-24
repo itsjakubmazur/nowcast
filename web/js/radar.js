@@ -313,6 +313,10 @@ export async function toggleWindLayer() {
     console.warn("Vítr:", e);
     state.windMode = false;
     btn?.classList.remove("active");
+    // Nenechávej uživatele hádat — dřív se tlačítko jen tiše vyplo a vypadalo
+    // to jako "nefunguje". wind_grid.json může chybět, když windgrid.py v CI
+    // vypršel (proto se teď cachuje mezi běhy).
+    if (btn) btn.title = "Větrná data zatím nejsou k dispozici — zkus to za chvíli";
   }
 }
 
