@@ -1,91 +1,94 @@
 """
-Diagnostická sonda dostupnosti dalších sítí meteostanic (ruční workflow_dispatch).
+Diagnostická sonda dostupnosti sítí meteostanic (ruční workflow_dispatch).
 
-Souhrn zjištění kol 1–3 — viz probe-sources.yml běhy:
-  * ČHMÚ now/: opravdu jen 40 stanic (průnik data ∩ metadata = 40, nic
-    "v datech ale ne v metadatech"). meta1 je globální WMO číselník (759
-    řádků včetně Reykjavíku), ne seznam českých stanic.
-  * ČHMÚ recent/data/10min/: 12 měsíčních podadresářů + ~11 875 denních
-    souborů; v 01/ je 482 souborů = 482 stanic. Měsíční soubory se uzavírají
-    po konci měsíce (lednový má Last-Modified 2. 3. 2026).
-  * GeoSphere AT: dataset.api.hub.geosphere.at, 288 stanic, 35 v našem bboxu.
-  * IMGW PL: 62 stanic, bez souřadnic (id_stacji = WMO id → lze dohledat).
-  * DWD: 974 POI souborů; souřadnice ve stations_list_CLIMAT_data.txt.
-  * Sensor.Community: 1092 záznamů v bboxu, 491 s teplotou (levné čidla).
+Souhrn kol 1–4:
+  * ČHMÚ now/ i recent/ denní: 40 stanic, tečka. meta1 je globální WMO
+    číselník (759 řádků včetně Reykjavíku), ne seznam českých stanic.
+    Měsíční větev recent/ má 482 stanic, ale uzavírá se ~2 měsíce zpětně.
+  * GeoSphere AT: dataset.api.hub.geosphere.at — 288 stanic, 35 u nás.
+  * IMGW PL: 62 stanic bez souřadnic (id_stacji = WMO id).
+  * DWD: 974 POI souborů, souřadnice v stations_list_CLIMAT_data.txt.
+  * Sensor.Community: 1092 v bboxu, 491 s teplotou — levná čidla, do
+    hodnocení přesnosti nepatří.
 
-Kolo 4 doplňuje jediné zbývající číslo, na kterém závisí největší položka:
-jak čerstvé jsou DENNÍ soubory v recent/10min? Pokud zaostávají o den, je to
-pro "teď" k ničemu, ale pro zpětné hodnocení přesnosti modelů zlato.
+Kolo 5 řeší celosvětové pokrytí. METAR už parsujeme, ale uměle ho ořezáváme
+českým bboxem — přitom je globální. Otázka je jen, jak velká ta data jsou
+a jestli je rozumnější je servírovat staticky (dlaždice) nebo přes worker.
 """
 
-import re
+import json
 import sys
+from collections import Counter
 from datetime import datetime, timezone
 
 import requests
 
 UA = {"User-Agent": "nowcast-probe/1.0 (+github actions)"}
-TIMEOUT = (15, 60)
-BASE = "https://opendata.chmi.cz/meteorology/climate"
+TIMEOUT = (15, 120)
+API = "https://aviationweather.gov/api/data/metar"
 
 
-def get(url, **kw):
-    return requests.get(url, headers=UA, timeout=TIMEOUT, **kw)
+def head(t):
+    print(f"\n{'=' * 70}\n{t}\n{'=' * 70}", flush=True)
 
 
 def main():
-    print(f"Sonda kolo 4 — {datetime.now(timezone.utc).isoformat()}")
-    print("=" * 70)
-    print("ČHMÚ recent/data/10min — kolik stanic a jak čerstvé denní soubory")
-    print("=" * 70)
+    print(f"Sonda kolo 5 — {datetime.now(timezone.utc).isoformat()}")
 
-    r = get(f"{BASE}/recent/data/10min/")
+    head("METAR globálně — kolik stanic a kolik to váží")
+    r = requests.get(API, params={"bbox": "-90,-180,90,180", "format": "json"},
+                     headers=UA, timeout=TIMEOUT)
+    print(f"  HTTP {r.status_code}, {len(r.content)} B "
+          f"({len(r.content) / 1_048_576:.1f} MB)")
+    print(f"  Content-Encoding: {r.headers.get('Content-Encoding')}")
+    print(f"  CORS Access-Control-Allow-Origin: "
+          f"{r.headers.get('Access-Control-Allow-Origin')!r}")
     if not r.ok:
-        print(f"  HTTP {r.status_code}")
+        print(f"  tělo: {r.text[:300]}")
         return
+    arr = r.json()
+    print(f"  hlášení: {len(arr)}")
+    uniq = {m.get("icaoId") for m in arr if m.get("icaoId")}
+    with_t = [m for m in arr if m.get("temp") is not None and m.get("lat") is not None]
+    print(f"  unikátních ICAO: {len(uniq)}, s teplotou i souřadnicí: {len(with_t)}")
 
-    daily = re.findall(r'(10m-0-20000-0-(\d+)-(\d{8})\.json)', r.text)
-    stations = {sid for _, sid, _ in daily}
-    dates = sorted({d for _, _, d in daily})
-    print(f"  denních souborů: {len(daily)}")
-    print(f"  unikátních stanic: {len(stations)}")
-    print(f"  rozsah dat: {dates[0]} … {dates[-1]}  ({len(dates)} dní)")
+    # Jak by vypadal náš kompaktní tvar?
+    compact = [{
+        "id": m.get("icaoId"), "lat": round(float(m["lat"]), 3),
+        "lon": round(float(m["lon"]), 3), "t": m.get("temp"),
+        "w": m.get("wspd"), "d": m.get("wdir"), "e": m.get("elev"),
+    } for m in with_t[:2000]]
+    blob = json.dumps(compact, separators=(",", ":"))
+    per = len(blob) / max(1, len(compact))
+    print(f"  kompaktní tvar: {per:.0f} B/stanice → "
+          f"celkem ~{per * len(with_t) / 1024:.0f} kB nekomprimovaně")
 
-    # Jak stará jsou data za nejnovější den?
-    newest = dates[-1]
-    sample = [f for f, _, d in daily if d == newest][:3]
-    for fn in sample:
-        rr = get(f"{BASE}/recent/data/10min/{fn}", stream=True)
-        lm = rr.headers.get("Last-Modified")
-        print(f"  {fn}: HTTP {rr.status_code}, Last-Modified {lm}")
-        # poslední časové razítko uvnitř souboru
-        txt = rr.text
-        stamps = re.findall(r'"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z)"', txt)
-        if stamps:
-            last = max(stamps)
-            age_h = (datetime.now(timezone.utc)
-                     - datetime.fromisoformat(last.replace("Z", "+00:00"))
-                     ).total_seconds() / 3600
-            print(f"    nejnovější měření v souboru: {last}  → stáří {age_h:.1f} h")
-        rr.close()
+    head("Rozložení do dlaždic 10° (kolik dlaždic je neprázdných)")
+    tiles = Counter()
+    for m in with_t:
+        tx = int((float(m["lon"]) + 180) // 10)
+        ty = int((float(m["lat"]) + 90) // 10)
+        tiles[(tx, ty)] += 1
+    print(f"  neprázdných dlaždic: {len(tiles)} (z 648 možných)")
+    counts = sorted(tiles.values(), reverse=True)
+    print(f"  největší dlaždice: {counts[:10]}")
+    print(f"  medián: {counts[len(counts) // 2]}, průměr: {sum(counts) / len(counts):.0f}")
+    print(f"  → typická dlaždice ≈ {per * counts[len(counts) // 2] / 1024:.1f} kB, "
+          f"největší ≈ {per * counts[0] / 1024:.0f} kB")
 
-    # Kolik stanic je v ČR (11xxx = české WMO bloky)
-    cz = {s for s in stations if s.startswith("11")}
-    print(f"  z toho s českým WMO blokem 11xxx: {len(cz)}")
-
-    # Číselník k recent/ — má souřadnice pro všech 482?
-    rm = get(f"{BASE}/recent/metadata/meta1-{dates[-1]}.json")
-    print(f"  meta1-{dates[-1]}: HTTP {rm.status_code}")
-    if rm.ok:
-        try:
-            values = rm.json()["data"]["data"]["values"]
-            sids = {re.search(r'(\d+)$', str(v[0])).group(1)
-                    for v in values if re.search(r'(\d+)$', str(v[0]))}
-            print(f"    řádků: {len(values)}, unikátních ID: {len(sids)}")
-            print(f"    PRŮNIK se stanicemi v datech: {len(stations & sids)}")
-            print(f"    ukázka: {values[0]}")
-        except Exception as e:
-            print(f"    parse chyba: {e}")
+    head("Kontrola pokrytí na pár světových místech")
+    for name, lat, lon in (("New York", 40.71, -74.01), ("Tokio", 35.68, 139.69),
+                           ("Sydney", -33.87, 151.21), ("Nairobi", -1.29, 36.82),
+                           ("São Paulo", -23.55, -46.63), ("Rychvald", 49.86, 18.36)):
+        near = [m for m in with_t
+                if abs(float(m["lat"]) - lat) < 0.9 and abs(float(m["lon"]) - lon) < 0.9]
+        best = min(near, key=lambda m: (float(m["lat"]) - lat) ** 2
+                   + (float(m["lon"]) - lon) ** 2, default=None)
+        if best:
+            print(f"  {name:12s}: {len(near):3d} stanic do ~100 km, "
+                  f"nejbližší {best.get('icaoId')} {best.get('temp')}°C")
+        else:
+            print(f"  {name:12s}: nic v okolí")
 
 
 if __name__ == "__main__":
