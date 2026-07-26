@@ -169,7 +169,15 @@ def fill_names(icaos, cache):
             if not r.ok:
                 print(f"  stationinfo HTTP {r.status_code}", file=sys.stderr)
                 break
-            for row in r.json() or []:
+            # Odpověď chodí buď jako pole, nebo zabalená v {"data": [...]}.
+            # Bez tohohle rozlišení by se iterovaly KLÍČE slovníku (stringy)
+            # a row.get() spadlo na AttributeError — což si vnější try spolkne
+            # a jména se tiše nedoplní.
+            payload = r.json()
+            rows = payload if isinstance(payload, list) else (payload or {}).get("data") or []
+            for row in rows:
+                if not isinstance(row, dict):
+                    continue
                 icao = (row.get("icaoId") or row.get("id") or "").strip()
                 city = city_from_site(row.get("site") or "")
                 if icao and city:
@@ -337,7 +345,10 @@ def build_world_tiles(now):
         fill_names(icaos, names)
         save_name_cache(names, now)
     except Exception as e:
-        print(f"  doplnění jmen selhalo: {e} — jedu s ICAO", file=sys.stderr)
+        import traceback
+        print(f"  doplnění jmen selhalo: {type(e).__name__}: {e} — jedu s ICAO",
+              file=sys.stderr)
+        traceback.print_exc()
     named = 0
     for rec in best.values():
         city = names.get(rec["id"].removeprefix("metar-"))
@@ -466,9 +477,12 @@ def main():
     # Obě větve jsou nezávislé: když spadne domácí bbox, svět se stejně
     # postaví (a naopak). Dřív by jeden `return` tiše zabil obojí.
     home = build_home(now)
+    print(f"  domácí větev vrátila: {len(home) if home else 0} stanic", file=sys.stderr)
     build_world_tiles(now)
     if home:
         update_history(home, now)
+    else:
+        print("  historie se nepíše — domácí větev nic nevrátila", file=sys.stderr)
 
 
 if __name__ == "__main__":
