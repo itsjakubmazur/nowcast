@@ -200,6 +200,101 @@ function prepareServeDir() {
       precip: { "0": temp.map(() => 0) },
     }));
   }
+
+  // ── Nová data ČHMÚ ──────────────────────────────────────────────────────
+  // Mřížky se párují přes t0_utc a n_pts s forecast_grid.json (3 body), takže
+  // fixture musí sedět — jinak se panely SPRÁVNĚ nezobrazí a test by hlásil
+  // regresi tam, kde je ve skutečnosti funkční pojistka.
+  {
+    const gridPath = path.join(SERVE, "data", "forecast_grid.json");
+    const grid = JSON.parse(fs.readFileSync(gridPath, "utf8"));
+    const nowIso2 = new Date().toISOString();
+
+    // COTREC: bod 0 (testovací lokace) dostane déšť až ve 4. kroku = za 40 min.
+    // forecast_grid má pro týž bod act[0] se startem hned → metody se liší,
+    // což je zajímavější případ než shoda.
+    fs.writeFileSync(path.join(SERVE, "data", "chmi_fct.json"), JSON.stringify({
+      generated_at_utc: nowIso2,
+      base_utc: new Date(Date.now() - 4 * 60000).toISOString(),
+      age_min: 4, source: "ČHMÚ COTREC (composite/fct_maxz)", method: "COTREC",
+      step_min: 10, horizon_h: 1, threshold_mm_h: 0.1,
+      peak_mm_h: 1.8, total_mm: 0.5,
+      timeseries: [],
+      grid: {
+        t0_utc: grid.t0_utc, n_pts: grid.pts.length, step_min: 10,
+        series: { "0": [0, 0, 0, 1.2, 1.8, 0.4] },
+      },
+    }));
+
+    fs.writeFileSync(path.join(SERVE, "data", "echotop.json"), JSON.stringify({
+      generated_at_utc: nowIso2, obs_utc: nowIso2, age_min: 2,
+      source: "ČHMÚ ETOP (composite/echotop, hladina 4 dBZ)",
+      box_px: 2, box_km: 6.2, grid_t0_utc: grid.t0_utc, n_pts: grid.pts.length,
+      max_m: 11800, max_severity: "extrémní", p95_m: 9200, p99_m: 11000,
+      coverage_pct: 41.2,
+      thresholds_m: { "extrémní": 11000, "silná": 8000, "mírná": 5000, "mělká": 0 },
+      tops_m: { "0": 9400 },
+    }));
+
+    fs.writeFileSync(path.join(SERVE, "data", "chmi_aero.json"), JSON.stringify({
+      generated_at_utc: nowIso2,
+      source: "ČHMÚ — radiosondáž (weather/radiosounding)",
+      caveat: "Dvě stanice, dva vzestupy denně.",
+      units: { cape: "J/kg", cin: "J/kg", t_konv: "°C" },
+      unverified: ["kkh_raw", "vkh_raw"],
+      cape_levels: { "velmi silná": 2500, "silná": 1000, "mírná": 300, "slabá": 0 },
+      stations: [{
+        name: "Praha-Libuš", lat: 50.008, lon: 14.447,
+        file: "26072612_Praha_ascent_vypis_111506.csv",
+        sounding_utc: new Date(Date.now() - 6 * 3600000).toISOString(), age_h: 6,
+        cape: 1450, cin: -120, dci: 21.5, t_konv: 34,
+        vkh_raw: [2.5, 700], kkh_raw: [1.6, 656], cape_label: "silná",
+      }],
+    }));
+
+    fs.writeFileSync(path.join(SERVE, "data", "chmi_air.json"), JSON.stringify({
+      generated_at_utc: nowIso2, observed_utc: nowIso2, age_min: 52,
+      source: "ČHMÚ — státní síť imisního monitoringu (air_quality/now)",
+      count: 1, components: ["NO2", "O3", "PM10", "PM2_5"],
+      stations: [{
+        code: "APRG", name: "Praha 4-Libuš", lat: 50.007, lon: 14.446,
+        elev: 302, region: "Praha", time_utc: nowIso2, index: 1.2,
+        v: {
+          PM2_5: { val: 8.4, unit: "µg∙m⁻³" }, PM10: { val: 14.1, unit: "µg∙m⁻³" },
+          NO2: { val: 11.7, unit: "µg∙m⁻³" }, O3: { val: 62.3, unit: "µg∙m⁻³" },
+        },
+      }],
+    }));
+
+    fs.writeFileSync(path.join(SERVE, "data", "chmi_normals.json"), JSON.stringify({
+      period: "1991_2020", generated_at_utc: nowIso2, count: 1,
+      elements: ["SRA", "T", "TMA", "TMI"],
+      stations: {
+        "0-20000-0-11518": {
+          name: "Praha-Ruzyně", lat: 50.10, lon: 14.26, elev: 380,
+          normals: {
+            T: [-0.5, 0.6, 4.2, 9.4, 13.9, 17.4, 19.2, 18.8, 14.2, 9.2, 4.4, 0.7],
+            TMA: [2.1, 4.0, 9.0, 15.1, 19.6, 23.1, 25.2, 24.9, 19.6, 13.5, 7.2, 3.0],
+            TMI: [-3.1, -2.5, 0.2, 3.9, 8.3, 11.8, 13.5, 13.2, 9.4, 5.6, 1.6, -1.9],
+            SRA: [26, 23, 30, 33, 61, 66, 74, 68, 44, 36, 32, 29],
+          },
+        },
+      },
+    }));
+
+    fs.writeFileSync(path.join(SERVE, "data", "chmi_forecast.json"), JSON.stringify({
+      generated_at_utc: nowIso2,
+      source: "ČHMÚ — textová předpověď (weather/forecast/now)",
+      file: "web_pCRntx_262100.json", age_h: 1.2,
+      issued_utc: new Date(Date.now() - 72 * 60000).toISOString(),
+      author: "Filip Smola", place: "pro Českou republiku", nuts: "CZ",
+      headline: "Předpověď na noc",
+      blocks: [
+        { name: "textIntro", headline: null, text: "Teplá noc s převážně velkou oblačností." },
+        { name: "textWeather", headline: "Počasí (22-07):", text: "Převládne velká oblačnost, místy přeháňky." },
+      ],
+    }));
+  }
 }
 
 function startServer() {
@@ -808,6 +903,88 @@ async function main() {
     `řádka naměřených srážek se vykreslila ("${rainSt.text}")`);
   assertTrue(rainSt.far === null,
     `mimo dosah 25 km se srážkoměr nepoužije (${JSON.stringify(rainSt.far)})`);
+
+  // ── Nové panely nad daty ČHMÚ ───────────────────────────────────────────
+  // Ověřuje se hlavně párování mřížek: COTREC a echotop se na body napojují
+  // přes INDEX, takže když se rozejde t0_utc nebo počet bodů, MUSÍ se panel
+  // schovat, ne ukázat hodnotu z cizího místa.
+  const chmiX = await page.evaluate(async () => {
+    const { state } = await import("./js/state.js");
+    const m = await import("./js/chmidata.js");
+    m.renderChmiExtras(26.0);   // dnešní maximum 26 °C proti normálu 25,2
+
+    const grab = id => {
+      const el = document.getElementById(id);
+      return { shown: el?.classList.contains("show"), text: el?.textContent || "" };
+    };
+    const out = {
+      cotrec: grab("cotrec-card"),
+      convect: grab("convect-panel"),
+      air: grab("air-panel"),
+      normal: grab("normal-panel"),
+      text: grab("chmitext-panel"),
+      cotrecLoaded: !!state.COTREC, etLoaded: !!state.ECHOTOP,
+      airLoaded: !!state.CHMI_AIR, normLoaded: !!state.CHMI_NORMALS,
+      nearAir: m.nearestAirStation(50.008, 14.447)?.name,
+      farAir: m.nearestAirStation(10.0, 10.0),
+      nearNorm: m.nearestNormalStation(50.09, 14.40)?.name,
+      farNorm: m.nearestNormalStation(10.0, 10.0),
+    };
+
+    // Rozejití mřížek: podvrhneme jiné t0_utc → COTREC se musí schovat.
+    const orig = state.COTREC.grid.t0_utc;
+    state.COTREC.grid.t0_utc = "1999-01-01T00:00:00+00:00";
+    m.renderCotrec();
+    out.cotrecAfterMismatch = document.getElementById("cotrec-card")?.classList.contains("show");
+    state.COTREC.grid.t0_utc = orig;
+
+    // Rozejití počtu bodů u echotopu → hodnota PRO MÍSTO musí zmizet.
+    // Celostátní maximum na párování bodů nezávisí, takže smí zůstat —
+    // proto se tu netestuje skrytí celého panelu, ale konkrétní řádka.
+    const origN = state.ECHOTOP.n_pts;
+    state.ECHOTOP.n_pts = 999;
+    const origAero = state.CHMI_AERO;
+    state.CHMI_AERO = null;          // ať zbyde jen echotop jako zdroj řádků
+    m.renderConvect();
+    out.convectAfterMismatch = document.getElementById("convect-body")?.textContent || "";
+    state.ECHOTOP.n_pts = origN;
+    state.CHMI_AERO = origAero;
+    m.renderChmiExtras(26.0);
+    return out;
+  });
+
+  assertTrue(chmiX.cotrecLoaded && chmiX.etLoaded && chmiX.airLoaded && chmiX.normLoaded,
+    "nová data ČHMÚ se načetla (chmi_fct, echotop, chmi_air, chmi_normals)");
+  assertTrue(chmiX.cotrec.shown && /COTREC/.test(chmiX.cotrec.text),
+    `karta druhého názoru se vykreslila ("${chmiX.cotrec.text.slice(0, 90)}")`);
+  // fixture: COTREC dá déšť ve 4. kroku (40 min), forecast_grid hned → neshoda
+  assertTrue(/liší se/.test(chmiX.cotrec.text),
+    `rozdíl mezi metodami se pojmenoval ("${chmiX.cotrec.text.slice(0, 90)}")`);
+  assertTrue(chmiX.cotrecAfterMismatch === false,
+    "při rozejití t0_utc se COTREC schová místo čtení cizího bodu");
+  assertTrue(!/u vás/.test(chmiX.convectAfterMismatch),
+    `při rozejití mřížky zmizí hodnota pro místo ("${chmiX.convectAfterMismatch.slice(0, 70)}")`);
+  assertTrue(/Nejvyšší nad ČR/.test(chmiX.convectAfterMismatch),
+    "celostátní maximum na párování bodů nezávisí, takže zůstává");
+
+  assertTrue(chmiX.convect.shown && /9,4 km/.test(chmiX.convect.text),
+    `výška vrcholů u místa se vykreslila ("${chmiX.convect.text.slice(0, 90)}")`);
+  assertTrue(/1450 J\/kg/.test(chmiX.convect.text) && /silná/.test(chmiX.convect.text),
+    `CAPE z aerologie se vykreslil ("${chmiX.convect.text.slice(0, 140)}")`);
+  assertTrue(/drží pokličku/.test(chmiX.convect.text),
+    "silně záporný CIN se pojmenuje jako zábrana konvekce");
+
+  assertTrue(chmiX.air.shown && /PM2,5/.test(chmiX.air.text) && /8,4/.test(chmiX.air.text),
+    `měřené ovzduší se vykreslilo ("${chmiX.air.text.slice(0, 90)}")`);
+  assertTrue(chmiX.nearAir === "Praha 4-Libuš" && chmiX.farAir === null,
+    `stanice ovzduší se hledá v dosahu (${chmiX.nearAir}, daleko: ${JSON.stringify(chmiX.farAir)})`);
+
+  assertTrue(chmiX.normal.shown && chmiX.nearNorm === "Praha-Ruzyně",
+    `normál z nejbližší stanice (${chmiX.nearNorm})`);
+  assertTrue(chmiX.farNorm === null,
+    "mimo dosah 40 km se normál nepoužije");
+  assertTrue(chmiX.text.shown && /Teplá noc/.test(chmiX.text.text),
+    `textová předpověď ČHMÚ se vykreslila ("${chmiX.text.text.slice(0, 70)}")`);
 
   // Teploty na mapě: nativně zapnuté, tlačítko je skrývá (jako vrstva větru).
   const tempsOn = await pageMod.evaluate(async () => {

@@ -198,6 +198,8 @@
     <!-- Kontrola proti nejbližší meteostanici (bias modelu) -->
     <div id="station-check"></div>
     <div id="rain-measured"></div>
+    <!-- Druhý názor: publikovaná extrapolace ČHMÚ (COTREC) vedle naší -->
+    <div id="cotrec-card"></div>
   </div>
 
   <!-- Aktivitní indexy -->
@@ -266,6 +268,26 @@
       <div id="history-panel">
         <div class="astro-title">Tento den v historii</div>
         <div id="history-body"></div>
+      </div>
+      <!-- Měřená kvalita ovzduší — státní síť imisního monitoringu ČHMÚ -->
+      <div id="air-panel">
+        <div class="astro-title">Ovzduší — měřeno</div>
+        <div id="air-body"></div>
+      </div>
+      <!-- Normál 1991–2020 z nejbližší klimatologické stanice -->
+      <div id="normal-panel">
+        <div class="astro-title">Normál 1991–2020</div>
+        <div id="normal-body"></div>
+      </div>
+      <!-- Prostředí pro bouřky — aerologie + výška vrcholů -->
+      <div id="convect-panel">
+        <div class="astro-title">Prostředí pro bouřky</div>
+        <div id="convect-body"></div>
+      </div>
+      <!-- Oficiální textová předpověď ČHMÚ -->
+      <div id="chmitext-panel">
+        <div class="astro-title">Slovy ČHMÚ</div>
+        <div id="chmitext-body"></div>
       </div>
     </div>
   </div>

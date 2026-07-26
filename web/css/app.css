@@ -1148,6 +1148,42 @@ button.ctrl.active { background: var(--accent); color: #fff;
 #rain-measured b { color: var(--fg); }
 #rain-measured.rain-wet b { color: var(--blue, #0A84FF); }
 
+/* ── Druhý názor: COTREC ČHMÚ ───────────────────────────────────────────────
+   Sesterská řádka ke station-check a rain-measured. Barva nese informaci:
+   zelená = dvě nezávislé metody se shodly, oranžová = neshodly. */
+#cotrec-card { display: none; font-size: .72rem; color: var(--muted); margin-top: .3rem; line-height: 1.45; }
+#cotrec-card.show { display: block; }
+#cotrec-card b { color: var(--fg); }
+#cotrec-card .muted { color: var(--muted); opacity: .85; }
+#cotrec-card.cotrec-agree b:first-child { color: var(--green, #30D158); }
+#cotrec-card.cotrec-disagree b:first-child { color: var(--orange, #FF9F0A); }
+
+/* ── Panely nad daty ČHMÚ (ovzduší, normály, bouřkové prostředí, text) ─────
+   Sdílí vzhled s astro-panel, ať sekce Podrobnější data drží jednotný rytmus. */
+#air-panel, #normal-panel, #convect-panel, #chmitext-panel { display: none; }
+#air-panel.show, #normal-panel.show, #convect-panel.show, #chmitext-panel.show { display: block; }
+
+.ct-row { display: flex; align-items: baseline; justify-content: space-between; gap: .5rem;
+          padding: .28rem 0; border-bottom: 1px solid var(--hairline, rgba(128,128,128,.14)); font-size: .8rem; }
+.ct-row:last-of-type { border-bottom: 0; }
+.ct-row > span:first-child { color: var(--muted); }
+.ct-row b { color: var(--fg); font-variant-numeric: tabular-nums; }
+.ct-row .muted { color: var(--muted); font-weight: 400; font-size: .74rem; }
+.ct-note { margin-top: .4rem; font-size: .68rem; color: var(--muted); line-height: 1.45; opacity: .9; }
+
+.air-head { font-size: .8rem; color: var(--fg); margin-bottom: .35rem; }
+.air-head .muted { color: var(--muted); font-size: .72rem; }
+.air-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: .35rem; }
+.air-chip { background: var(--chip-bg, rgba(128,128,128,.10)); border-radius: 9px; padding: .32rem .4rem;
+            display: flex; flex-direction: column; gap: .05rem; }
+.air-chip span { font-size: .64rem; color: var(--muted); }
+.air-chip b { font-size: .86rem; color: var(--fg); font-variant-numeric: tabular-nums; }
+.air-chip i { font-size: .6rem; color: var(--muted); font-style: normal; }
+
+.ctx-head { font-size: .8rem; color: var(--fg); font-weight: 600; margin-bottom: .3rem; }
+.ctx-block { font-size: .76rem; color: var(--fg); line-height: 1.5; margin: 0 0 .4rem; }
+.ctx-block b { color: var(--muted); font-weight: 600; }
+
 /* Popisky teplot ze světových stanic — o stupínek decentnější než české
    stanice, ať je poznat, co je hustá domácí síť a co doplněk z letišť. */
 .temp-label-marker.wt-label { font-size: .66rem; opacity: .92; padding: 1px 4px; }

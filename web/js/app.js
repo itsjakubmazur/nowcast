@@ -33,6 +33,7 @@ import {
   renderDayTimeline, renderStationCheck, renderRainMeasured,
 } from "./extras.js";
 import { renderClimateAnomaly, renderDayInHistory } from "./climate.js";
+import { renderChmiExtras } from "./chmidata.js";
 import { initSettingsPanel, applySettingsOnLoad, saveSettings } from "./settings.js";
 import { initCompare, showCompareBtn } from "./compare.js";
 import { toggleHydro } from "./hydro.js";
@@ -74,13 +75,27 @@ async function loadData() {
     fetchJson("accuracy.json"),
     fetchJson("metar_stations.json"),
     fetchJson("chmi_rain.json"),
+    fetchJson("chmi_fct.json"),
+    fetchJson("echotop.json"),
+    fetchJson("chmi_air.json"),
+    fetchJson("chmi_aero.json"),
+    fetchJson("chmi_normals.json"),
+    fetchJson("chmi_forecast.json"),
   ]);
-  const [wu, chmi, accuracy, metar, chmiRain] = optional.map(r => (r.status === "fulfilled" ? r.value : null));
+  const [wu, chmi, accuracy, metar, chmiRain,
+    cotrec, echotop, chmiAir, chmiAero, chmiNormals, chmiText] =
+    optional.map(r => (r.status === "fulfilled" ? r.value : null));
   state.WU = wu;
   state.CHMI = chmi;
   state.ACCURACY = accuracy;
   state.METAR = metar;
   state.CHMI_RAIN = chmiRain;
+  state.COTREC = cotrec;
+  state.ECHOTOP = echotop;
+  state.CHMI_AIR = chmiAir;
+  state.CHMI_AERO = chmiAero;
+  state.CHMI_NORMALS = chmiNormals;
+  state.CHMI_TEXT = chmiText;
 }
 
 // ── Forecast pro vybrané místo (24h strip + meteogram + AQ + AI verdikt) ────
@@ -131,6 +146,10 @@ async function showFc24(lat, lon, label) {
       // v kterémkoli z nich sebere i všechny následující (což mi tenhle panel
       // rovnou předvedl — shodil kartu verifikace pod sebou).
       try { renderRainMeasured(); } catch (e) { console.error("rain-measured:", e); }
+      // Panely nad dosud nevyužitými daty ČHMÚ (COTREC, echotop, aerologie,
+      // ovzduší, normály, textová předpověď). Uvnitř si každý hlídá vlastní
+      // try, takže výjimka v jednom nesebere zbytek.
+      renderChmiExtras(data?.daily?.temperature_2m_max?.[0]);
       renderVerifCard();                      // "Trefili jsme se?" po dnech
       addModelSpread(lat, lon, fc);           // async — pásmo nejistoty do meteogramu
       addEnsembleFan(lat, lon, data);         // async — rozptyl ensemble do 7 dní

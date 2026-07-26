@@ -15,6 +15,12 @@ export const state = {
   METAR: null,          // letištní stanice doma (doplněk řídké sítě ČHMÚ)
   METAR_WORLD: null,    // dlaždice 10° pro aktuální místo mimo ČR (lazy)
   CHMI_RAIN: null,      // srážkoměrná síť ČHMÚ (436 stanic, jen srážky)
+  COTREC: null,         // publikovaná extrapolace ČHMÚ (COTREC) — druhý názor
+  ECHOTOP: null,        // výška horní hranice radarového odrazu (hloubka konvekce)
+  CHMI_AIR: null,       // měřená kvalita ovzduší (státní síť imisního monitoringu)
+  CHMI_AERO: null,      // aerologie — CAPE/CIN z radiosondáží Praha a Prostějov
+  CHMI_NORMALS: null,   // klimatické normály 1991–2020 po stanicích
+  CHMI_TEXT: null,      // oficiální textová předpověď ČHMÚ
   worldTempMarkers: [], // popisky teplot na mapě (worldtemp.js)
   // Vypínač popisků stanic (tlačítko Teploty). Vlastníkem logiky je
   // worldtemp.js; tady je jen výchozí hodnota, protože renderChmiMarkers()
