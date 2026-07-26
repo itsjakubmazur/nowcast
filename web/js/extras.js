@@ -371,7 +371,9 @@ export function renderStationCheck(fc) {
   const diffStr = absD >= 1
     ? ` — o <b>${absD.toFixed(1).replace(".", ",")} °C ${diff > 0 ? "tepleji" : "chladněji"}</b> než model`
     : " — model sedí";
-  const adjStr = Math.abs(st.elevDiff || 0) >= 100 ? " (přepočteno na výšku)" : "";
+  // Přiznáme jen skutečně provedený přepočet — dřív se hláška řídila
+  // vlastním prahem 100 m, takže mohla tvrdit něco jiného, než se stalo.
+  const adjStr = st.lapseApplied ? " (přepočteno na výšku)" : "";
   el.innerHTML = `Stanice <b>${esc(st.name)}</b> (${st.distKm.toFixed(0)} km) hlásí `
     + `<b>${measured.toFixed(1).replace(".", ",")} °C</b>${adjStr}${diffStr}.`;
   el.classList.toggle("station-off", absD >= 2);

@@ -64,8 +64,20 @@ function saveStore(s) {
 // Cenou za větší dosah je výškový rozdíl (stanice na kopci měří jinak než
 // obec v údolí), proto teplotu přepočítáme standardním gradientem 0,65 °C
 // na 100 m na nadmořskou výšku vybraného místa (state.elevation z Open-Meteo).
+//
+// POZOR, ten přepočet je aproximace, ne fyzikální jistota. Gradient 0,65 °C/100 m
+// platí pro promíchanou atmosféru (běžný slunečný den). Při TEPLOTNÍ INVERZI —
+// jasná noc, mlha v kotlině, zimní situace — je gradient obrácený: nahoře je
+// tepleji než dole. Tehdy přepočet výsledek ZHORŠÍ. Proto:
+//   * pod 50 m rozdílu nepřepočítáváme vůbec (je to v šumu měření),
+//   * nad 800 m rozdílu stanici radši nepoužijeme — extrapolovat přes takový
+//     převýšení je hádání, ne měření.
+// Se 296 teplotními stanicemi ČHMÚ (dřív 40) je navíc nejbližší stanice
+// obvykle tak blízko, že korekce vyjde skoro nulová a celý problém mizí.
 const STATION_MAX_KM = 40;
 const LAPSE_C_PER_M = 0.0065;
+const LAPSE_MIN_DZ = 50;    // menší rozdíl nemá cenu přepočítávat
+const LAPSE_MAX_DZ = 800;   // větší převýšení = stanice není reprezentativní
 
 export function nearestFreshStation(lat, lon) {
   const all = [...(state.CHMI?.stations || []), ...(state.WU?.stations || []),
@@ -82,8 +94,13 @@ export function nearestFreshStation(lat, lon) {
 
   const elevHere = state.elevation;
   const dz = (elevHere != null && best.elev != null) ? elevHere - best.elev : 0;
-  const tempAdj = Math.round((best.temp - dz * LAPSE_C_PER_M) * 10) / 10;
-  return { ...best, distKm: bd, tempAdj, elevDiff: dz };
+  if (Math.abs(dz) > LAPSE_MAX_DZ) return null;   // radši nic než hádání
+  // Malý rozdíl neopravujeme — přepočet o 0,2 °C jen předstírá přesnost.
+  const tempAdj = Math.abs(dz) < LAPSE_MIN_DZ
+    ? best.temp
+    : Math.round((best.temp - dz * LAPSE_C_PER_M) * 10) / 10;
+  return { ...best, distKm: bd, tempAdj, elevDiff: dz,
+           lapseApplied: Math.abs(dz) >= LAPSE_MIN_DZ };
 }
 
 async function fetchModels(lat, lon, signal) {
