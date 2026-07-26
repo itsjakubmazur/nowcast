@@ -82,6 +82,11 @@ const LAPSE_MAX_DZ = 800;   // větší převýšení = stanice není reprezenta
 export function nearestFreshStation(lat, lon) {
   const all = [...(state.CHMI?.stations || []), ...(state.WU?.stations || []),
     ...(state.METAR?.stations || []), ...(state.METAR_WORLD?.stations || [])];
+  // POZN.: zkoušel jsem sem přidat výběr podle kombinace vzdálenosti a
+  // výškového rozdílu (stanice na hřebeni je pro údolí špatná reference).
+  // Shodilo to smoke test načítání světových dlaždic způsobem, který jsem
+  // nestihl vysvětlit — a neotestovaná "chytrost" ve výběru referenční
+  // stanice je horší než poctivě nejbližší. Vráceno, k dořešení.
   let best = null, bd = Infinity;
   for (const s of all) {
     if (s.temp == null || s.lat == null) continue;
