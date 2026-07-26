@@ -22,6 +22,7 @@ import math
 import random
 import re
 import sys
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
@@ -54,15 +55,25 @@ PREV_MAX_AGE_H = 3.0   # starší grid už není lepší než interpolace ze sou
 
 
 def _session() -> requests.Session:
-    """Session s keep-alive — druhý a třetí batch pak neplatí nový TLS handshake."""
+    """Session s keep-alive — opakovaný pokus pak neplatí nový TLS handshake."""
     s = requests.Session()
     s.headers.update({"User-Agent": "nowcast-pipeline/1.0 (+github actions)"})
-    adapter = HTTPAdapter(pool_connections=MAX_WORKERS, pool_maxsize=MAX_WORKERS * 2)
+    adapter = HTTPAdapter(pool_connections=2, pool_maxsize=4)
     s.mount("https://", adapter)
     return s
 
 
-SESSION = _session()
+# requests.Session není oficiálně thread-safe, a batche teď jedou paralelně —
+# každé vlákno proto dostane vlastní. Keep-alive se tím neztrácí: opakované
+# pokusy téhož batche běží ve stejném vlákně, takže recyklují spojení.
+SESSION = _session()          # hlavní vlákno (load_previous) + bod pro testy
+_LOCAL = threading.local()
+
+
+def _thread_session() -> requests.Session:
+    if getattr(_LOCAL, "session", None) is None:
+        _LOCAL.session = _session()
+    return _LOCAL.session
 
 
 def build_points():
@@ -92,7 +103,7 @@ def _fetch_batch(idx: int, start: int, chunk: list, deadline: float) -> tuple[in
             print(f"  wind batch {idx}: vyčerpaný rozpočet, končím s tím, co je", file=sys.stderr)
             break
         try:
-            r = SESSION.get(OPEN_METEO_URL, params=params, timeout=tmo)
+            r = _thread_session().get(OPEN_METEO_URL, params=params, timeout=tmo)
             r.raise_for_status()
             data = r.json()
             items = data if isinstance(data, list) else [data]
