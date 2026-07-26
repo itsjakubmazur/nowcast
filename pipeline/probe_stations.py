@@ -1,29 +1,32 @@
 """
 Diagnostická sonda (ruční workflow_dispatch) — nic nezapisuje do data/.
 
-KLÍČOVÉ ZJIŠTĚNÍ KOLA 8 (opravuje můj vlastní chybný závěr z kol 1–4):
-ČHMÚ v now/data/ publikuje 476 stanic, ne 40. Rozdíl byl artefakt mého
-regexu, který hleděl jen na WIGOS prefix 0-20000-0 (těch je 40 — stanice
-vyměňované mezinárodně). Prefix 0-203-0 = česká národní síť, dalších 436
-stanic, které jsem vůbec nepočítal.
+Souhrn kol 1–9:
+  * ČHMÚ publikuje 476 stanic (436 národních srážkoměrů 0-203-0 + 40 WMO
+    0-20000-0), ne 40 — moje dřívější číslo byl artefakt regexu na prefix.
+    Národní stanice mají jen SRA10M (srážky). Souřadnice pro všechny v meta1
+    (GEOGR1 = longituda, GEOGR2 = latituda). Rozsah 48.6–51.0 N / 12.2–18.8 E
+    → nic za hranicemi; ČHMÚ celosvětová staniční data NEMÁ.
+  * METAR bulk metars.cache.csv.gz = ~5000 stanic celého světa, hotovo.
 
-Kolo 9 zjišťuje poslední věci potřebné k implementaci:
-  (a) obsahuje meta1 souřadnice i pro 0-203-0, nebo jen pro WMO stanice?
-  (b) co je v meteorology/weather/ a products/ — je tam něco globálního?
-  (c) jak vypadá datový soubor národní stanice (má vůbec teplotu?)
+Kolo 10 ověřuje datové tvary sousedských sítí, aby se dala napsat
+implementace, a ne odhad:
+  (a) GeoSphere AT — metadata jsem ověřil, ale DATA endpoint ne,
+  (b) IMGW PL — jde id_stacji spojit se souřadnicemi z Meteostat číselníku?
+  (c) DWD — jde POI soubor spojit se souřadnicemi z CLIMAT seznamu?
 """
 
+import gzip
+import json
 import re
 import sys
-from collections import Counter
 from datetime import datetime, timezone
 
 import requests
 
 UA = {"User-Agent": "nowcast-probe/1.0 (+github actions)"}
-TIMEOUT = (15, 90)
-ROOT = "https://opendata.chmi.cz"
-BASE = f"{ROOT}/meteorology/climate"
+T = (15, 90)
+LAT0, LON0, LAT1, LON1 = 48.3, 11.8, 51.3, 19.2
 
 
 def head(t):
@@ -31,118 +34,138 @@ def head(t):
 
 
 def get(u):
-    return requests.get(u, headers=UA, timeout=TIMEOUT)
+    return requests.get(u, headers=UA, timeout=T)
 
 
-def links(html):
-    out, seen = [], set()
-    for l in re.findall(r'href="([^"?][^"]*)"', html):
-        if l.startswith("http") or l == "../" or l in seen:
-            continue
-        seen.add(l)
-        out.append(l)
-    return out
+def inb(lat, lon):
+    return lat is not None and lon is not None and \
+        LAT0 <= lat <= LAT1 and LON0 <= lon <= LON1
 
 
-def data_ids():
-    r = get(f"{BASE}/now/data/")
-    pat = re.compile(r'^(?:10m|1h)-(.+?)-\d{8}\.json$')
-    ids = set()
-    for f in links(r.text):
-        m = pat.match(f)
-        if m:
-            ids.add(m.group(1))
-    return ids
+def f(v):
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
 
 
-def probe_meta_coverage(ids):
-    head("(a) meta1 — jsou v číselníku i národní stanice 0-203-0?")
-    today = datetime.now(timezone.utc).strftime("%Y%m%d")
-    r = get(f"{BASE}/now/metadata/meta1-{today}.json")
+def probe_geosphere():
+    head("(a) GeoSphere AT — tvar DATA endpointu (metadata už ověřena)")
+    base = "https://dataset.api.hub.geosphere.at/v1/station/current/tawes-v1-10min"
+    r = get(f"{base}/metadata")
+    if not r.ok:
+        print(f"  metadata HTTP {r.status_code}")
+        return
+    st = r.json().get("stations", [])
+    near = [s for s in st if inb(f(s.get("lat")), f(s.get("lon")))]
+    ids = [str(s.get("id")) for s in near if s.get("id") is not None]
+    print(f"  stanic v bboxu: {len(near)}, ukázka id: {ids[:6]}")
+
+    url = (f"{base}?parameters=TL&parameters=RFAM&parameters=FFAM&parameters=DD"
+           f"&parameters=P&output_format=geojson")
+    if ids:
+        url += "&station_ids=" + ",".join(ids[:10])
+    r2 = get(url)
+    print(f"  data: HTTP {r2.status_code}, {len(r2.content)} B")
+    if not r2.ok:
+        print(f"    tělo: {r2.text[:300]}")
+        return
+    g = r2.json()
+    print(f"  klíče odpovědi: {sorted(g.keys())}")
+    print(f"  timestamps: {str(g.get('timestamps'))[:120]}")
+    feats = g.get("features", [])
+    print(f"  features: {len(feats)}")
+    if feats:
+        p = feats[0]
+        print(f"    geometry: {json.dumps(p.get('geometry'))[:120]}")
+        print(f"    properties: {json.dumps(p.get('properties'), ensure_ascii=False)[:500]}")
+
+
+def probe_imgw():
+    head("(b) IMGW PL — spojení id_stacji se souřadnicemi")
+    r = get("https://danepubliczne.imgw.pl/api/data/synop")
     if not r.ok:
         print(f"  HTTP {r.status_code}")
         return
-    values = r.json()["data"]["data"]["values"]
-    by_prefix = Counter("-".join(str(v[0]).split("-")[:3]) for v in values)
-    print(f"  řádků: {len(values)}, podle prefixu: {dict(by_prefix)}")
+    rows = r.json()
+    print(f"  stanic: {len(rows)}")
 
-    meta_ids = {str(v[0]) for v in values}
-    d203 = {i for i in ids if i.startswith("0-203-0-")}
-    dwmo = {i for i in ids if i.startswith("0-20000-0-")}
-    print(f"  stanic v datech: {len(ids)} (národních {len(d203)}, WMO {len(dwmo)})")
-    print(f"  národních se souřadnicemi v meta1: {len(d203 & meta_ids)} / {len(d203)}")
-    print(f"  WMO se souřadnicemi v meta1:       {len(dwmo & meta_ids)} / {len(dwmo)}")
-    chybi = sorted(d203 - meta_ids)[:5]
-    if chybi:
-        print(f"  ukázka bez metadat: {chybi}")
-
-    # Zeměpisný rozsah stanic, které MÁME v datech → je to jen ČR?
-    coords = []
-    for v in values:
-        if str(v[0]) in ids:
-            try:
-                lon, lat = float(v[3]), float(v[4])
-                coords.append((lat, lon, str(v[2])))
-            except (TypeError, ValueError, IndexError):
-                pass
-    if coords:
-        lats = [c[0] for c in coords]
-        lons = [c[1] for c in coords]
-        print(f"  rozsah stanic s daty: {min(lats):.2f}–{max(lats):.2f} N, "
-              f"{min(lons):.2f}–{max(lons):.2f} E  ({len(coords)} se souřadnicemi)")
-        mimo = [c for c in coords if not (48.3 <= c[0] <= 51.3 and 11.8 <= c[1] <= 19.2)]
-        print(f"  mimo ČR+pohraničí: {len(mimo)}  {[c[2] for c in mimo[:8]]}")
-        # ukázka národních stanic
-        nat = [(v[2], v[3], v[4]) for v in values
-               if str(v[0]).startswith("0-203-0-") and str(v[0]) in ids][:8]
-        print(f"  ukázka národních: {nat}")
-
-
-def probe_other_trees():
-    head("(b) meteorology/weather/ a products/ — něco globálního?")
-    for sub in ("weather/", "products/"):
-        r = get(f"{ROOT}/meteorology/{sub}")
-        print(f"  {sub}: HTTP {r.status_code} → {links(r.text)[:20] if r.ok else ''}")
-
-
-def probe_national_file(ids):
-    head("(c) datový soubor národní stanice — co v něm je")
-    today = datetime.now(timezone.utc).strftime("%Y%m%d")
-    nat = sorted(i for i in ids if i.startswith("0-203-0-"))
-    if not nat:
-        print("  žádná národní stanice v datech")
+    rc = get("https://bulk.meteostat.net/v2/stations/lite.json.gz")
+    if not rc.ok:
+        print(f"  číselník HTTP {rc.status_code}")
         return
-    for sid in nat[:2]:
-        url = f"{BASE}/now/data/10m-{sid}-{today}.json"
-        r = get(url)
-        print(f"  {url.rsplit('/', 1)[-1]}: HTTP {r.status_code}, {len(r.content)} B")
-        if not r.ok:
+    cat = json.loads(gzip.decompress(rc.content))
+    by_wmo = {}
+    for s in cat:
+        w = (s.get("identifiers") or {}).get("wmo")
+        if w:
+            by_wmo[str(w)] = s
+    print(f"  číselník: {len(cat)} stanic, s WMO id {len(by_wmo)}")
+
+    hit, miss, near = 0, [], []
+    for row in rows:
+        sid = str(row.get("id_stacji", "")).strip()
+        s = by_wmo.get(sid)
+        if s:
+            hit += 1
+            loc = s.get("location") or {}
+            lat, lon = f(loc.get("latitude")), f(loc.get("longitude"))
+            if inb(lat, lon):
+                near.append((row.get("stacja"), lat, lon, row.get("temperatura")))
+        else:
+            miss.append(sid)
+    print(f"  spojeno podle WMO id: {hit}/{len(rows)}, nespojeno: {len(miss)}")
+    print(f"  nespojená id (ukázka): {miss[:10]}")
+    print(f"  v našem bboxu: {len(near)}")
+    for n in near:
+        print(f"    {str(n[0])[:22]:24s} {n[1]:.3f},{n[2]:.3f}  {n[3]}°C")
+    if rows:
+        print(f"  jednotky — vzorek: {json.dumps(rows[0], ensure_ascii=False)[:260]}")
+
+
+def probe_dwd():
+    head("(c) DWD — spojení POI souborů se souřadnicemi z CLIMAT seznamu")
+    r = get("https://opendata.dwd.de/weather/weather_reports/poi/")
+    if not r.ok:
+        print(f"  index HTTP {r.status_code}")
+        return
+    files = re.findall(r'href="([^"]*)-BEOB\.csv"', r.text)
+    ids = sorted(set(files))
+    print(f"  POI stanic: {len(ids)}, ukázka: {ids[:6]}")
+
+    rc = get("https://opendata.dwd.de/climate_environment/CDC/help/"
+             "stations_list_CLIMAT_data.txt")
+    if not rc.ok:
+        print(f"  CLIMAT HTTP {rc.status_code}")
+        return
+    coords = {}
+    for line in rc.text.splitlines()[1:]:
+        parts = line.split(";")
+        if len(parts) < 5:
             continue
-        try:
-            d = r.json()["data"]["data"]
-            print(f"    hlavička: {d.get('header')}")
-            vals = d.get("values", [])
-            elems = Counter(v[1] for v in vals if len(v) > 1)
-            print(f"    záznamů: {len(vals)}, prvků: {dict(elems.most_common(12))}")
-            if vals:
-                print(f"    vzorek: {vals[0]}")
-        except Exception as e:
-            print(f"    parse chyba: {e}")
+        wmo = parts[0].strip()
+        lat, lon = f(parts[2]), f(parts[3])
+        if wmo and lat is not None:
+            coords[wmo] = (lat, lon, parts[1].strip())
+    print(f"  CLIMAT číselník: {len(coords)} stanic")
+
+    hit = [i for i in ids if i in coords]
+    near = [(coords[i][2], *coords[i][:2]) for i in hit if inb(*coords[i][:2])]
+    print(f"  POI id nalezeno v CLIMAT: {len(hit)}/{len(ids)}")
+    print(f"  z toho v našem bboxu: {len(near)}")
+    for n in near[:10]:
+        print(f"    {str(n[0])[:24]:26s} {n[1]:.2f},{n[2]:.2f}")
+    if len(hit) < len(ids) * 0.5:
+        print("  → CLIMAT seznam POI nepokrývá; bude potřeba jiný číselník")
 
 
 def main():
-    print(f"Sonda kolo 9 — {datetime.now(timezone.utc).isoformat()}")
-    try:
-        ids = data_ids()
-    except Exception as e:
-        print(f"!! nepovedlo se načíst seznam stanic: {e}", file=sys.stderr)
-        return
-    for fn in (lambda: probe_meta_coverage(ids), probe_other_trees,
-               lambda: probe_national_file(ids)):
+    print(f"Sonda kolo 10 — {datetime.now(timezone.utc).isoformat()}")
+    for fn in (probe_geosphere, probe_imgw, probe_dwd):
         try:
             fn()
         except Exception as e:
-            print(f"  !! {e}", file=sys.stderr)
+            print(f"  !! {fn.__name__}: {e}", file=sys.stderr)
 
 
 if __name__ == "__main__":
