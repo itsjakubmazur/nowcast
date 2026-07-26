@@ -836,6 +836,33 @@ async function main() {
   assertTrue(globalState.globalMode === true, `světový radar se zapnul automaticky (globalMode=${globalState.globalMode})`);
   assertTrue(globalState.dist.includes("Světový režim"), `hláška o světovém režimu (${globalState.dist})`);
 
+  // Světové stanice: dlaždice 10° se dotáhne až po výběru místa mimo ČR a
+  // nearestFreshStation ji musí vidět stejně jako ČHMÚ/WU doma. Bez toho by
+  // žebříček přesnosti modelů fungoval jen v Česku.
+  await pageG.waitForFunction(async () => {
+    const { state } = await import("./js/state.js");
+    return (state.METAR_WORLD?.stations || []).length > 0;
+  }, { timeout: 8000 }).catch(() => {});
+  const worldSt = await pageG.evaluate(async () => {
+    const { state } = await import("./js/state.js");
+    const { metarTileId } = await import("./js/worldstations.js");
+    const { nearestFreshStation } = await import("./js/models.js");
+    // Stanice ve fixture jsou z 17. 7. — na "čerstvost" je posuň na teď,
+    // ať test neměří stáří fixture místo logiky hledání.
+    (state.METAR_WORLD?.stations || []).forEach(s => { s.time_utc = new Date().toISOString(); });
+    state.elevation = 10;
+    const near = nearestFreshStation(40.7128, -74.0060);
+    return {
+      tile: metarTileId(40.7128, -74.0060),
+      count: (state.METAR_WORLD?.stations || []).length,
+      near: near && { name: near.name, dist: Math.round(near.distKm), temp: near.tempAdj },
+    };
+  });
+  assertTrue(worldSt.tile === "13_10", `dlaždice pro New York se počítá správně (${worldSt.tile})`);
+  assertTrue(worldSt.count >= 2, `světová dlaždice se načetla (${worldSt.count} stanic)`);
+  assertTrue(!!worldSt.near && /KJFK|KEWR/.test(worldSt.near.name),
+    `nejbližší měřená stanice v New Yorku (${worldSt.near?.name} ${worldSt.near?.dist} km, ${worldSt.near?.temp} °C)`);
+
   // odpočet srážek jede z RainViewer vzorků (sucho) + minutely modelu
   await pageG.waitForFunction(() => {
     const el = document.getElementById("rain-countdown");

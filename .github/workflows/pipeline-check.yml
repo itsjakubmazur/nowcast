@@ -24,3 +24,6 @@ jobs:
 
       - name: Unit testy pipeline (windgrid — slepení děr, práh zápisu)
         run: python tests/test_windgrid.py
+
+      - name: Unit testy pipeline (metar — dlaždice světových stanic)
+        run: python tests/test_metar.py

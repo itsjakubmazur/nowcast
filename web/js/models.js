@@ -69,7 +69,7 @@ const LAPSE_C_PER_M = 0.0065;
 
 export function nearestFreshStation(lat, lon) {
   const all = [...(state.CHMI?.stations || []), ...(state.WU?.stations || []),
-    ...(state.METAR?.stations || [])];
+    ...(state.METAR?.stations || []), ...(state.METAR_WORLD?.stations || [])];
   let best = null, bd = Infinity;
   for (const s of all) {
     if (s.temp == null || s.lat == null) continue;

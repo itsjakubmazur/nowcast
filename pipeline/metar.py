@@ -8,27 +8,53 @@ nikdy nerozjely.
 Letiště hlásí METAR každých 30 min, zdarma, bez klíče (NOAA Aviation Weather),
 a v ČR + těsném pohraničí jich je několik desítek — síť se tím zahustí.
 
-Zdroj: https://aviationweather.gov/api/data/metar?bbox=...&format=json
-Výstup: data/metar_stations.json ve STEJNÉM tvaru jako chmi_stations.json
-(name/lat/lon/elev/temp/humidity/wind_kmh/time_utc), takže frontend je jen
-přisype k ostatním stanicím.
+Dvě větve, každá svým vstupem:
+
+1) DOMA (ČR + pohraničí) — JSON API s bboxem. Vrací i jména stanic
+   ("Brno/Tuřany"), takže domovský pohled zůstává čitelný.
+   Výstup: data/metar_stations.json ve STEJNÉM tvaru jako chmi_stations.json.
+
+2) SVĚT — bulk dump metars.cache.csv.gz: 250 kB gzip, ~5000 stanic z celého
+   světa jedním requestem, bez klíče. Cesta přes bbox tudy nevede: sonda
+   ukázala, že JSON API výřezy nad ~10° PODVZORKUJE (celý svět vrátil jen
+   158 stanic), takže by to chtělo 100+ dotazů. Bulk to řeší jedním.
+   CSV nemá jména stanic, jen ICAO — u světových stanic proto svítí kód.
+   Výstup: data/metar/{ty}_{tx}.json — dlaždice 10° s přesahem, aby
+   jeden fetch vždy pokryl okolí bodu, a data/metar/index.json.
+
+Zdroje:
+  https://aviationweather.gov/api/data/metar?bbox=...&format=json
+  https://aviationweather.gov/data/cache/metars.cache.csv.gz
 """
 
+import csv
+import gzip
+import io
 import json
 import math
 import sys
+from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 
 import requests
 
-sys.path.insert(0, str(Path(__file__).parent))
-from ingest import DATA_DIR
+# záměrně bez importu ingest.py — ten tahá h5py, které tenhle skript nepotřebuje
+# (a bez kterého by nešly spustit ani offline testy parsování)
+DATA_DIR = Path(__file__).parent.parent / "data"
 
 API = "https://aviationweather.gov/api/data/metar"
+BULK = "https://aviationweather.gov/data/cache/metars.cache.csv.gz"
 # ČR + pásmo pohraničí (DE/PL/AT/SK letiště pomůžou u hranic)
 BBOX = "48.3,11.8,51.3,19.2"          # lat0,lon0,lat1,lon1
 MAX_AGE_MIN = 150                      # starší hlášení nemá pro "teď" cenu
+
+TILE_DEG = 10
+# Přesah dlaždice: hledání nejbližší stanice sahá do 40 km, takže dlaždice
+# musí obsahovat i stanice kousek za svou hranicí — jinak by bod u okraje
+# "neviděl" letiště hned vedle. 1.5° pokryje 40 km i kolem 70° s. š.
+TILE_MARGIN_DEG = 1.5
+
 SESSION = requests.Session()
 SESSION.headers.update({"User-Agent": "nowcast-pipeline/1.0 (+github actions)"})
 
@@ -70,9 +96,139 @@ def parse_time(m) -> str | None:
     return None
 
 
-def main():
-    now = datetime.now(timezone.utc)
-    print("=== METAR (letištní stanice, NOAA) ===", file=sys.stderr)
+def tile_xy(lat, lon):
+    """Index dlaždice 10°: tx 0..35 od -180°, ty 0..17 od -90°."""
+    tx = int(((lon + 180) % 360) // TILE_DEG) % 36
+    ty = min(17, max(0, int((lat + 90) // TILE_DEG)))
+    return tx, ty
+
+
+def tiles_for_station(lat, lon):
+    """Dlaždice, do kterých stanice patří — včetně sousedních, pokud leží
+    v pásu přesahu. Díky tomu stačí klientovi stáhnout JEDNU dlaždici."""
+    out = set()
+    for dlat in (-TILE_MARGIN_DEG, 0, TILE_MARGIN_DEG):
+        for dlon in (-TILE_MARGIN_DEG, 0, TILE_MARGIN_DEG):
+            la = max(-90.0, min(90.0, lat + dlat))
+            lo = ((lon + dlon + 180) % 360) - 180
+            out.add(tile_xy(la, lo))
+    return out
+
+
+def parse_bulk_row(row, now):
+    """Řádek metars.cache.csv → náš kompaktní záznam, nebo None."""
+    lat, lon = _num(row.get("latitude")), _num(row.get("longitude"))
+    temp = _num(row.get("temp_c"))
+    icao = (row.get("station_id") or "").strip()
+    t_iso = (row.get("observation_time") or "").strip()
+    if lat is None or lon is None or temp is None or not icao or not t_iso:
+        return None
+    try:
+        dt = datetime.fromisoformat(t_iso.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    age_min = (now - dt).total_seconds() / 60
+    if age_min > MAX_AGE_MIN or age_min < -30:
+        return None
+
+    wspd_kt = _num(row.get("wind_speed_kt"))
+    wdir = _num(row.get("wind_dir_degrees"))
+    return {
+        "id": f"metar-{icao}",
+        # Bulk CSV jména stanic neobsahuje — u světových stanic proto ICAO.
+        "name": f"{icao} (letiště)",
+        "lat": round(lat, 4), "lon": round(lon, 4),
+        "elev": _num(row.get("elevation_m")),
+        "time_utc": dt.astimezone(timezone.utc).isoformat(),
+        "temp": round(temp, 1),
+        "humidity": rh_from_dewpoint(temp, _num(row.get("dewpoint_c"))),
+        "wind_kmh": round(wspd_kt * 1.852, 1) if wspd_kt is not None else None,
+        "wind_dir": round(wdir) if wdir is not None else None,
+        "pressure": _num(row.get("altim_in_hg")),
+        "source": "metar",
+        "own": False,
+    }
+
+
+def build_world_tiles(now):
+    """Celosvětové dlaždice z bulk dumpu. Selhání nesmí shodit domácí větev."""
+    print("  — světové dlaždice z bulk dumpu —", file=sys.stderr)
+    try:
+        r = SESSION.get(BULK, timeout=(15, 90))
+        r.raise_for_status()
+        raw = gzip.decompress(r.content).decode("utf-8", "replace")
+    except Exception as e:
+        print(f"  bulk dump selhal: {e} — světové dlaždice nechávám staré",
+              file=sys.stderr)
+        return
+
+    # Soubor občas začíná preambulí; hlavička je řádek začínající "raw_text"
+    lines = raw.splitlines()
+    start = next((i for i, l in enumerate(lines) if l.startswith("raw_text")), None)
+    if start is None:
+        print("  bulk dump nemá čekanou hlavičku — končím", file=sys.stderr)
+        return
+
+    reader = csv.DictReader(io.StringIO("\n".join(lines[start:])))
+    best = {}
+    total = 0
+    for row in reader:
+        total += 1
+        rec = parse_bulk_row(row, now)
+        if not rec:
+            continue
+        prev = best.get(rec["id"])
+        if prev is None or rec["time_utc"] > prev["time_utc"]:
+            best[rec["id"]] = rec
+    print(f"  řádků: {total}, použitelných stanic: {len(best)}", file=sys.stderr)
+    if len(best) < 500:
+        print(f"  podezřele málo stanic ({len(best)}) — dlaždice nepřepisuji",
+              file=sys.stderr)
+        return
+
+    tiles = defaultdict(list)
+    for rec in best.values():
+        for tx, ty in tiles_for_station(rec["lat"], rec["lon"]):
+            tiles[(ty, tx)].append(rec)
+
+    out_dir = DATA_DIR / "metar"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    for old in out_dir.glob("*.json"):
+        old.unlink()
+
+    written, total_b = 0, 0
+    index = []
+    for (ty, tx), recs in sorted(tiles.items()):
+        recs.sort(key=lambda s: s["name"])
+        payload = {
+            "generated_at_utc": now.isoformat(),
+            "tile": f"{ty}_{tx}",
+            "count": len(recs),
+            "source": "NOAA Aviation Weather (METAR bulk)",
+            "stations": recs,
+        }
+        p = out_dir / f"{ty}_{tx}.json"
+        p.write_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":")))
+        written += 1
+        total_b += p.stat().st_size
+        index.append({"tile": f"{ty}_{tx}", "count": len(recs)})
+
+    (out_dir / "index.json").write_text(json.dumps({
+        "generated_at_utc": now.isoformat(),
+        "tile_deg": TILE_DEG,
+        "margin_deg": TILE_MARGIN_DEG,
+        "stations": len(best),
+        "tiles": index,
+    }, ensure_ascii=False, separators=(",", ":")))
+
+    counts = sorted((t["count"] for t in index), reverse=True)
+    print(f"  ✓ {written} dlaždic, {len(best)} stanic, celkem {total_b // 1024} kB "
+          f"(největší {counts[0]} stanic, medián {counts[len(counts) // 2]})",
+          file=sys.stderr)
+
+
+def build_home(now):
+    """ČR + pohraničí přes JSON API — kvůli jménům stanic."""
     try:
         r = SESSION.get(API, params={"bbox": BBOX, "format": "json"}, timeout=(10, 45))
         r.raise_for_status()
@@ -141,6 +297,15 @@ def main():
     for s in stations[:25]:
         print(f"    {s['name'][:34]:36s} {s['lat']:.2f},{s['lon']:.2f}  "
               f"{s['temp']}°C  {s['time_utc'][11:16]}Z", file=sys.stderr)
+
+
+def main():
+    now = datetime.now(timezone.utc)
+    print("=== METAR (letištní stanice, NOAA) ===", file=sys.stderr)
+    # Obě větve jsou nezávislé: když spadne domácí bbox, svět se stejně
+    # postaví (a naopak). Dřív by jeden `return` tiše zabil obojí.
+    build_home(now)
+    build_world_tiles(now)
 
 
 if __name__ == "__main__":

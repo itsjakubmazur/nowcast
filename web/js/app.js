@@ -42,6 +42,7 @@ import { showLoadingSkeletons } from "./skeleton.js";
 import { shareCurrentView, copyEmbedLink, initEmbedMode } from "./share.js";
 import { prefetchGlobalRadar } from "./globalrain.js";
 import { renderModelsPanel } from "./models.js";
+import { ensureWorldStations } from "./worldstations.js";
 import { esc } from "./utils.js";
 import { initUiIcons } from "./uiicons.js";
 
@@ -252,6 +253,18 @@ function showForecast(lat, lon, label) {
   } else if (state.globalMode && state._autoGlobal) {
     toggleGlobalMode();
     state._autoGlobal = false;
+  }
+
+  // Měřené stanice pro zbytek světa — dlaždice 10° se stahuje až teď, protože
+  // dopředu nevíme, kam uživatel klikne. Doma je nepotřebujeme (máme ČHMÚ + WU
+  // + domácí METAR), tak si ušetříme request.
+  state.METAR_WORLD = null;
+  if (!inCZ) {
+    ensureWorldStations(lat, lon).then(st => {
+      // Mezitím mohl kliknout jinam — nepřepisuj panel starým místem.
+      if (state.currentLat !== lat || state.currentLon !== lon) return;
+      if (st.length) renderModelsPanel(lat, lon);
+    });
   }
 
   drawRainSpark(id);
