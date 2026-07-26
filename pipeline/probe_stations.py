@@ -1,53 +1,67 @@
-"""Sonda: kde vzít JMÉNA letišť k ICAO kódům (bulk METAR je nemá)."""
-import gzip, json, re, sys
+"""Sonda: kontrola NASAZENÝCH dat (ruční workflow_dispatch, nic nezapisuje)."""
+import sys
 from datetime import datetime, timezone
 import requests
 
 UA = {"User-Agent": "nowcast-probe/1.0"}
-T = (15, 90)
+PAGES = "https://itsjakubmazur.github.io/nowcast/data"
 
 
-def get(u):
-    return requests.get(u, headers=UA, timeout=T)
+def get(n):
+    return requests.get(f"{PAGES}/{n}", headers=UA, timeout=(10, 60))
 
 
 def main():
-    print(f"Sonda — číselník jmen letišť, {datetime.now(timezone.utc).isoformat()}")
-    cands = [
-        "https://aviationweather.gov/data/cache/stations.cache.json.gz",
-        "https://aviationweather.gov/data/cache/stations.cache.xml.gz",
-        "https://aviationweather.gov/api/data/stationinfo?ids=LKPR,KJFK,RJTT&format=json",
-        "https://aviationweather.gov/api/data/stationinfo?bbox=48.3,11.8,51.3,19.2&format=json",
-    ]
-    for url in cands:
-        try:
-            r = get(url)
-            print(f"\n{url.rsplit('/', 1)[-1][:60]}: HTTP {r.status_code}, {len(r.content)} B")
-            if not r.ok:
-                print(f"  tělo: {r.text[:200]}")
-                continue
-            body = r.content
-            if url.endswith(".gz"):
-                body = gzip.decompress(body)
-                print(f"  rozbaleno: {len(body)} B")
-            txt = body.decode("utf-8", "replace")
-            if url.endswith(".json.gz") or "format=json" in url:
-                try:
-                    j = json.loads(txt)
-                    arr = j if isinstance(j, list) else j.get("data") or []
-                    print(f"  položek: {len(arr)}")
-                    if arr:
-                        print(f"  klíče: {sorted(arr[0].keys())}")
-                        for s in arr[:4]:
-                            print(f"    {json.dumps(s, ensure_ascii=False)[:220]}")
-                except Exception as e:
-                    print(f"  není JSON: {e}; začátek: {txt[:200]!r}")
-            else:
-                print(f"  začátek: {txt[:400]!r}")
-                m = re.findall(r"<station_id>(\w+)</station_id>.*?<site>([^<]*)</site>", txt[:200000], re.S)
-                print(f"  párů station_id/site: {len(m)}, ukázka: {m[:5]}")
-        except Exception as e:
-            print(f"  CHYBA {str(e)[:160]}")
+    print(f"Nasazená data — {datetime.now(timezone.utc).isoformat()}\n")
+
+    r = get("chmi_stations.json")
+    if r.ok:
+        j = r.json()
+        print(f"chmi_stations.json  {j.get('count')} stanic  ({j.get('generated_at_utc')})")
+
+    r = get("chmi_stats.json")
+    if r.ok:
+        j = r.json()
+        st = j.get("stations", {})
+        withrec = sum(1 for v in st.values() if v.get("records"))
+        withnorm = sum(1 for v in st.values() if v.get("monthly_normals"))
+        print(f"chmi_stats.json     {len(st)} stanic  "
+              f"(s rekordy {withrec}, s normály {withnorm})")
+        for wsi, v in list(st.items())[:3]:
+            rec = v.get("records") or {}
+            print(f"   {v.get('name', wsi)[:24]:26s} rekordy: {list(rec)[:5]}")
+    else:
+        print(f"chmi_stats.json     HTTP {r.status_code}")
+
+    r = get("metar_names.json")
+    if r.ok:
+        j = r.json()
+        names = j.get("names", {})
+        named = {k: v for k, v in names.items() if v}
+        print(f"metar_names.json    {len(names)} ICAO, s městem {len(named)}")
+        for k in ("LKPR", "LKTB", "LKMT", "KJFK", "RJTT", "EDDC"):
+            if k in names:
+                print(f"   {k} → {names[k]!r}")
+    else:
+        print(f"metar_names.json    HTTP {r.status_code}")
+
+    r = get("metar_history.json")
+    if r.ok:
+        j = r.json()
+        st = j.get("stations", {})
+        tot = sum(len(v.get("series", [])) for v in st.values())
+        print(f"metar_history.json  {len(st)} stanic, {tot} záznamů "
+              f"({j.get('updated_at_utc')})")
+        for k, v in list(st.items())[:4]:
+            print(f"   {v.get('name', k)[:26]:28s} {len(v.get('series', []))} bodů")
+    else:
+        print(f"metar_history.json  HTTP {r.status_code}")
+
+    r = get("metar/13_10.json")
+    if r.ok:
+        st = r.json().get("stations", [])
+        print(f"metar/13_10.json    {len(st)} stanic; ukázka jmen: "
+              f"{[s['name'] for s in st[:4]]}")
 
 
 if __name__ == "__main__":
