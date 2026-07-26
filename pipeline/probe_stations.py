@@ -1,13 +1,5 @@
-"""Sonda 3: vnitřek souborů, na kterých stojí návrh implementace.
-
-Kolo 1 = co existuje, kolo 2 = jak to vypadá zvenku. Tohle kolo otevírá
-konkrétní soubory, protože bez znalosti jejich struktury by plán byl odhad:
-  - fct_* HDF5: je to stejný ODIM jako maxz? (→ jde použít read_odim_dbz?)
-  - products/climate_normal_stations: jsou tam normály i pro národní stanice?
-  - forecast/now: co ČHMÚ publikuje jako textovou/číselnou předpověď
-  - wind_profiles, radiosounding: skutečný obsah CSV
-"""
-import io, re, sys, tarfile
+"""Sonda 4: doplnění posledních bílých míst — normály, aerologie, AQ registr."""
+import re, json
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 import requests
@@ -57,103 +49,86 @@ def ls(path, label=None, show=6):
     return files
 
 
-def head_text(url, n=8, label=""):
+def head_text(url, n=10, label=""):
     try:
         r = get(url)
         print(f"  {label or url}: HTTP {r.status_code}, {len(r.content)} B")
         if not r.ok:
-            return
-        for line in r.content.decode("utf-8", "replace").splitlines()[:n]:
-            print(f"    | {line[:230]}")
+            return None
+        txt = r.content.decode("utf-8", "replace")
+        for line in txt.splitlines()[:n]:
+            print(f"    | {line[:240]}")
+        return txt
     except Exception as e:
         print(f"  {label or url}: CHYBA {str(e)[:120]}")
-
-
-def dump_h5(buf, label):
-    """Vypíše strom skupin + atributy ODIM HDF5 ze surových bajtů."""
-    import h5py, numpy as np
-    with h5py.File(io.BytesIO(buf), "r") as f:
-        def walk(name, obj):
-            kind = "DS" if isinstance(obj, h5py.Dataset) else "GR"
-            extra = f" shape={obj.shape} dtype={obj.dtype}" if kind == "DS" else ""
-            attrs = {k: (v.decode() if isinstance(v, bytes) else
-                         (float(v) if isinstance(v, (int, float, np.generic)) else str(v)))
-                     for k, v in obj.attrs.items()}
-            print(f"    {kind} /{name}{extra}"
-                  + (f"  attrs={attrs}" if attrs else ""))
-        print(f"  --- {label} ---")
-        root_attrs = dict(f.attrs)
-        if root_attrs:
-            print(f"    kořen attrs={root_attrs}")
-        f.visititems(walk)
+        return None
 
 
 def main():
-    print(f"Sonda 3 — {datetime.now(timezone.utc).isoformat()}")
+    print(f"Sonda 4 — {datetime.now(timezone.utc).isoformat()}")
 
-    print("\n=== 1) fct_maxz HDF5 uvnitř tar — je to ODIM jako maxz? ===")
-    base = "meteorology/weather/radar/composite/"
-    files = [f for f in ls(f"{base}fct_maxz/hdf5/", "fct_maxz", show=2) if f.endswith(".tar")]
-    if files:
-        newest = sorted(files)[-1]
-        r = get(f"{ROOT}{'/'}{base}fct_maxz/hdf5/{newest}")
-        with tarfile.open(fileobj=io.BytesIO(r.content)) as tf:
-            members = [m for m in tf.getmembers() if m.name.endswith(".hdf")]
-            members.sort(key=lambda m: m.name)
-            print(f"    členů .hdf: {len(members)}, velikosti: "
-                  f"{[(m.name.split('_')[-1], m.size) for m in members]}")
-            first = tf.extractfile(members[0]).read()
+    print("\n=== 1) climate_normal_stations/period_1991_2020 — kolik stanic? ===")
+    p = "meteorology/products/climate_normal_stations/period_1991_2020/"
+    f = ls(p, "normály 1991-2020", show=10)
+    for name in sorted(f)[:3]:
+        head_text(f"{ROOT}/{p}{name}", 6, name)
+    for d in ("", ):
+        r = get(f"{ROOT}/{p}")
+        for sub in [l for l in links(r.text) if l.endswith("/")][:4]:
+            sf = ls(f"{p}{sub}", f"normály/{sub}", show=6)
+            if sf:
+                head_text(f"{ROOT}/{p}{sub}{sorted(sf)[0]}", 6, sorted(sf)[0])
+
+    print("\n=== 2) grids_CZ/climate_normals ===")
+    p2 = "meteorology/products/grids_CZ/climate_normals/"
+    f2 = ls(p2, "grids climate_normals", show=8)
+    r = get(f"{ROOT}/{p2}")
+    for sub in [l for l in links(r.text) if l.endswith("/")][:3]:
+        ls(f"{p2}{sub}", f"grids/{sub}", show=6)
+
+    print("\n=== 3) regional_averages ===")
+    for sub in ("temperature/", "precipitation/"):
+        f3 = ls(f"meteorology/products/regional_averages/{sub}",
+                f"regional/{sub}", show=6)
+        if f3:
+            head_text(f"{ROOT}/meteorology/products/regional_averages/{sub}{sorted(f3)[0]}",
+                      5, sorted(f3)[0])
+    head_text(f"{ROOT}/meteorology/products/regional_averages/List_of_regions.csv",
+              8, "List_of_regions.csv")
+
+    print("\n=== 4) radiosounding Praha/recent/ascent ===")
+    f4 = ls("meteorology/weather/radiosounding/Praha/recent/ascent/", "aerologie ascent", show=4)
+    if f4:
+        head_text(f"{ROOT}/meteorology/weather/radiosounding/Praha/recent/ascent/{sorted(f4)[-1]}",
+                  12, sorted(f4)[-1])
+
+    print("\n=== 5) AQ metadata.json — struktura registru stanic ===")
+    try:
+        r = get(f"{ROOT}/air_quality/now/metadata/metadata.json")
+        j = json.loads(r.content.decode("utf-8", "replace"))
+        print(f"  klíče kořene: {list(j.keys())}")
+        for k, v in j.items():
+            if isinstance(v, list):
+                print(f"  {k}: list délky {len(v)}")
+                if v:
+                    print(f"    první prvek klíče: {list(v[0].keys()) if isinstance(v[0], dict) else type(v[0])}")
+                    print(f"    ukázka: {json.dumps(v[0], ensure_ascii=False)[:600]}")
+            elif isinstance(v, dict):
+                print(f"  {k}: dict klíče {list(v.keys())[:12]}")
+    except Exception as e:
+        print(f"  CHYBA {str(e)[:200]}")
+
+    print("\n=== 6) forecast/now — obsah textové předpovědi ===")
+    f6 = ls("meteorology/weather/forecast/now/", "forecast now", show=4)
+    if f6:
+        txt = head_text(f"{ROOT}/meteorology/weather/forecast/now/{sorted(f6)[-1]}", 0, "")
+        if txt:
             try:
-                dump_h5(first, members[0].name)
+                j = json.loads(txt)
+                print(f"  klíče: {list(j.keys())}")
+                print(f"  {json.dumps(j, ensure_ascii=False)[:1800]}")
             except Exception as e:
-                print(f"    dump_h5 CHYBA {str(e)[:200]}")
-
-    print("\n=== 2) maxz HDF5 pro srovnání geometrie ===")
-    mf = ls(f"{base}maxz/hdf5/", "maxz", show=2)
-    if mf:
-        r = get(f"{ROOT}/{base}maxz/hdf5/{sorted(mf)[-1]}")
-        try:
-            dump_h5(r.content, sorted(mf)[-1])
-        except Exception as e:
-            print(f"    dump_h5 CHYBA {str(e)[:200]}")
-
-    print("\n=== 3) echotop HDF5 — jednotky a quantity ===")
-    ef = ls(f"{base}echotop/hdf5/", "echotop", show=2)
-    if ef:
-        r = get(f"{ROOT}/{base}echotop/hdf5/{sorted(ef)[-1]}")
-        try:
-            dump_h5(r.content, sorted(ef)[-1])
-        except Exception as e:
-            print(f"    dump_h5 CHYBA {str(e)[:200]}")
-
-    print("\n=== 4) products/climate_normal_stations — normály pro víc stanic? ===")
-    for p in ("meteorology/products/", "meteorology/products/climate_normal_stations/",
-              "meteorology/products/regional_averages/", "meteorology/products/grids_CZ/"):
-        ls(p, p, show=8)
-
-    print("\n=== 5) weather/forecast/now + metadata ===")
-    for p in ("meteorology/weather/forecast/now/", "meteorology/weather/forecast/metadata/",
-              "meteorology/weather/forecast_monthly/now/"):
-        f = ls(p, p, show=8)
-        if f:
-            head_text(f"{ROOT}/{p}{sorted(f)[-1]}", 6, f"{p}{sorted(f)[-1]}")
-
-    print("\n=== 6) air_quality/now/metadata — mapování stanic a polutantů ===")
-    f = ls("air_quality/now/metadata/", "aq metadata", show=10)
-    for name in sorted(f)[:4]:
-        head_text(f"{ROOT}/air_quality/now/metadata/{name}", 5, name)
-
-    print("\n=== 7) wind_profiles — obsah jednoho CSV ===")
-    f = ls("meteorology/weather/wind_profiles/recent/", "wind_profiles", show=2)
-    if f:
-        head_text(f"{ROOT}/meteorology/weather/wind_profiles/recent/{sorted(f)[-1]}",
-                  14, sorted(f)[-1])
-
-    print("\n=== 8) radiosounding Praha/recent — obsah ===")
-    f = ls("meteorology/weather/radiosounding/Praha/recent/", "radiosounding Praha", show=4)
-    if f:
-        head_text(f"{ROOT}/meteorology/weather/radiosounding/Praha/recent/{sorted(f)[-1]}",
-                  12, sorted(f)[-1])
+                print(f"  parse CHYBA {str(e)[:150]}")
 
 
 if __name__ == "__main__":
