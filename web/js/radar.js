@@ -280,6 +280,25 @@ function loadVelocityLib() {
 // duplicitní vrstvu (stejný problém jako u hydro.js toggleHydro).
 let _windToken = 0;
 
+// Vítr se generuje z Open-Meteo a z CI se to občas nepovede celé (viz
+// pipeline/windgrid.py). Ať je z tooltipu poznat, jak je pole čerstvé a jestli
+// se část bodů dopočítala — mlčet o tom by znamenalo tvářit se jistěji, než jsme.
+export function windFreshnessLabel(header) {
+  if (!header) return "Vítr 10 m";
+  const parts = ["Vítr 10 m"];
+  const ref = header.refTime ? new Date(header.refTime) : null;
+  if (ref && !Number.isNaN(ref.getTime())) {
+    const ageMin = Math.round((Date.now() - ref.getTime()) / 60000);
+    if (ageMin < 90) parts.push(`data ${ageMin} min stará`);
+    else parts.push(`data ${Math.round(ageMin / 60)} h stará`);
+  }
+  const { freshPoints: f, totalPoints: t } = header;
+  if (Number.isFinite(f) && Number.isFinite(t) && t > 0 && f < t) {
+    parts.push(`${Math.round(100 * f / t)} % bodů měřeno, zbytek dopočten`);
+  }
+  return parts.join(" · ");
+}
+
 export async function toggleWindLayer() {
   const btn = document.getElementById("btn-wind");
   state.windMode = !state.windMode;
@@ -297,6 +316,9 @@ export async function toggleWindLayer() {
     const r = await fetch(`data/wind_grid.json?v=${Date.now()}`, { cache: "no-store" });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const data = await r.json();
+    if (!Array.isArray(data) || data.length < 2 || !data[0]?.data?.length) {
+      throw new Error("wind_grid.json má neočekávaný tvar");
+    }
     if (myToken !== _windToken) return; // mezitím uživatel znovu přepnul
     if (state.windLayer) { state.map.removeLayer(state.windLayer); state.windLayer = null; } // pojistka
     state.windLayer = L.velocityLayer({
@@ -308,6 +330,7 @@ export async function toggleWindLayer() {
       colorScale: ["#9fc7ff", "#5AC8FA", "#0A84FF", "#BF5AF2", "#FF375F"],
       displayValues: false,
     }).addTo(state.map);
+    if (btn) btn.title = windFreshnessLabel(data[0].header);
   } catch (e) {
     if (myToken !== _windToken) return; // mezitím uživatel znovu přepnul
     console.warn("Vítr:", e);

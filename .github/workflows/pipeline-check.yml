@@ -3,9 +3,9 @@ name: Pipeline syntax check
 on:
   push:
     branches: [main]
-    paths: ["pipeline/**"]
+    paths: ["pipeline/**", "tests/test_*.py"]
   pull_request:
-    paths: ["pipeline/**"]
+    paths: ["pipeline/**", "tests/test_*.py"]
   workflow_dispatch:
 
 jobs:
@@ -18,3 +18,9 @@ jobs:
           python-version: "3.12"
       - name: Byte-compile všechny pipeline moduly (rychlá syntax kontrola)
         run: python -m py_compile pipeline/*.py
+
+      - name: Install deps pro unit testy
+        run: pip install requests
+
+      - name: Unit testy pipeline (windgrid — slepení děr, práh zápisu)
+        run: python tests/test_windgrid.py

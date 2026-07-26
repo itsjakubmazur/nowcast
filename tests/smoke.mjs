@@ -511,6 +511,37 @@ async function main() {
   assertTrue(!windCheck.mode && !windCheck.hasLayer && !windCheck.onMap,
     `rychlé zap→vyp větru (se zpožděnou odpovědí) nevzkřísilo vrstvu po vypnutí (mode=${windCheck.mode}, hasLayer=${windCheck.hasLayer}, onMap=${windCheck.onMap})`);
 
+  // Vítr podruhé — teď už bez zpoždění, ať se vrstva opravdu postaví a tooltip
+  // řekne, jak čerstvá data jsou (windgrid.py smí pole doplnit z minulého běhu).
+  await page.click("#btn-wind");
+  await page.waitForTimeout(400);
+  const windOn = await page.evaluate(async () => {
+    const { state } = await import("./js/state.js");
+    return { mode: state.windMode, hasLayer: !!state.windLayer,
+             title: document.getElementById("btn-wind")?.title || "" };
+  });
+  assertTrue(windOn.mode && windOn.hasLayer,
+    `vrstva větru se z wind_grid.json postaví (mode=${windOn.mode}, hasLayer=${windOn.hasLayer})`);
+  assertTrue(/Vítr 10 m/.test(windOn.title) && /78 % bodů měřeno/.test(windOn.title),
+    `tlačítko větru hlásí stáří i podíl měřených bodů ("${windOn.title}")`);
+  await page.click("#btn-wind"); // ukliď po sobě
+
+  const windLabels = await page.evaluate(async () => {
+    const { windFreshnessLabel } = await import("./js/radar.js");
+    const t = (min, f, tot) => windFreshnessLabel({
+      refTime: new Date(Date.now() - min * 60000).toISOString(),
+      freshPoints: f, totalPoints: tot,
+    });
+    return [t(20, 238, 238), t(300, 100, 238), windFreshnessLabel(null),
+            windFreshnessLabel({ refTime: "nesmysl", freshPoints: 238, totalPoints: 238 })];
+  });
+  assertTrue(windLabels[0] === "Vítr 10 m · data 20 min stará",
+    `plné čerstvé pole nehlásí žádné dopočítávání ("${windLabels[0]}")`);
+  assertTrue(/5 h stará/.test(windLabels[1]) && /42 % bodů měřeno/.test(windLabels[1]),
+    `staré a děravé pole se přizná ("${windLabels[1]}")`);
+  assertTrue(windLabels[2] === "Vítr 10 m" && windLabels[3] === "Vítr 10 m",
+    `chybějící/rozbitá hlavička nevyrobí "NaN min stará" (${windLabels[2]} | ${windLabels[3]})`);
+
   await page.click("#btn-hydro"); // zap — vyšle zpožděný fetch
   await page.click("#btn-hydro"); // vyp — hned poté, fetch ještě neskončil
   await page.waitForTimeout(600); // > 350ms zpoždění první odpovědi
