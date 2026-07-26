@@ -100,6 +100,32 @@ def fetch_all(urls):
 
 # ── Metadata ──────────────────────────────────────────────────────────────────
 
+def load_temp_stations(today, yesterday):
+    """WSI stanic, které měří teplotu VZDUCHU (prvek T).
+
+    meta2 je katalog prvků po stanicích (OBS_TYPE, WSI, EG_EL_ABBREVIATION,
+    NAME, ...). Podle oficiálního popisu dat ČHMÚ je T teplota vzduchu;
+    T05/T10/T20/T50/T100 jsou teploty PŮDY v dané hloubce a TMA/TMI jsou
+    max/min — pro "kolik je teď" chceme jen T.
+    """
+    for d in (today, yesterday):
+        r = fetch(f"{NOW_META}meta2-{d}.json")
+        if not r:
+            continue
+        try:
+            values = r.json()["data"]["data"]["values"]
+        except Exception as e:
+            print(f"  meta2 ({d}): {e}", file=sys.stderr)
+            continue
+        ids = {str(row[1]).strip() for row in values
+               if len(row) > 2 and str(row[2]).strip() == "T"}
+        if ids:
+            print(f"  meta2 {d}: {len(values)} řádků → {len(ids)} stanic s teplotou",
+                  file=sys.stderr)
+            return ids
+    return set()
+
+
 def load_metadata(today, yesterday):
     sources = [
         (f"{NOW_META}meta1-{today}.json",    "now-today"),
@@ -121,11 +147,12 @@ def load_metadata(today, yesterday):
             for row in values:
                 if len(row) < 5:
                     continue
-                m = re.search(r'(\d+)$', str(row[0]))
-                if not m:
-                    continue
-                sid = m.group(1)
-                if sid in merged:
+                # Klíč je CELÉ WSI. Dřív se z něj braly jen koncové číslice,
+                # což fungovalo jen díky tomu, že se stahoval jediný prefix
+                # 0-20000-0. S národní sítí 0-203-0 by se ID mezi prefixy
+                # mohla potkat a stanice by se navzájem přepsaly.
+                sid = str(row[0]).strip()
+                if not sid or sid in merged:
                     continue
                 try:
                     lat, lon = float(row[lat_col]), float(row[lon_col])
@@ -279,10 +306,25 @@ def main():
     now_ids = []
     for date in (today, yesterday):
         for prefix in ("10m", "1h"):
-            p = re.compile(rf'{prefix}-0-20000-0-(\d+)-{date}\.json')
+            # BEZ předpokladu o WIGOS prefixu. Původní vzor měl natvrdo
+            # 0-20000-0, takže viděl jen 40 mezinárodně vyměňovaných stanic
+            # a celou národní síť 0-203-0 (dalších ~436) přehlédl.
+            p = re.compile(rf'{prefix}-(.+?)-{date}\.json')
             now_ids.extend(p.findall(r.text))
     now_ids = list(dict.fromkeys(sid for sid in now_ids if sid in metadata))
-    print(f"  now/ stanice: {len(now_ids)}", file=sys.stderr)
+
+    # Necháme jen stanice, které měří teplotu vzduchu (prvek T). Zbytek jsou
+    # hlavně srážkoměry — ty má na starosti chmi_rain.py a v teplotní vrstvě
+    # by dělaly jen prázdné body.
+    temp_ids = load_temp_stations(today, yesterday)
+    if temp_ids:
+        before = len(now_ids)
+        now_ids = [s for s in now_ids if s in temp_ids]
+        print(f"  now/ stanice: {before} celkem → {len(now_ids)} s teplotou",
+              file=sys.stderr)
+    else:
+        print(f"  now/ stanice: {len(now_ids)} (meta2 nedostupná, beru vše)",
+              file=sys.stderr)
 
     if not now_ids:
         _save_empty("Žádné now/ stanice")
@@ -292,8 +334,8 @@ def main():
     urls = []
     for sid in now_ids:
         for d in (today, yesterday):
-            urls.append((f"10m_{sid}_{d}", f"{NOW_DATA}10m-0-20000-0-{sid}-{d}.json"))
-            urls.append((f"1h_{sid}_{d}",  f"{NOW_DATA}1h-0-20000-0-{sid}-{d}.json"))
+            urls.append((f"10m_{sid}_{d}", f"{NOW_DATA}10m-{sid}-{d}.json"))
+            urls.append((f"1h_{sid}_{d}",  f"{NOW_DATA}1h-{sid}-{d}.json"))
 
     print(f"  Stahuji {len(urls)} souborů…", file=sys.stderr)
     fetched = fetch_all(urls)
@@ -388,7 +430,7 @@ def main():
     print(f"  ✓ chmi_stations.json — {len(stations)} stanic", file=sys.stderr)
 
     # Per-stanice soubory — detail panel na webu stahuje jen tu jednu stanici,
-    # co uživatel otevřel, místo celého 40stanicového bloku.
+    # co uživatel otevřel, místo celého bloku (dřív 40 stanic, teď ~300).
     series_dir = DATA_DIR / "chmi_series"
     series_dir.mkdir(parents=True, exist_ok=True)
     for sid, payload in all_series.items():

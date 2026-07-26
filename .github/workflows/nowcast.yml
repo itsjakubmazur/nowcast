@@ -130,6 +130,8 @@ jobs:
 
       - name: Run chmi (ČHMÚ stanice + akumulace historie)
         if: steps.mode.outputs.mode == 'full'
+        timeout-minutes: 5
+        continue-on-error: true
         run: python pipeline/chmi.py || echo "chmi.py selhalo, pokračuji"
 
       - name: Run chmi_rain (srážkoměrná síť — 436 stanic)
