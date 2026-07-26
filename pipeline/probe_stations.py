@@ -1,12 +1,19 @@
-"""Sonda: inventura nevyužitých větví opendata.chmi.cz (ruční dispatch)."""
-import io, re, sys, tarfile
+"""Sonda 2: hloubkový průzkum nevyužitých větví opendata.chmi.cz (ruční dispatch).
+
+Kolo 1 zjistilo, CO existuje. Tohle kolo zjišťuje, JAK to vypadá uvnitř —
+sloupce CSV, struktura HDF5, kadence běhů, velikosti souborů. Bez toho by
+návrh implementace byl jen odhad.
+"""
+import io, re, sys, tarfile, zipfile
 from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 import requests
 
 UA = {"User-Agent": "Mozilla/5.0 (compatible; NowcastBot/1.0)",
       "Accept": "application/json,text/html,*/*"}
 T = (15, 90)
 ROOT = "https://opendata.chmi.cz"
+PAGES = "https://itsjakubmazur.github.io/nowcast"
 
 
 def get(u, **kw):
@@ -14,16 +21,11 @@ def get(u, **kw):
 
 
 def links(html):
-    out = []
-    for m in re.finditer(r'href="([^"?][^"]*)"', html):
-        l = m.group(1)
-        if not l.startswith("http") and l != "../":
-            out.append(l)
-    return out
+    return [m.group(1) for m in re.finditer(r'href="([^"?][^"]*)"', html)
+            if not m.group(1).startswith("http") and m.group(1) != "../"]
 
 
-def listing(path, label=None, show=6):
-    """Vypíše adresář + stáří nejnovějšího souboru (podle Last-Modified)."""
+def ls(path, label=None, show=6):
     url = f"{ROOT}/{path}"
     try:
         r = get(url)
@@ -33,79 +35,114 @@ def listing(path, label=None, show=6):
     if not r.ok:
         print(f"  {label or path}: HTTP {r.status_code}")
         return []
-    ls = links(r.text)
-    files = [l for l in ls if not l.endswith("/")]
-    dirs = [l for l in ls if l.endswith("/")]
+    all_ = links(r.text)
+    files = [l for l in all_ if not l.endswith("/")]
+    dirs = [l for l in all_ if l.endswith("/")]
     print(f"  {label or path}: {len(files)} souborů, {len(dirs)} adresářů")
     if dirs:
-        print(f"    adresáře: {dirs[:12]}")
+        print(f"    adresáře: {dirs[:14]}")
     if files:
         newest = sorted(files)[-1]
-        print(f"    nejnovější: {newest}")
         try:
             h = requests.head(f"{url}{newest}", headers=UA, timeout=T)
             lm = h.headers.get("Last-Modified")
-            size = h.headers.get("Content-Length")
-            age = ""
-            if lm:
-                from email.utils import parsedate_to_datetime
-                dt = parsedate_to_datetime(lm)
-                age = f"  → stáří {(datetime.now(timezone.utc) - dt).total_seconds() / 60:.0f} min"
-            print(f"    Last-Modified: {lm}  {int(size) // 1024 if size else '?'} kB{age}")
+            size = int(h.headers.get("Content-Length") or 0)
+            age = (datetime.now(timezone.utc) - parsedate_to_datetime(lm)).total_seconds() / 60 if lm else None
+            print(f"    nejnovější: {newest}  {size // 1024} kB"
+                  + (f"  stáří {age:.0f} min" if age is not None else ""))
         except Exception as e:
             print(f"    HEAD selhal: {str(e)[:80]}")
         print(f"    ukázka: {sorted(files)[-show:]}")
     return files
 
 
+def head_text(url, n=6, label=""):
+    """Vypíše prvních n řádků textového souboru."""
+    try:
+        r = get(url)
+        print(f"  {label or url}: HTTP {r.status_code}, {len(r.content)} B, "
+              f"ct={r.headers.get('Content-Type')}")
+        if not r.ok:
+            return
+        txt = r.content.decode("utf-8", "replace")
+        for line in txt.splitlines()[:n]:
+            print(f"    | {line[:220]}")
+    except Exception as e:
+        print(f"  {label or url}: CHYBA {str(e)[:120]}")
+
+
 def main():
-    print(f"Inventura opendata.chmi.cz — {datetime.now(timezone.utc).isoformat()}")
+    print(f"Sonda 2 — {datetime.now(timezone.utc).isoformat()}")
 
-    print("\n=== A) radar/composite — které produkty a jak čerstvé ===")
-    base = "meteorology/weather/radar/composite/"
-    subs = links(get(f"{ROOT}/{base}").text)
-    print(f"  podadresáře: {subs}")
-    for sub in [s for s in subs if s.endswith("/")]:
-        listing(f"{base}{sub}hdf5/", f"composite/{sub}hdf5", show=3)
+    print("\n=== 1) air_quality: skutečný obsah hodinového CSV ===")
+    head_text(f"{ROOT}/air_quality/now/data/airquality_1h_avg_CZ.csv", 8, "airquality_1h_avg_CZ.csv")
+    ls("air_quality/", "air_quality kořen")
+    ls("air_quality/now/", "air_quality/now")
 
-    print("\n=== B) fct_* — vlastní extrapolační nowcast ČHMÚ ===")
-    for prod in ("fct_pseudocappi2km", "fct_maxz"):
-        files = listing(f"{base}{prod}/hdf5/", f"{prod}/hdf5", show=3)
-        tars = [f for f in files if f.endswith(".tar")]
-        if not tars:
-            continue
-        newest = sorted(tars)[-1]
+    print("\n=== 2) echotop — výška horní hranice oblačnosti ===")
+    files = ls("meteorology/weather/radar/composite/echotop/hdf5/", "echotop", show=3)
+    if files:
+        newest = sorted(files)[-1]
         try:
-            r = get(f"{ROOT}/{base}{prod}/hdf5/{newest}")
-            print(f"    stažen {newest}: {len(r.content)} B")
-            with tarfile.open(fileobj=io.BytesIO(r.content)) as tf:
-                names = tf.getnames()
-                print(f"    obsah tar: {len(names)} souborů")
-                for n in names[:12]:
-                    print(f"      {n}")
+            r = get(f"{ROOT}/meteorology/weather/radar/composite/echotop/hdf5/{newest}")
+            print(f"    stažen {newest}: {len(r.content)} B, magic={r.content[:8]!r}")
         except Exception as e:
-            print(f"    tar CHYBA {str(e)[:120]}")
+            print(f"    CHYBA {str(e)[:100]}")
 
-    print("\n=== C) blesky — existují v open datech? ===")
-    for p in ("meteorology/weather/", "meteorology/"):
-        ls = links(get(f"{ROOT}/{p}").text)
-        hits = [l for l in ls if re.search(r"blesk|light|celdn|sferic|storm", l, re.I)]
-        print(f"  {p}: {ls} → shody: {hits or 'žádné'}")
+    print("\n=== 3) radiosounding — aerologické výstupy ===")
+    d = ls("meteorology/weather/radiosounding/", "radiosounding")
+    for sub in ("meteorology/weather/radiosounding/",):
+        r = get(f"{ROOT}/{sub}")
+        for s in [l for l in links(r.text) if l.endswith("/")][:4]:
+            ls(f"{sub}{s}", f"radiosounding/{s}", show=4)
 
-    print("\n=== D) air_quality ===")
-    listing("air_quality/now/data/", "aq now/data", show=4)
-    listing("air_quality/now/forecast/", "aq now/forecast", show=6)
+    print("\n=== 4) wind_profiles ===")
+    r = get(f"{ROOT}/meteorology/weather/wind_profiles/")
+    subs = [l for l in links(r.text) if l.endswith("/")]
+    print(f"  podadresáře: {subs[:14]}")
+    for s in subs[:3]:
+        ls(f"meteorology/weather/wind_profiles/{s}", f"wind_profiles/{s}", show=4)
 
-    print("\n=== E) satelit ===")
-    listing("meteorology/weather/satellite/", "satellite", show=4)
+    print("\n=== 5) forecast + forecast_monthly + forecast_maps_bio ===")
+    for p in ("meteorology/weather/forecast/", "meteorology/weather/forecast_monthly/",
+              "meteorology/weather/forecast_maps_bio/"):
+        f = ls(p, p, show=8)
 
-    print("\n=== F) ALADIN Lambert 2.3 km (středoevropská doména) ===")
-    listing("meteorology/weather/nwp_aladin/", "nwp_aladin", show=4)
-    listing("meteorology/weather/nwp_aladin/Lambert_2.3km/", "Lambert_2.3km", show=6)
+    print("\n=== 6) meteorology/products a floods ===")
+    for p in ("meteorology/products/", "meteorology/floods/", "meteorology/phenology/"):
+        ls(p, p, show=8)
+
+    print("\n=== 7) ALADIN Lambert_2.3km — jeden běh ===")
+    for run in ("12", "00"):
+        f = ls(f"meteorology/weather/nwp_aladin/Lambert_2.3km/{run}/", f"Lambert 2.3km run {run}", show=8)
+
+    print("\n=== 8) satelit geo/ ===")
+    r = get(f"{ROOT}/meteorology/weather/satellite/geo/")
+    subs = [l for l in links(r.text) if l.endswith("/")]
+    print(f"  geo podadresáře: {subs[:16]}")
+    for s in subs[:3]:
+        ls(f"meteorology/weather/satellite/geo/{s}", f"geo/{s}", show=4)
+
+    print("\n=== 9) kontrola: dorazila jména letišť a historie na Pages? ===")
+    for name in ("metar_names.json", "metar_history.json", "chmi_stats.json"):
+        try:
+            r = get(f"{PAGES}/data/{name}")
+            print(f"  {name}: HTTP {r.status_code}, {len(r.content)} B")
+            if r.ok:
+                j = r.json()
+                if isinstance(j, dict):
+                    ks = list(j.keys())[:6]
+                    print(f"    klíčů: {len(j)}, ukázka {ks}")
+                    if ks and name == "metar_names.json":
+                        print(f"    hodnota[{ks[0]}] = {j[ks[0]]!r}")
+        except Exception as e:
+            print(f"  {name}: CHYBA {str(e)[:120]}")
 
 
 if __name__ == "__main__":
     try:
         main()
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         print(f"!! {e}", file=sys.stderr)
