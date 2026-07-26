@@ -52,23 +52,52 @@ def fetch_obs(station_ids: list[str]) -> list[dict]:
     return results
 
 
+def _ids_from_v2(lat, lon, limit):
+    """Starší /v2/pws/nearby — na běžném (free) klíči vrací 401."""
+    url = (f"{BASE_URL}/v2/pws/nearby?geocode={lat:.4f},{lon:.4f}&limit={limit}"
+           f"&format=json&units=m&apiKey={API_KEY}")
+    r = requests.get(url, timeout=TIMEOUT)
+    r.raise_for_status()
+    return r.json().get("location", {}).get("stationIdentifier", []) or []
+
+
+def _ids_from_v3(lat, lon, limit):
+    """Novější Location Services — jiný produkt, jiná oprávnění; často projde
+    i tam, kde v2/pws/nearby vrací 401."""
+    url = (f"{BASE_URL}/v3/location/near?geocode={lat:.4f},{lon:.4f}"
+           f"&product=pws&format=json&apiKey={API_KEY}")
+    r = requests.get(url, timeout=TIMEOUT)
+    r.raise_for_status()
+    loc = r.json().get("location", {}) or {}
+    ids = loc.get("stationId") or loc.get("stationIdentifier") or []
+    return list(ids)[:limit]
+
+
 def fetch_nearby(lat: float, lon: float, limit: int = 20) -> list[dict]:
-    """Stáhne okolní stanice a jejich aktuální pozorování."""
+    """Stáhne okolní stanice a jejich aktuální pozorování.
+
+    POZOR na interpretaci chyby: 401 z /v2/pws/nearby NEznamená neplatný klíč —
+    čtení pozorování (/v2/pws/observations) běžným klíčem funguje, jen
+    vyhledávání okolních stanic je jinak licencované. Proto fallback na v3 a
+    hláška, která nesvádí k závěru "klíč je rozbitý".
+    """
     if not API_KEY:
         return []
 
-    # Krok 1: najdi okolní stanice
-    nearby_url = (f"{BASE_URL}/v2/pws/nearby"
-                  f"?geocode={lat:.4f},{lon:.4f}&limit={limit}"
-                  f"&format=json&units=m&apiKey={API_KEY}")
-    try:
-        r = requests.get(nearby_url, timeout=TIMEOUT)
-        r.raise_for_status()
-        nearby = r.json().get("location", {}).get("stationIdentifier", [])
-        if not nearby:
-            return []
-    except Exception as e:
-        print(f"  WU nearby chyba: {e}", file=sys.stderr)
+    nearby, errs = [], []
+    for name, fn in (("v2/pws/nearby", _ids_from_v2), ("v3/location/near", _ids_from_v3)):
+        try:
+            nearby = fn(lat, lon, limit)
+            if nearby:
+                print(f"  Okolní stanice přes {name}: {len(nearby)}", file=sys.stderr)
+                break
+        except Exception as e:
+            errs.append(f"{name}: {e}")
+    if not nearby:
+        for e in errs:
+            print(f"  WU hledání okolních stanic — {e}", file=sys.stderr)
+        print("  (vlastní stanice se stahují dál; okolní WU síť tímhle klíčem "
+              "nejde procházet — nahrazuje ji METAR + ČHMÚ)", file=sys.stderr)
         return []
 
     # Krok 2: aktuální data pro okolní stanice (po 10)

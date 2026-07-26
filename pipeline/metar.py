@@ -1,8 +1,10 @@
 """
 METAR — letištní meteostanice jako doplněk řídké sítě ČHMÚ.
 
-Proč: ČHMÚ v now/ publikuje jen ~40 stanic na celou ČR (rozestup ~50 km),
-takže hodnocení modelů i kontrola biasu se pro většinu míst nikdy nerozjely.
+Proč: ČHMÚ v now/ publikuje jen ~40 stanic na celou ČR (rozestup ~50 km) a
+WU síť tímhle klíčem nejde procházet (vlastní stanice ANO, ale /pws/nearby
+vrací 401), takže hodnocení modelů i kontrola biasu se pro většinu míst
+nikdy nerozjely.
 Letiště hlásí METAR každých 30 min, zdarma, bez klíče (NOAA Aviation Weather),
 a v ČR + těsném pohraničí jich je několik desítek — síť se tím zahustí.
 
@@ -136,7 +138,7 @@ def main():
     path.write_text(json.dumps(out, ensure_ascii=False, separators=(",", ":")))
     print(f"  ✓ metar_stations.json — {len(stations)} stanic "
           f"(přeskočeno {skipped}), {path.stat().st_size // 1024} kB", file=sys.stderr)
-    for s in stations[:8]:
+    for s in stations[:25]:
         print(f"    {s['name'][:34]:36s} {s['lat']:.2f},{s['lon']:.2f}  "
               f"{s['temp']}°C  {s['time_utc'][11:16]}Z", file=sys.stderr)
 
