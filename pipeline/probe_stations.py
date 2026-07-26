@@ -1,12 +1,7 @@
-"""Sonda 5: zbývající neznámé před implementací návrhů D, E, F, H, I.
+"""Sonda 6: poslední neznámá — vazba idRegistration → (stanice, látka) v AQ registru.
 
-Konkrétně:
-  - air_quality metadata.json → data.Localities: je tam vazba idRegistration
-    → (stanice, látka)? Bez toho se hodinové CSV nedá rozklíčovat.
-  - products/grids_CZ/climate_normals: formát gridovaných normálů
-  - radiosounding _vypis_*.csv: sloupce
-  - regional_averages: kódování a oddělovače
-  - weather/forecast/now: struktura GeoJSON featur (text + polygon)
+Plus doplnění: obsah měsíčního adresáře gridovaných normálů a druhý
+aerologický výpis (Prostějov) pro potvrzení formátu.
 """
 import csv, io, json, re
 from datetime import datetime, timezone
@@ -26,118 +21,86 @@ def links(html):
             if not m.group(1).startswith("http") and m.group(1) != "../"]
 
 
-def ls(path, label=None, show=6):
-    try:
-        r = get(f"{ROOT}/{path}")
-    except Exception as e:
-        print(f"  {label or path}: CHYBA {str(e)[:100]}")
-        return []
-    if not r.ok:
-        print(f"  {label or path}: HTTP {r.status_code}")
-        return []
-    a = links(r.text)
-    files = [l for l in a if not l.endswith("/")]
-    dirs = [l for l in a if l.endswith("/")]
-    print(f"  {label or path}: {len(files)} souborů, {len(dirs)} adresářů")
-    if dirs:
-        print(f"    adresáře: {dirs[:16]}")
-    if files:
-        print(f"    ukázka: {sorted(files)[-show:]}")
-    return files
+def find_paths(obj, needle, path="", hits=None, depth=0):
+    """Najde všechny cesty, kde se v JSON stromu vyskytuje hodnota `needle`."""
+    if hits is None:
+        hits = []
+    if depth > 12 or len(hits) > 6:
+        return hits
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            if isinstance(v, (str, int)) and str(v) == needle:
+                hits.append(f"{path}.{k}")
+            else:
+                find_paths(v, needle, f"{path}.{k}", hits, depth + 1)
+    elif isinstance(obj, list):
+        for i, v in enumerate(obj[:200]):
+            find_paths(v, needle, f"{path}[{i}]", hits, depth + 1)
+    return hits
 
 
 def main():
-    print(f"Sonda 5 — {datetime.now(timezone.utc).isoformat()}")
+    print(f"Sonda 6 — {datetime.now(timezone.utc).isoformat()}")
 
-    print("\n=== A) air_quality: rozklíčování idRegistration ===")
+    print("\n=== A) AQ: kde v Localities sedí idRegistration ===")
     csv_txt = get(f"{ROOT}/air_quality/now/data/airquality_1h_avg_CZ.csv").content.decode("utf-8", "replace")
-    rows = list(csv.reader(io.StringIO(csv_txt), skipinitialspace=True))
-    print(f"  CSV: {len(rows)} řádků, hlavička {rows[0]}")
-    ids = {r[0] for r in rows[1:] if r and r[0].strip().isdigit()}
-    vts = {}
-    for r in rows[1:]:
-        if len(r) >= 3:
-            vts[r[2]] = vts.get(r[2], 0) + 1
-    print(f"  unikátních idRegistration: {len(ids)}, idValueType četnosti: {vts}")
-    print(f"  ukázka id: {sorted(ids)[:10]}")
+    rows = [r for r in csv.reader(io.StringIO(csv_txt), skipinitialspace=True) if len(r) >= 4]
+    ids = [r[0].strip() for r in rows[1:] if r[0].strip().isdigit()]
+    print(f"  CSV: {len(rows)-1} řádků, {len(set(ids))} unikátních idRegistration")
 
     meta = json.loads(get(f"{ROOT}/air_quality/now/metadata/metadata.json")
                       .content.decode("utf-8", "replace"))
     loc = meta["data"]["Localities"]
-    print(f"  Localities: {type(loc).__name__}, délka {len(loc)}")
-    first = loc[0] if isinstance(loc, list) else loc
-    print(f"  první lokalita klíče: {list(first.keys()) if isinstance(first, dict) else type(first)}")
-    print(f"  první lokalita (oříznuto): {json.dumps(first, ensure_ascii=False)[:1500]}")
 
-    # najdi, kde se vyskytuje některé idRegistration z CSV
-    target = sorted(ids)[0]
-    hit = json.dumps(loc, ensure_ascii=False)
-    print(f"  hledám idRegistration {target!r} v Localities: "
-          f"{'NALEZENO' if f'{target}' in hit else 'NENALEZENO'}")
+    target = ids[0]
+    print(f"  hledám {target!r}:")
+    for p in find_paths(loc, target):
+        print(f"    {p}")
 
-    print("\n=== B) grids_CZ/climate_normals ===")
-    p = "meteorology/products/grids_CZ/climate_normals/period_1991_2020/"
-    for sub in ("air_temperature_mean/", "precipitation/", "sunshine_duration/"):
-        f = ls(f"{p}{sub}", f"grids/{sub}", show=6)
-        if f:
-            u = f"{ROOT}/{p}{sub}{sorted(f)[0]}"
-            r = get(u)
-            print(f"    {sorted(f)[0]}: {len(r.content)} B, prvních 300 B: {r.content[:300]!r}")
+    # celá struktura MeasuringPrograms první lokality
+    mp = loc[0].get("MeasuringPrograms")
+    print(f"\n  Localities[0].MeasuringPrograms: {type(mp).__name__}, "
+          f"délka {len(mp) if hasattr(mp, '__len__') else '?'}")
+    print(f"  {json.dumps(mp, ensure_ascii=False)[:3000]}")
 
-    print("\n=== C) radiosounding _vypis_ CSV ===")
-    f = ls("meteorology/weather/radiosounding/Praha/recent/ascent/", "ascent", show=6)
-    vyp = [x for x in f if "vypis" in x]
-    if vyp:
-        r = get(f"{ROOT}/meteorology/weather/radiosounding/Praha/recent/ascent/{sorted(vyp)[-1]}")
-        print(f"  {sorted(vyp)[-1]}: {len(r.content)} B")
-        for line in r.content.decode("utf-8", "replace").splitlines()[:14]:
-            print(f"    | {line[:200]}")
+    # kolik idRegistration z CSV se vůbec podaří najít?
+    flat = json.dumps(loc, ensure_ascii=False)
+    found = sum(1 for i in set(ids) if f'"{i}"' in flat or f": {i}" in flat or f":{i}" in flat)
+    print(f"\n  hrubý odhad pokrytí: {found}/{len(set(ids))} idRegistration se v registru vyskytuje")
 
-    print("\n=== D) regional_averages: kódování a oddělovače ===")
-    for name, sub in (("Annual_areal_temperature_mean.csv", "temperature/"),
-                      ("Monthly_areal_temperature_mean_2026.csv", "temperature/"),
-                      ("Annual_areal_pecipitation.csv", "precipitation/"),
-                      ("Normal_1991_2020_areal_temperature.csv", "temperature/")):
-        r = get(f"{ROOT}/meteorology/products/regional_averages/{sub}{name}")
+    print("\n=== B) ValueType.csv celý ===")
+    r = get(f"{ROOT}/air_quality/now/metadata/ValueType.csv")
+    print(r.content.decode("utf-8", "replace"))
+
+    print("\n=== C) gridované normály — obsah měsíčního adresáře ===")
+    p = ("meteorology/products/grids_CZ/climate_normals/period_1991_2020/"
+         "air_temperature_mean/07_July_1991_2020/")
+    r = get(f"{ROOT}/{p}")
+    if r.ok:
+        f = links(r.text)
+        print(f"  {len(f)} položek: {sorted(f)[:12]}")
+        for name in sorted([x for x in f if not x.endswith("/")])[:2]:
+            h = requests.head(f"{ROOT}/{p}{name}", headers=UA, timeout=T)
+            print(f"    {name}: {int(h.headers.get('Content-Length') or 0)/1024:.0f} kB")
+            blob = get(f"{ROOT}/{p}{name}")
+            print(f"      prvních 200 B: {blob.content[:200]!r}")
+    else:
+        print(f"  HTTP {r.status_code}")
+
+    print("\n=== D) aerologie Prostějov — potvrzení formátu ===")
+    for city in ("Praha", "Prostejov"):
+        pth = f"meteorology/weather/radiosounding/{city}/recent/ascent/"
+        r = get(f"{ROOT}/{pth}")
         if not r.ok:
-            print(f"  {name}: HTTP {r.status_code}")
+            print(f"  {city}: HTTP {r.status_code}")
             continue
-        raw = r.content
-        print(f"  {name}: {len(raw)} B")
-        for enc in ("utf-8", "windows-1250"):
-            try:
-                head = raw.decode(enc).splitlines()[0]
-                print(f"    {enc}: {head[:160]}")
-            except Exception as e:
-                print(f"    {enc}: CHYBA {str(e)[:60]}")
-        for line in raw.decode("windows-1250", "replace").splitlines()[1:3]:
-            print(f"    | {line[:160]}")
-
-    print("\n=== E) forecast/now GeoJSON — struktura featur ===")
-    f = ls("meteorology/weather/forecast/now/", "forecast now", show=6)
-    if f:
-        j = json.loads(get(f"{ROOT}/meteorology/weather/forecast/now/{sorted(f)[-1]}")
-                       .content.decode("utf-8", "replace"))
-        feats = j["data"]["features"]
-        print(f"  datovyTokID: {j.get('datovyTokID')}")
-        print(f"  featur: {len(feats)}")
-        for ft in feats[:3]:
-            props = ft.get("properties", {})
-            geom = ft.get("geometry", {})
-            print(f"    geometry.type={geom.get('type')}, "
-                  f"prstenců={len(geom.get('coordinates', []))}")
-            print(f"    properties klíče: {list(props.keys())}")
-            print(f"    properties: {json.dumps(props, ensure_ascii=False)[:900]}")
-    # jaké různé datovyTokID existují napříč soubory?
-    toks = {}
-    for name in sorted(f)[-8:]:
-        try:
-            jj = json.loads(get(f"{ROOT}/meteorology/weather/forecast/now/{name}")
-                            .content.decode("utf-8", "replace"))
-            toks[name] = jj.get("datovyTokID")
-        except Exception as e:
-            toks[name] = f"CHYBA {str(e)[:40]}"
-    print(f"  datovyTokID podle souboru: {json.dumps(toks, ensure_ascii=False, indent=2)[:1200]}")
+        vyp = sorted([x for x in links(r.text) if "vypis" in x])
+        print(f"  {city}: {len(vyp)} výpisů, nejnovější {vyp[-1] if vyp else '—'}")
+        if vyp:
+            b = get(f"{ROOT}/{pth}{vyp[-1]}")
+            print(f"    {len(b.content)} B:")
+            for line in b.content.decode("utf-8", "replace").splitlines():
+                print(f"    | {line[:160]}")
 
 
 if __name__ == "__main__":

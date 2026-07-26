@@ -62,6 +62,12 @@ jobs:
             data/chmi_rain.json
             data/metar_names.json
             data/metar_history.json
+            data/chmi_fct.json
+            data/echotop.json
+            data/chmi_normals.json
+            data/chmi_forecast.json
+            data/chmi_air.json
+            data/chmi_regional.json
           key: station-data-${{ github.run_id }}
           restore-keys: |
             station-data-
@@ -104,6 +110,19 @@ jobs:
 
       - name: Run grid (Fáze 4a)
         run: python pipeline/grid.py
+
+      - name: Run chmi_fct (COTREC nowcast ČHMÚ — nezávislý druhý názor)
+        timeout-minutes: 3
+        continue-on-error: true
+        run: python pipeline/chmi_fct.py || echo "chmi_fct.py selhalo, pokračuji"
+        env:
+          NOWCAST_LAT: '50.08'
+          NOWCAST_LON: '14.42'
+
+      - name: Run echotop (výška vrcholů — hloubka konvekce)
+        timeout-minutes: 2
+        continue-on-error: true
+        run: python pipeline/echotop.py || echo "echotop.py selhalo, pokračuji"
 
       - name: Run render (Fáze 4c)
         run: python pipeline/render.py
@@ -154,6 +173,12 @@ jobs:
         continue-on-error: true
         run: python pipeline/chmi_stats.py || echo "chmi_stats.py selhalo, pokračuji"
 
+      - name: Run chmi_normals (normály 1991-2020 — statická data, stáhne se jednou)
+        if: steps.mode.outputs.mode == 'full'
+        timeout-minutes: 4
+        continue-on-error: true
+        run: python pipeline/chmi_normals.py || echo "chmi_normals.py selhalo, pokračuji"
+
       - name: Run hydro (hlásné profily — stavy a průtoky, rozpočet 90 s)
         if: steps.mode.outputs.mode == 'full'
         timeout-minutes: 4
@@ -180,6 +205,12 @@ jobs:
             data/chmi_rain.json
             data/metar_names.json
             data/metar_history.json
+            data/chmi_fct.json
+            data/echotop.json
+            data/chmi_normals.json
+            data/chmi_forecast.json
+            data/chmi_air.json
+            data/chmi_regional.json
           key: station-data-${{ github.run_id }}
 
       - name: Validate publikovaná data (poslední pojistka před deployem)
@@ -206,7 +237,7 @@ jobs:
           git config user.name "nowcast-bot"
           git config user.email "actions@users.noreply.github.com"
           git add pipeline/state/
-          git commit -m "chore: aktualizace accuracy_history.json [skip ci]"
+          git commit -m "chore: aktualizace stavu verifikace [skip ci]"
           for i in 1 2 3; do
             git pull --rebase origin "${GITHUB_REF_NAME}" && git push origin "HEAD:${GITHUB_REF_NAME}" && break
             echo "Push pokus $i selhal, zkouším znovu za $((i*3))s"

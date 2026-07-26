@@ -30,16 +30,24 @@ from nowcast import (
 
 STATE_DIR     = Path(__file__).parent / "state"
 HISTORY_PATH  = STATE_DIR / "accuracy_history.json"
+COTREC_PENDING = STATE_DIR / "cotrec_pending.json"
+COTREC_HISTORY = STATE_DIR / "cotrec_history.json"
 WINDOW_DAYS   = 30
 SAMPLE_RADIUS = 2   # ±2 px kolem domovské lokace = 5×5 = 25 vzorků / leadtime
+COTREC_TOL_MIN = 5  # tolerance shody času predikce a pozorování
 
 
-def _metrics(pred: np.ndarray, actual: np.ndarray, r0, r1, c0, c1) -> dict:
-    p = np.nan_to_num(pred[r0:r1, c0:c1], nan=0.0).ravel()
-    a = np.nan_to_num(actual[r0:r1, c0:c1], nan=0.0).ravel()
+def _metrics_flat(p: np.ndarray, a: np.ndarray) -> dict:
     mae = float(np.mean(np.abs(p - a)))
     hit = float(np.mean((p >= RAIN_THRESHOLD_MM_H) == (a >= RAIN_THRESHOLD_MM_H)))
     return {"mae_mm_h": round(mae, 3), "hit_rate": round(hit, 4), "n": int(p.size)}
+
+
+def _metrics(pred: np.ndarray, actual: np.ndarray, r0, r1, c0, c1) -> dict:
+    return _metrics_flat(
+        np.nan_to_num(pred[r0:r1, c0:c1], nan=0.0).ravel(),
+        np.nan_to_num(actual[r0:r1, c0:c1], nan=0.0).ravel(),
+    )
 
 
 def _aggregate(history: list, key: str) -> dict:
@@ -56,6 +64,81 @@ def _aggregate(history: list, key: str) -> dict:
         "hit_rate_pct": round(hit * 100, 1),
         "n": n_total,
     }
+
+
+def score_cotrec(stack, times, row, col, nrows, ncols) -> int:
+    """
+    Vyhodnotí čekající předpovědi ČHMÚ COTREC proti tomu, co radar mezitím
+    naměřil, a přesune je do cotrec_history.json.
+
+    Proč zvlášť a ne jako naši extrapolaci: COTREC si nepočítáme, ale stahujeme
+    hotový. Nedá se tedy přehrát na zadrženém úseku — musí se uložit a počkat,
+    až dorazí pozorování pro čas jeho platnosti. Metrika je záměrně úplně
+    stejná (_metrics_flat, okno ±SAMPLE_RADIUS), jinak by srovnání nic neříkalo.
+
+    Vrací počet nově vyhodnocených záznamů.
+    """
+    if not COTREC_PENDING.exists():
+        return 0
+    try:
+        pending = json.loads(COTREC_PENDING.read_text())
+    except Exception:
+        return 0
+    if not isinstance(pending, list) or not pending:
+        return 0
+
+    r0, r1 = max(0, row - SAMPLE_RADIUS), min(nrows, row + SAMPLE_RADIUS + 1)
+    c0, c1 = max(0, col - SAMPLE_RADIUS), min(ncols, col + SAMPLE_RADIUS + 1)
+    obs = {t: dbz_to_rainrate(stack[i]) for i, t in enumerate(times)}
+
+    history = []
+    if COTREC_HISTORY.exists():
+        try:
+            history = json.loads(COTREC_HISTORY.read_text())
+        except Exception:
+            history = []
+
+    now_utc = datetime.now(timezone.utc)
+    still_pending, scored = [], 0
+    for p in pending:
+        try:
+            valid = datetime.fromisoformat(p["valid_utc"])
+            pred = np.asarray(p["pred_box"], dtype=np.float32)
+        except Exception:
+            continue   # rozbitý záznam zahodíme, ať se nehromadí
+
+        match = next((t for t in obs
+                      if abs((t - valid).total_seconds()) <= COTREC_TOL_MIN * 60), None)
+        if match is None:
+            # Pozorování ještě nedorazilo → počkáme. Pokud je ale čas platnosti
+            # dávno pryč a snímek nikdy nepřišel, záznam zahodíme.
+            if (now_utc - valid).total_seconds() < 3 * 3600:
+                still_pending.append(p)
+            continue
+
+        actual = np.nan_to_num(obs[match][r0:r1, c0:c1], nan=0.0).ravel()
+        if actual.size != pred.size:
+            # Okno u kraje rastru — nedá se srovnat, záznam zahodíme.
+            continue
+        m = _metrics_flat(pred, actual)
+        history.append({
+            "run_utc": now_utc.isoformat(),
+            "base_utc": p.get("base_utc"),
+            "valid_utc": p["valid_utc"],
+            "lead_min": p.get("lead_min"),
+            f"leadtime_{max(1, int(p.get('lead_min', 10)) // TIMESTEP_MIN)}": m,
+        })
+        scored += 1
+
+    cutoff = (now_utc - timedelta(days=WINDOW_DAYS)).isoformat()
+    history = [e for e in history if e.get("run_utc", "") >= cutoff]
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    COTREC_HISTORY.write_text(json.dumps(history, ensure_ascii=False))
+    COTREC_PENDING.write_text(json.dumps(still_pending, ensure_ascii=False))
+    if scored:
+        print(f"verify.py: vyhodnoceno {scored} předpovědí COTREC "
+              f"({len(still_pending)} čeká, {len(history)} v historii)")
+    return scored
 
 
 def main():
@@ -139,6 +222,16 @@ def main():
     print(f"verify.py: +1 záznam, {len(history)} v okně {WINDOW_DAYS} dní "
           f"(MAE₁₀={m1['mae_mm_h']} hit₁₀={m1['hit_rate']:.0%})")
 
+    # Zpožděné hodnocení COTREC ČHMÚ. Selhání tady nesmí shodit accuracy.json —
+    # naše vlastní verifikace na něm nezávisí.
+    cot_history = []
+    try:
+        score_cotrec(stack, times, row, col, nrows, ncols)
+        if COTREC_HISTORY.exists():
+            cot_history = json.loads(COTREC_HISTORY.read_text())
+    except Exception as e:
+        print(f"verify.py: hodnocení COTREC selhalo ({e}) — pokračuji", file=sys.stderr)
+
     # Denní rozpad (posledních 7 dní) — pro webovou kartu "Trefili jsme se?":
     # transparentní verifikace po dnech, ne jen jedno souhrnné číslo
     by_day: dict[str, list] = {}
@@ -165,6 +258,21 @@ def main():
         "threshold_mm_h":   RAIN_THRESHOLD_MM_H,
         "sample_location":  {"lat": lat, "lon": lon, "radius_px": SAMPLE_RADIUS},
     }
+
+    # Srovnání s COTREC ČHMÚ — stejná metrika, stejné okno, stejná lokace.
+    # Teprve tohle odpovídá na otázku, jestli má smysl držet vlastní pysteps běh.
+    if cot_history:
+        out["cotrec"] = {
+            "source": "ČHMÚ COTREC (composite/fct_maxz)",
+            "method": ("Publikovaná předpověď uložená v čase vydání a porovnaná "
+                       "s pozorováním, které dorazilo později. Stejná metrika "
+                       "i okno jako u naší extrapolace."),
+            "n_runs": len(cot_history),
+            "leadtime_10min": _aggregate(cot_history, "leadtime_1"),
+            "leadtime_20min": _aggregate(cot_history, "leadtime_2"),
+            "leadtime_30min": _aggregate(cot_history, "leadtime_3"),
+            "leadtime_60min": _aggregate(cot_history, "leadtime_6"),
+        }
     (DATA_DIR / "accuracy.json").write_text(json.dumps(out, ensure_ascii=False, indent=2))
     print(f"✓ accuracy.json — MAE₁₀={out['leadtime_10min']['mae_mm_h']} mm/h, "
           f"shoda={out['leadtime_10min']['hit_rate_pct']}%  (n_runs={len(history)})")
