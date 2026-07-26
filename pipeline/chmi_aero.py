@@ -21,15 +21,14 @@ Ověřeno sondou (běh 30219708883), soubor
   MU DCI  — deep convective index
   Tkonv   — konvektivní teplota (°C): teplota, na kterou se musí přízemní
             vzduch ohřát, aby se konvekce spustila sama
-  VKH/KKH — výstupná a konvekční kondenzační hladina, dvojice čísel
+  VKH     — teplota a tlak ve výstupné kondenzační hladině [°C, hPa]
+  KKH     — teplota a tlak v konvektivní kondenzační hladině [°C, hPa]
 
-POZOR na VKH/KKH: druhé číslo je zjevně tlak v hPa (656–804), ale první číslo
-NENÍ výška v km, jak by se nabízelo. Praha měla VKH 2,500 při 700 hPa (~3 km,
-zhruba sedí), ale Prostějov 10,500 při 804 hPa — a 804 hPa je asi 1,9 km, ne
-10,5 km. Pravděpodobně jde o teplotu na té hladině, jisté to ale není.
-Ukládáme proto obě čísla surově a do UI je nepouštíme; popisují se až tehdy,
-až se význam potvrdí z dokumentace ČHMÚ. Do verdiktu jdou jen CAPE, CIN
-a Tkonv, kde je jednotka jednoznačná.
+První číslo u VKH/KKH je TEPLOTA, ne výška — což z dat samotných vypadalo
+opačně (Praha 2,500 při 700 hPa vypadalo jako km, ale Prostějov 10,500 při
+804 hPa to vyloučil, protože 804 hPa je asi 1,9 km). Rozhodla až oficiální
+dokumentace radiosondáže (radiosondaz_popis_cz_1.0.pdf), která u obou uvádí
+explicitně "[°C, hPa]".
 
 Zásadní omezení, které se musí dostat i do UI: dvě stanice a dva vzestupy
 denně (00 a 12 UTC). Odpolední bouřka se řídí ranním sondážním profilem jen
@@ -67,11 +66,9 @@ KEYS = {
     "MU CINH": ("cin", "J/kg"),
     "MU DCI": ("dci", ""),
     "TKONV": ("t_konv", "°C"),
-    # Význam první hodnoty neověřen — viz poznámka v hlavičce. Do UI nejdou.
-    "VKH": ("vkh_raw", ""),
-    "KKH": ("kkh_raw", ""),
+    "VKH": ("lcl", "°C/hPa"),   # výstupná kondenzační hladina
+    "KKH": ("ccl", "°C/hPa"),   # konvektivní kondenzační hladina
 }
-UNVERIFIED = {"vkh_raw", "kkh_raw"}
 
 # Prahy CAPE pro slovní hodnocení. Orientační, pro střední Evropu.
 CAPE_LEVELS = [(2500, "velmi silná"), (1000, "silná"), (300, "mírná"), (0, "slabá")]
@@ -121,9 +118,8 @@ def parse_vypis(text: str) -> dict:
                 pass
         if not nums:
             continue
-        # VKH/KKH mají dvě čísla; druhé je tlak v hPa, první zatím neurčené.
-        # Ukládáme surově jako pole, ať se nic nepředstírá.
-        out[name] = nums[:2] if len(nums) >= 2 else nums[0]
+        # VKH/KKH jsou dvojice (teplota °C, tlak hPa) — potvrzeno dokumentací
+        out[name] = {"t_c": nums[0], "hpa": nums[1]} if len(nums) >= 2 else nums[0]
     return out
 
 
@@ -183,7 +179,8 @@ def main():
                    "prostředí, ve kterém by bouřka vznikala, ne předpověď "
                    "konkrétní bouřky."),
         "units": {v[0]: v[1] for v in KEYS.values() if v[1]},
-        "unverified": sorted(UNVERIFIED),
+        "labels": {"lcl": "výstupná kondenzační hladina",
+                   "ccl": "konvektivní kondenzační hladina"},
         "cape_levels": {label: v for v, label in CAPE_LEVELS},
         "stations": stations,
     }

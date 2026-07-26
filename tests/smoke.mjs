@@ -241,14 +241,14 @@ function prepareServeDir() {
       source: "ČHMÚ — radiosondáž (weather/radiosounding)",
       caveat: "Dvě stanice, dva vzestupy denně.",
       units: { cape: "J/kg", cin: "J/kg", t_konv: "°C" },
-      unverified: ["kkh_raw", "vkh_raw"],
+      labels: { lcl: "výstupná kondenzační hladina", ccl: "konvektivní kondenzační hladina" },
       cape_levels: { "velmi silná": 2500, "silná": 1000, "mírná": 300, "slabá": 0 },
       stations: [{
         name: "Praha-Libuš", lat: 50.008, lon: 14.447,
         file: "26072612_Praha_ascent_vypis_111506.csv",
         sounding_utc: new Date(Date.now() - 6 * 3600000).toISOString(), age_h: 6,
         cape: 1450, cin: -120, dci: 21.5, t_konv: 34,
-        vkh_raw: [2.5, 700], kkh_raw: [1.6, 656], cape_label: "silná",
+        lcl: { t_c: 2.5, hpa: 700 }, ccl: { t_c: 1.6, hpa: 656 }, cape_label: "silná",
       }],
     }));
 

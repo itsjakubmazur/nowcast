@@ -178,6 +178,14 @@ export function renderConvect() {
       rows.push(`<div class="ct-row"><span>Konvektivní teplota</span>` +
         `<b>${String(snd.t_konv).replace(".", ",")} °C</b></div>`);
     }
+    // VKH/KKH = teplota a tlak v kondenzačních hladinách [°C, hPa]. První
+    // číslo je teplota, ne výška — potvrzeno až oficiální dokumentací ČHMÚ,
+    // z dat samotných to vypadalo opačně.
+    if (snd.ccl?.hpa != null) {
+      rows.push(`<div class="ct-row"><span>Konvektivní kondenzační hladina</span>` +
+        `<b>${Math.round(snd.ccl.hpa)} hPa</b> <span class="muted">` +
+        `${String(snd.ccl.t_c).replace(".", ",")} °C</span></div>`);
+    }
   }
 
   if (!rows.length) return;

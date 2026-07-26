@@ -104,10 +104,15 @@ def main():
     check("CAPE = 10", v.get("cape") == 10.0, str(v.get("cape")))
     check("záporný CIN se přečte správně", v.get("cin") == -80.0, str(v.get("cin")))
     check("konvektivní teplota = 34 °C", v.get("t_konv") == 34.0, str(v.get("t_konv")))
-    check("VKH se uloží jako dvojice surových čísel",
-          v.get("vkh_raw") == [2.5, 700.0], str(v.get("vkh_raw")))
-    check("neověřené veličiny jsou označené",
-          "vkh_raw" in chmi_aero.UNVERIFIED and "kkh_raw" in chmi_aero.UNVERIFIED)
+    # VKH/KKH jsou (teplota °C, tlak hPa) — z dat to vypadalo na (km, hPa),
+    # rozhodla až dokumentace ČHMÚ. Test to drží, ať se to nezvrtne zpátky.
+    check("VKH = teplota a tlak ve výstupné kondenzační hladině",
+          v.get("lcl") == {"t_c": 2.5, "hpa": 700.0}, str(v.get("lcl")))
+    check("KKH = teplota a tlak v konvektivní kondenzační hladině",
+          v.get("ccl") == {"t_c": 1.6, "hpa": 656.0}, str(v.get("ccl")))
+    check("první hodnota NENÍ výška v km (Prostějov 10,5 při 804 hPa to vylučuje)",
+          chmi_aero.parse_vypis(
+              "sep=,\nVKH,10.500,804\n").get("lcl") == {"t_c": 10.5, "hpa": 804.0})
 
     prostejov = "sep=,\nMU CAPE,97\nMU CINH,-75\nMU DCI,18.000\nTkonv,30.700\nVKH,10.500,804\nKKH,9.600,763\n"
     v2 = chmi_aero.parse_vypis(prostejov)

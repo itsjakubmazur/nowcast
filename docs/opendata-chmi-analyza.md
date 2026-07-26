@@ -317,7 +317,7 @@ def main():
         grid = json.loads(grid_path.read_text())
         cot = {}
         for i, pt in enumerate(grid.get("pts", [])):
-            r_, c_ = int(pt[0]), int(pt[1])
+            r_, c_ = int(pt[0]), int(pt[1])   # ← CHYBA, viz poznámka níž
             v = [round(float(np.nan_to_num(rr[r_, c_])), 2) for _, _, rr in fields]
             if max(v) >= RAIN_THRESHOLD_MM_H:
                 cot[str(i)] = v
@@ -835,3 +835,64 @@ Struktury a časy aktualizace se u ČHMÚ mění — sonda v
 `pipeline/probe_stations.py` je proto napsaná tak, aby se dala pustit znovu
 (`workflow_dispatch` na `probe-sources.yml`) a čísla v téhle analýze se dala
 přeměřit.
+
+
+---
+
+## Dodatek: co se při implementaci ukázalo jinak
+
+Návrhy A–F jsou naimplementované (plus aerologie, která se během ověřování
+ukázala levnější, než vypadala). Dvě věci z plánu výše ale při psaní kódu
+neobstály — nechávám je tu i s opravou, protože jsou to přesně ty tiché chyby,
+kvůli kterých se má „ověř před implementací“ dělat.
+
+**1. `forecast_grid.json` má `pts = [[lat, lon], …]`, ne `[[row, col], …]`.**
+Kód v návrhu A i B indexoval radarový rastr jako `pt[0], pt[1]`, tedy
+zeměpisnou šířkou a délkou. Vrátilo by to čísla — jen z úplně jiného místa
+a bez jediné chyby v logu. Skutečná implementace proto pixely přepočítává
+`build_grid()`, tedy toutéž funkcí a týmiž metadaty jako `grid.py`, a shodu
+ověřuje proti `pts` (`pipeline/gridjoin.py`). Klient dělá totéž na své straně:
+párování hlídá přes `t0_utc` a počet bodů, a když se rozejde, hodnotu pro místo
+neukáže. Pokryto smoke testem.
+
+**2. Aerologické `VKH`/`KKH` nejsou (km, hPa).** Vypadalo to tak — Praha měla
+`VKH,2.500,700` a 700 hPa je asi 3 km. Prostějov `VKH,10.500,804` to ale
+vyloučil, protože 804 hPa je asi 1,9 km. Místo hádání rozhodl oficiální popis
+radiosondáže (`radiosondaz_popis_cz_1.0.pdf`, čteno přes `pdftotext`):
+
+> `VKH – teplota a tlak ve výstupné kondenzační hladině [°C, hPa]`
+> `KKH – teplota a tlak v konvektivní kondenzační hladině [°C, hPa]`
+
+První číslo je **teplota ve °C**. Kdyby se to odhadlo, appka by tvrdila výšku
+oblačné základny s chybou několika kilometrů.
+
+**3. `idValueType = 148` není chybový kód, ale index kvality ovzduší.** Zkrácený
+výpis `ValueType.csv` v sondě končil u hodnoty 8, takže to vypadalo na neznámý
+kód. Celý číselník má osm položek: 5–7 chyby, 8–11 měřená data a 148 je hotový
+index ČHMÚ. Ukládá se zvlášť.
+
+### Stav implementace
+
+| # | Návrh | Modul | Výstup |
+|---|---|---|---|
+| A | COTREC nowcast | `pipeline/chmi_fct.py`, `gridjoin.py`, `verify.py` | `chmi_fct.json` + zpožděné hodnocení v `accuracy.json` |
+| B | Echotop | `pipeline/echotop.py` | `echotop.json` |
+| C | Normály 1991–2020 | `pipeline/chmi_normals.py` | `chmi_normals.json` |
+| D | Měřené ovzduší | `pipeline/chmi_air.py` | `chmi_air.json` |
+| E | Textová předpověď | `pipeline/chmi_forecast.py` | `chmi_forecast.json` |
+| F | Krajské průměry | `pipeline/chmi_regional.py` | `chmi_regional.json` |
+| — | Aerologie (CAPE/CIN) | `pipeline/chmi_aero.py` | `chmi_aero.json` |
+
+Frontend: `web/js/chmidata.js` (pět panelů), testy `tests/test_chmi_fct.py`,
+`tests/test_chmi_extra.py` a rozšířený `tests/smoke.mjs`.
+
+Nadále neimplementované a doporučené neimplementovat: ALADIN Lambert 2,3 km,
+povodňové PNG, boxploty ovzduší, satelitní snímky jako mapová vrstva,
+`forecast_monthly`, fenologie a ročenky — důvody v sekci 5.
+
+Zbývá jediná nedořešená položka z návrhu H: gridované normály
+(`products/grids_CZ/climate_normals/`) jsou **GeoTIFF** (`T_AVG_07.tif`, 963 kB)
+s world filem `.tfw` (pixel 1000 m, počátek 267595,07 / 5688016,03). Čtení by
+znamenalo `rasterio`/GDAL v pipeline — nová těžká závislost kvůli veličině,
+kterou stanicové normály z návrhu C pokrývají skoro stejně dobře. Ponecháno
+záměrně nevyužité.
