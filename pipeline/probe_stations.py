@@ -159,9 +159,49 @@ def probe_dwd():
         print("  → CLIMAT seznam POI nepokrývá; bude potřeba jiný číselník")
 
 
+def probe_deployed_rain():
+    head("(d) Dorazila srážkoměrná síť na nasazený web?")
+    r = get("https://itsjakubmazur.github.io/nowcast/data/chmi_rain.json")
+    print(f"  chmi_rain.json: HTTP {r.status_code}, {len(r.content)} B")
+    if not r.ok:
+        print("  → na Pages NENÍ")
+        return
+    j = r.json()
+    st = j.get("stations", [])
+    print(f"  generated_at_utc: {j.get('generated_at_utc')}")
+    print(f"  stanic: {j.get('count')}, čerstvých: {j.get('fresh')}")
+    fresh = [s for s in st if not s.get("stale")]
+    wet = [s for s in fresh if (s.get("mm_1h") or 0) > 0]
+    print(f"  právě prší na: {len(wet)} stanicích")
+    lats = [s["lat"] for s in st if s.get("lat") is not None]
+    lons = [s["lon"] for s in st if s.get("lon") is not None]
+    if lats:
+        print(f"  rozsah: {min(lats):.2f}–{max(lats):.2f} N, "
+              f"{min(lons):.2f}–{max(lons):.2f} E")
+    for s in sorted(fresh, key=lambda s: -(s.get("mm_24h") or 0))[:6]:
+        print(f"    {str(s['name'])[:30]:32s} 1h {s['mm_1h']:5.1f}  24h {s['mm_24h']:6.1f} mm")
+    # Jak daleko je nejbližší srážkoměr od pár míst? (limit v UI je 25 km)
+    from math import radians, sin, cos, asin, sqrt
+
+    def hav(a, b, c, d):
+        p1, p2 = radians(a), radians(c)
+        return 2 * 6371 * asin(sqrt(sin((p2 - p1) / 2) ** 2 + cos(p1) * cos(p2)
+                               * sin(radians(d - b) / 2) ** 2))
+    for name, la, lo in (("Rychvald", 49.86, 18.36), ("Brno", 49.20, 16.61),
+                         ("Praha", 50.08, 14.42), ("Vendryně", 49.66, 18.72)):
+        near = min(((hav(la, lo, s["lat"], s["lon"]), s) for s in fresh),
+                   default=(None, None), key=lambda x: x[0])
+        d, s = near
+        if d is None:
+            print(f"  {name}: nic")
+        else:
+            print(f"  {'✓' if d <= 25 else '·'} {name:10s} nejbližší srážkoměr "
+                  f"{str(s['name'])[:26]:28s} {d:5.1f} km")
+
+
 def main():
     print(f"Sonda kolo 10 — {datetime.now(timezone.utc).isoformat()}")
-    for fn in (probe_geosphere, probe_imgw, probe_dwd):
+    for fn in (probe_deployed_rain, probe_geosphere, probe_imgw, probe_dwd):
         try:
             fn()
         except Exception as e:
