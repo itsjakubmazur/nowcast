@@ -57,6 +57,7 @@ jobs:
             data/hydro.json
             data/aladin.json
             data/wind_grid.json
+            data/metar_stations.json
           key: station-data-${{ github.run_id }}
           restore-keys: |
             station-data-
@@ -129,6 +130,12 @@ jobs:
         if: steps.mode.outputs.mode == 'full'
         run: python pipeline/chmi.py || echo "chmi.py selhalo, pokračuji"
 
+      - name: Run metar (letištní stanice — zahuštění sítě)
+        if: steps.mode.outputs.mode == 'full'
+        timeout-minutes: 2
+        continue-on-error: true
+        run: python pipeline/metar.py || echo "metar.py selhalo, pokračuji"
+
       - name: Run chmi_stats (rekordy/normály/trend — rozpočet 100 s, resume mezi běhy)
         if: steps.mode.outputs.mode == 'full'
         timeout-minutes: 4
@@ -156,6 +163,7 @@ jobs:
             data/hydro.json
             data/aladin.json
             data/wind_grid.json
+            data/metar_stations.json
           key: station-data-${{ github.run_id }}
 
       - name: Validate publikovaná data (poslední pojistka před deployem)

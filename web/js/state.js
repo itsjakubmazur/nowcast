@@ -12,6 +12,7 @@ export const state = {
 
   WU: null, WU_HISTORY: null, wuMarkers: [],
   CHMI: null, chmiMarkers: [], chmiLayer: "temp", CHMI_STATS: null,
+  METAR: null,          // letištní stanice (doplněk řídké sítě ČHMÚ)
 
   warningsLayerGroup: null,
   stormLayer: null,      // dráhy bouřkových buněk (stormtrack.js)

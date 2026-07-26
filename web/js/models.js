@@ -3,8 +3,8 @@
 // Inspirace: Počasí Meteo staví na "9 modelech s hodnocením kvality" — my to
 // děláme osobněji a poctivěji: při každé návštěvě si uložíme, co jednotlivé
 // modely slibovaly na příští hodiny (localStorage), a při dalších návštěvách
-// ty sliby porovnáme se SKUTEČNÝM měřením nejbližší meteostanice (ČHMÚ/WU
-// do 15 km, čerstvé ≤ 90 min). Z toho roste klouzavá MAE per model per místo
+// ty sliby porovnáme se SKUTEČNÝM měřením nejbližší meteostanice (ČHMÚ, WU
+// i letištní METAR do 40 km, čerstvé ≤ 2 h). Z toho roste klouzavá MAE per model per místo
 // — žebříček modelů přesně pro tvůj kopec, ne krajský průměr. Bez stanice
 // poblíž se hodnocení neučí (žádná náhradní "pravda" se nevymýšlí).
 
@@ -68,7 +68,8 @@ const STATION_MAX_KM = 40;
 const LAPSE_C_PER_M = 0.0065;
 
 export function nearestFreshStation(lat, lon) {
-  const all = [...(state.CHMI?.stations || []), ...(state.WU?.stations || [])];
+  const all = [...(state.CHMI?.stations || []), ...(state.WU?.stations || []),
+    ...(state.METAR?.stations || [])];
   let best = null, bd = Infinity;
   for (const s of all) {
     if (s.temp == null || s.lat == null) continue;

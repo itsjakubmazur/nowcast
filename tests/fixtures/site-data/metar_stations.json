@@ -1,0 +1,1 @@
+{"generated_at_utc": "2026-07-26T10:15:12.450128+00:00", "count": 1, "source": "NOAA Aviation Weather (METAR)", "stations": [{"id": "metar-LKPR", "name": "Praha/Ruzyne (letiště)", "lat": 50.1, "lon": 14.26, "elev": 380, "time_utc": "2026-07-26T10:15:12.450593+00:00", "temp": 21.5, "humidity": 62, "wind_kmh": 14.8, "wind_dir": 230, "source": "metar", "own": false}]}

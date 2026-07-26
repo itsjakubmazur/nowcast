@@ -1,4 +1,4 @@
-const CACHE_VERSION = "v9";
+const CACHE_VERSION = "v10";
 const STATIC_CACHE = `nowcast-static-${CACHE_VERSION}`;
 const DATA_CACHE = `nowcast-data-${CACHE_VERSION}`;
 

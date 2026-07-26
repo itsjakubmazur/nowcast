@@ -153,7 +153,7 @@ function prepareServeDir() {
   }
 
   // Stanice potřebují čerstvý time_utc (kontrola biasu ignoruje měření > 90 min)
-  for (const name of ["chmi_stations.json", "wu_stations.json"]) {
+  for (const name of ["chmi_stations.json", "wu_stations.json", "metar_stations.json"]) {
     const p = path.join(SERVE, "data", name);
     if (!fs.existsSync(p)) continue;
     const j = JSON.parse(fs.readFileSync(p, "utf8"));
@@ -709,18 +709,30 @@ async function main() {
   const farSt = await pageMod.evaluate(async () => {
     const { state } = await import("./js/state.js");
     const { nearestFreshStation } = await import("./js/models.js");
-    const keepChmi = state.CHMI, keepWu = state.WU, keepEl = state.elevation;
+    const keepChmi = state.CHMI, keepWu = state.WU, keepMetar = state.METAR, keepEl = state.elevation;
     state.CHMI = { stations: [{ name: "Daleká", lat: 50.315, lon: 14.40, elev: 800,
       temp: 10, time_utc: new Date().toISOString() }] };
-    state.WU = null;
+    state.WU = null; state.METAR = null;   // ať zbyde jen ta vzdálená stanice
     state.elevation = 200;
     const st = nearestFreshStation(50.09, 14.40);
-    state.CHMI = keepChmi; state.WU = keepWu; state.elevation = keepEl;
+    state.CHMI = keepChmi; state.WU = keepWu; state.METAR = keepMetar; state.elevation = keepEl;
     return st && { km: Math.round(st.distKm), tempAdj: st.tempAdj, raw: st.temp };
   });
   // 800 m → 200 m = +600 m níž ⇒ teplota +3,9 °C (gradient 0,65 °C/100 m)
   assertTrue(farSt && farSt.km >= 20 && farSt.km <= 30 && Math.abs(farSt.tempAdj - 13.9) < 0.2,
     `stanice ve 25 km se použije s výškovou korekcí (${farSt?.km} km, ${farSt?.raw}→${farSt?.tempAdj} °C)`);
+
+  // Letištní METAR stanice zahušťují řídkou síť ČHMÚ — musí být v nabídce
+  const metarSeen = await pageMod.evaluate(async () => {
+    const { state } = await import("./js/state.js");
+    const { nearestFreshStation } = await import("./js/models.js");
+    const keepChmi = state.CHMI, keepWu = state.WU;
+    state.CHMI = null; state.WU = null;           // zbydou jen METAR stanice
+    const st = nearestFreshStation(50.09, 14.40);
+    state.CHMI = keepChmi; state.WU = keepWu;
+    return st?.name || null;
+  });
+  assertTrue(/letiště/.test(metarSeen || ""), `METAR stanice se použije jako zdroj měření (${metarSeen})`);
   const mdlScore = await pageMod.evaluate(() => {
     const s = JSON.parse(localStorage.getItem("nowcast_model_scores_v1") || "{}");
     return s["50.09,14.40"]?.scores?.icon_seamless?.errs || [];

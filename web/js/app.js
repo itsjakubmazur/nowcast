@@ -70,11 +70,13 @@ async function loadData() {
     fetchJson("wu_stations.json"),
     fetchJson("chmi_stations.json"),
     fetchJson("accuracy.json"),
+    fetchJson("metar_stations.json"),
   ]);
-  const [wu, chmi, accuracy] = optional.map(r => (r.status === "fulfilled" ? r.value : null));
+  const [wu, chmi, accuracy, metar] = optional.map(r => (r.status === "fulfilled" ? r.value : null));
   state.WU = wu;
   state.CHMI = chmi;
   state.ACCURACY = accuracy;
+  state.METAR = metar;
 }
 
 // ── Forecast pro vybrané místo (24h strip + meteogram + AQ + AI verdikt) ────
