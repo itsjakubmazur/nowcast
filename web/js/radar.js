@@ -2,6 +2,7 @@ import { state, PLAY } from "./state.js";
 import { setRadarFrameUrl, setRadarOpacityBoth } from "./map.js";
 import { haversine, bearing } from "./utils.js";
 import { isDarkTheme } from "./theme.js";
+import { showToast } from "./toast.js";
 
 const RAINVIEWER_API = "https://api.rainviewer.com/public/weather-maps.json";
 
@@ -299,6 +300,29 @@ export function windFreshnessLabel(header) {
   return parts.join(" · ");
 }
 
+const WIND_STALE_MIN = 120;   // pipeline běží po 5 min, 2 h = něco je špatně
+const WIND_PATCHY_PCT = 0.8;  // pod 80 % měřených bodů už je pole znatelně dopočítané
+
+// Vrátí větu do toastu, JEN když má vrstva vadu, kterou by uživatel měl znát.
+// Když je všechno v pořádku, vrací null a nic se nezobrazí.
+export function windCaveat(header) {
+  if (!header) return null;
+  const ref = header.refTime ? new Date(header.refTime) : null;
+  const ageMin = ref && !Number.isNaN(ref.getTime())
+    ? Math.round((Date.now() - ref.getTime()) / 60000) : null;
+  const { freshPoints: f, totalPoints: t } = header;
+  const patchy = Number.isFinite(f) && Number.isFinite(t) && t > 0 && f / t < WIND_PATCHY_PCT;
+
+  if (ageMin != null && ageMin > WIND_STALE_MIN) {
+    const h = Math.round(ageMin / 60);
+    return `Vítr: poslední data jsou ${h} h stará, aktuální situace může být jiná.`;
+  }
+  if (patchy) {
+    return `Vítr: měřeno ${Math.round(100 * f / t)} % mřížky, zbytek je dopočítaný.`;
+  }
+  return null;
+}
+
 export async function toggleWindLayer() {
   const btn = document.getElementById("btn-wind");
   state.windMode = !state.windMode;
@@ -323,14 +347,22 @@ export async function toggleWindLayer() {
     if (state.windLayer) { state.map.removeLayer(state.windLayer); state.windLayer = null; } // pojistka
     state.windLayer = L.velocityLayer({
       data,
-      maxVelocity: 20,           // m/s — nad tím je barva saturovaná
+      // 14 m/s ≈ 50 km/h. Dřív tu bylo 20 m/s (72 km/h), jenže běžný vítr v ČR
+      // má 2–6 m/s — celá mřížka pak spadla do nejsvětlejšího pásma a vypadala
+      // jednolitě. Nižší strop rozprostře barevnou škálu po reálném rozsahu.
+      maxVelocity: 14,
       velocityScale: 0.012,      // délka "ocásku" částice
       particleAge: 64,
       lineWidth: 1.4,
       colorScale: ["#9fc7ff", "#5AC8FA", "#0A84FF", "#BF5AF2", "#FF375F"],
       displayValues: false,
     }).addTo(state.map);
-    if (btn) btn.title = windFreshnessLabel(data[0].header);
+    const h = data[0].header;
+    if (btn) btn.title = windFreshnessLabel(h);
+    // Toast jen když je co přiznat — na dotyku se tooltip nikdy neukáže, ale
+    // hlásit se při každém zapnutí by byl otravný šum.
+    const caveat = windCaveat(h);
+    if (caveat) showToast(caveat, { timeoutMs: 5000 });
   } catch (e) {
     if (myToken !== _windToken) return; // mezitím uživatel znovu přepnul
     console.warn("Vítr:", e);

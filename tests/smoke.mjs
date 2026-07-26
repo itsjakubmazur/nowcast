@@ -542,6 +542,25 @@ async function main() {
   assertTrue(windLabels[2] === "Vítr 10 m" && windLabels[3] === "Vítr 10 m",
     `chybějící/rozbitá hlavička nevyrobí "NaN min stará" (${windLabels[2]} | ${windLabels[3]})`);
 
+  const windCaveats = await page.evaluate(async () => {
+    const { windCaveat } = await import("./js/radar.js");
+    const c = (min, f, t) => windCaveat({
+      refTime: new Date(Date.now() - min * 60000).toISOString(),
+      freshPoints: f, totalPoints: t,
+    });
+    // 200/238 = 84 % je nad prahem 80 % → záměrně žádný toast
+    return [c(20, 238, 238), c(20, 180, 238), c(400, 238, 238), windCaveat(null),
+            c(20, 200, 238)];
+  });
+  assertTrue(windCaveats[0] === null && windCaveats[3] === null,
+    `bezvadná (i chybějící) data toast nevyvolají (${windCaveats[0]} | ${windCaveats[3]})`);
+  assertTrue(/76 % mřížky/.test(windCaveats[1] || ""),
+    `děravé pole vyvolá toast o dopočtu ("${windCaveats[1]}")`);
+  assertTrue(windCaveats[4] === null,
+    `drobný dopočet (84 %) uživatele zbytečně neotravuje (${windCaveats[4]})`);
+  assertTrue(/7 h stará/.test(windCaveats[2] || ""),
+    `stará data vyvolají toast o stáří ("${windCaveats[2]}")`);
+
   await page.click("#btn-hydro"); // zap — vyšle zpožděný fetch
   await page.click("#btn-hydro"); // vyp — hned poté, fetch ještě neskončil
   await page.waitForTimeout(600); // > 350ms zpoždění první odpovědi
