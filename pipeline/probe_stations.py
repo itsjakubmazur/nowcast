@@ -9,14 +9,18 @@ proxy (403), takže "podle dokumentace to jde" je jediné, co jde zjistit od
 stolu. Tohle ověří skutečnost.
 
 Nic nezapisuje do data/ — pouze tiskne zjištění.
+
+Kolo 2 se soustředí na nejdůležitější otázku, kterou otevřelo kolo 1:
+now/data/ má 2734 souborů, ale chmi.py z toho dělá jen ~40 stanic. Kde se
+ztrácejí?
 """
 
 import gzip
-import io
 import json
 import re
 import sys
-from datetime import datetime, timezone
+from collections import Counter
+from datetime import datetime, timedelta, timezone
 
 import requests
 
@@ -24,6 +28,7 @@ import requests
 LAT0, LON0, LAT1, LON1 = 48.3, 11.8, 51.3, 19.2
 UA = {"User-Agent": "nowcast-probe/1.0 (+github actions)"}
 TIMEOUT = (15, 45)
+BASE = "https://opendata.chmi.cz/meteorology/climate"
 
 
 def in_bbox(lat, lon):
@@ -39,152 +44,6 @@ def get(url, **kw):
     return requests.get(url, headers=UA, timeout=TIMEOUT, **kw)
 
 
-def probe_chmi_recent():
-    """Nejdůležitější otázka: publikuje ČHMÚ jinde víc stanic než těch 40 v now/?"""
-    head("1) ČHMÚ — now/ vs. recent/ (kolik stanic vlastně jde získat)")
-    for label, url in (
-        ("now/data", "https://opendata.chmi.cz/meteorology/climate/now/data/"),
-        ("recent/data", "https://opendata.chmi.cz/meteorology/climate/recent/data/"),
-        ("climate", "https://opendata.chmi.cz/meteorology/climate/"),
-    ):
-        try:
-            r = get(url)
-            print(f"  {label}: HTTP {r.status_code}, {len(r.text)} B")
-            if r.ok:
-                links = re.findall(r'href="([^"?/][^"]*)"', r.text)
-                links = [l for l in links if not l.startswith("http")]
-                print(f"    položek: {len(links)}")
-                for l in links[:25]:
-                    print(f"      {l}")
-                if len(links) > 25:
-                    print(f"      … a dalších {len(links) - 25}")
-        except Exception as e:
-            print(f"  {label}: CHYBA {e}")
-
-
-def probe_imgw():
-    """Polsko — bez klíče, JSON. Nejrelevantnější pro Ostravsko a Těšínsko."""
-    head("2) IMGW (PL) — danepubliczne.imgw.pl/api/data/synop")
-    try:
-        r = get("https://danepubliczne.imgw.pl/api/data/synop")
-        print(f"  HTTP {r.status_code}")
-        if not r.ok:
-            return
-        data = r.json()
-        print(f"  stanic celkem: {len(data)}")
-        print(f"  klíče: {sorted(data[0].keys()) if data else '—'}")
-        print(f"  ukázka: {json.dumps(data[0], ensure_ascii=False)[:400]}")
-        # API nevrací souřadnice → kolik z nich je v našem bboxu, se musí
-        # doplnit z jiného zdroje. To je podstatné zjištění pro odhad práce.
-        print("  POZOR: odpověď neobsahuje lat/lon — nutný vlastní číselník stanic")
-    except Exception as e:
-        print(f"  CHYBA {e}")
-
-
-def probe_geosphere():
-    """Rakousko — GeoSphere Data Hub, bez klíče, TAWES 10min."""
-    head("3) GeoSphere Austria — dataset.geosphere.at (TAWES 10 min)")
-    meta = "https://dataset.geosphere.at/v1/station/current/tawes-v1-10min/metadata"
-    try:
-        r = get(meta)
-        print(f"  metadata: HTTP {r.status_code}")
-        if r.ok:
-            m = r.json()
-            stations = m.get("stations", [])
-            inb = [s for s in stations
-                   if in_bbox(_f(s.get("lat")), _f(s.get("lon")))]
-            print(f"  stanic celkem: {len(stations)}, v našem bboxu: {len(inb)}")
-            params = [p.get("name") for p in m.get("parameters", [])]
-            print(f"  parametry: {params[:20]}")
-            for s in inb[:10]:
-                print(f"    {str(s.get('name'))[:30]:32s} {s.get('lat')},{s.get('lon')}")
-    except Exception as e:
-        print(f"  metadata CHYBA {e}")
-
-    data = ("https://dataset.geosphere.at/v1/station/current/tawes-v1-10min"
-            "?parameters=TL&parameters=FFAM&parameters=RR&output_format=geojson")
-    try:
-        r = get(data)
-        print(f"  data: HTTP {r.status_code}, {len(r.content)} B")
-        if r.ok:
-            g = r.json()
-            feats = g.get("features", [])
-            print(f"  features: {len(feats)}")
-            if feats:
-                print(f"  ukázka: {json.dumps(feats[0], ensure_ascii=False)[:400]}")
-    except Exception as e:
-        print(f"  data CHYBA {e}")
-
-
-def probe_dwd():
-    """Německo — opendata.dwd.de, bez klíče. POI = aktuální pozorování v CSV."""
-    head("4) DWD (DE) — opendata.dwd.de/weather/weather_reports/poi/")
-    try:
-        r = get("https://opendata.dwd.de/weather/weather_reports/poi/")
-        print(f"  index: HTTP {r.status_code}, {len(r.text)} B")
-        if r.ok:
-            files = re.findall(r'href="([^"]*BEOB\.csv)"', r.text)
-            print(f"  BEOB.csv souborů: {len(files)}")
-            print(f"  ukázka názvů: {files[:5]}")
-            if files:
-                one = files[0]
-                r2 = get(f"https://opendata.dwd.de/weather/weather_reports/poi/{one}")
-                lines = r2.text.splitlines()[:5]
-                print(f"  hlavička {one}:")
-                for l in lines:
-                    print(f"    {l[:160]}")
-    except Exception as e:
-        print(f"  CHYBA {e}")
-
-
-def probe_meteostat():
-    """Meteostat — agreguje METAR+SYNOP, zajímá nás hlavně číselník se souřadnicemi."""
-    head("5) Meteostat — bulk číselník stanic (souřadnice pro PL/DE/SK)")
-    try:
-        r = get("https://bulk.meteostat.net/v2/stations/lite.json.gz")
-        print(f"  HTTP {r.status_code}, {len(r.content)} B")
-        if r.ok:
-            raw = gzip.decompress(r.content)
-            arr = json.loads(raw)
-            print(f"  stanic celkem: {len(arr)}")
-            inb, by_country = [], {}
-            for s in arr:
-                loc = s.get("location") or {}
-                if in_bbox(_f(loc.get("latitude")), _f(loc.get("longitude"))):
-                    inb.append(s)
-                    by_country[s.get("country")] = by_country.get(s.get("country"), 0) + 1
-            print(f"  v našem bboxu: {len(inb)}  podle zemí: {by_country}")
-            wmo = sum(1 for s in inb if s.get("identifiers", {}).get("wmo"))
-            icao = sum(1 for s in inb if s.get("identifiers", {}).get("icao"))
-            print(f"  z toho s WMO id: {wmo}, s ICAO id: {icao}")
-            if inb:
-                print(f"  ukázka: {json.dumps(inb[0], ensure_ascii=False)[:400]}")
-    except Exception as e:
-        print(f"  CHYBA {e}")
-
-
-def probe_sensor_community():
-    """Sensor.Community — velmi hustá amatérská síť; teplota bývá zkreslená."""
-    head("6) Sensor.Community — data.sensor.community (hustota vs. kvalita)")
-    try:
-        r = get("https://data.sensor.community/static/v2/data.json")
-        print(f"  HTTP {r.status_code}, {len(r.content)} B")
-        if r.ok:
-            arr = r.json()
-            inb = 0
-            temp = 0
-            for s in arr:
-                loc = s.get("location") or {}
-                if in_bbox(_f(loc.get("latitude")), _f(loc.get("longitude"))):
-                    inb += 1
-                    if any(v.get("value_type") == "temperature"
-                           for v in s.get("sensordatavalues", [])):
-                        temp += 1
-            print(f"  záznamů celkem: {len(arr)}, v bboxu: {inb}, z toho s teplotou: {temp}")
-    except Exception as e:
-        print(f"  CHYBA {e}")
-
-
 def _f(v):
     try:
         return float(v)
@@ -192,11 +51,142 @@ def _f(v):
         return None
 
 
+def probe_chmi_bottleneck():
+    """KLÍČOVÁ OTÁZKA: kolik stanic ČHMÚ reálně publikuje a kde je nám ubývají."""
+    head("1) ČHMÚ — kde se ztrácí stanice mezi now/data/ a chmi_stations.json")
+    now_utc = datetime.now(timezone.utc)
+    today = now_utc.strftime("%Y%m%d")
+    yesterday = (now_utc - timedelta(days=1)).strftime("%Y%m%d")
+
+    r = get(f"{BASE}/now/data/")
+    if not r.ok:
+        print(f"  now/data/ HTTP {r.status_code}")
+        return
+    ids_10m, ids_1h = set(), set()
+    for date in (today, yesterday):
+        ids_10m |= set(re.findall(rf'10m-0-20000-0-(\d+)-{date}\.json', r.text))
+        ids_1h |= set(re.findall(rf'1h-0-20000-0-(\d+)-{date}\.json', r.text))
+    all_ids = ids_10m | ids_1h
+    print(f"  DATA: unikátních stanic v now/data/ = {len(all_ids)} "
+          f"(10m {len(ids_10m)}, 1h {len(ids_1h)})")
+
+    # Metadata — přesně tak, jak je čte chmi.py
+    for label, date in (("dnes", today), ("včera", yesterday)):
+        rm = get(f"{BASE}/now/metadata/meta1-{date}.json")
+        print(f"  META meta1-{date}: HTTP {rm.status_code}")
+        if not rm.ok:
+            continue
+        try:
+            j = rm.json()
+            values = j["data"]["data"]["values"]
+            print(f"    řádků: {len(values)}")
+            cols = j["data"]["data"].get("header") or j["data"]["data"].get("columns")
+            print(f"    hlavička: {str(cols)[:300]}")
+            sids = set()
+            for row in values:
+                m = re.search(r'(\d+)$', str(row[0]))
+                if m:
+                    sids.add(m.group(1))
+            print(f"    unikátních ID v metadatech: {len(sids)}")
+            print(f"    PRŮNIK data ∩ metadata: {len(all_ids & sids)}")
+            print(f"    v datech, ale NE v metadatech: {len(all_ids - sids)}")
+            if values:
+                print(f"    ukázka řádku: {json.dumps(values[0], ensure_ascii=False)[:300]}")
+        except Exception as e:
+            print(f"    parse chyba: {e}")
+
+    # Existuje bohatší číselník stanic?
+    rmeta = get(f"{BASE}/now/metadata/")
+    if rmeta.ok:
+        files = re.findall(r'href="([^"?/][^"]*)"', rmeta.text)
+        uniq = sorted({re.sub(r'\d{8}', 'YYYYMMDD', f) for f in files})
+        print(f"  now/metadata/ typy souborů: {uniq[:20]}")
+
+
+def probe_chmi_10min_recent():
+    """recent/10min — druhá větev ČHMÚ, potenciálně širší síť."""
+    head("2) ČHMÚ — recent/data/10min (širší klimatologická síť?)")
+    for sub in ("10min", "1hour"):
+        r = get(f"{BASE}/recent/data/{sub}/")
+        print(f"  recent/data/{sub}/: HTTP {r.status_code}, {len(r.text)} B")
+        if r.ok:
+            files = re.findall(r'href="([^"?/][^"]*)"', r.text)
+            print(f"    položek: {len(files)}  ukázka: {files[:8]}")
+
+
+def probe_geosphere():
+    """Rakousko — v kole 1 selhalo DNS, zkouším správné hostname."""
+    head("3) GeoSphere Austria — správný host (kolo 1: DNS nenašel dataset.geosphere.at)")
+    hosts = [
+        "https://dataset.api.hub.geosphere.at/v1/station/current/tawes-v1-10min/metadata",
+        "https://dataset.api.hub.eox.at/v1/station/current/tawes-v1-10min/metadata",
+        "https://data.hub.geosphere.at/api/v1/station/current/tawes-v1-10min/metadata",
+    ]
+    for url in hosts:
+        try:
+            r = get(url)
+            print(f"  {url.split('/v1')[0]}: HTTP {r.status_code}, {len(r.content)} B")
+            if r.ok:
+                m = r.json()
+                st = m.get("stations", [])
+                inb = [s for s in st if in_bbox(_f(s.get("lat")), _f(s.get("lon")))]
+                print(f"    stanic: {len(st)}, v bboxu: {len(inb)}")
+                print(f"    parametry: {[p.get('name') for p in m.get('parameters', [])][:15]}")
+                for s in inb[:8]:
+                    print(f"      {str(s.get('name'))[:30]:32s} {s.get('lat')},{s.get('lon')}")
+                return
+        except Exception as e:
+            print(f"  {url.split('/v1')[0]}: CHYBA {str(e)[:120]}")
+
+
+def probe_dwd_coords():
+    """DWD POI má 974 stanic, ale CSV neobsahuje souřadnice — je číselník?"""
+    head("4) DWD — číselník souřadnic k POI stanicím")
+    cands = [
+        "https://opendata.dwd.de/weather/lib/MetElementDefinition.json",
+        "https://www.dwd.de/DE/leistungen/opendata/help/stationen/ha_messnetz.txt",
+        "https://opendata.dwd.de/climate_environment/CDC/help/stations_list_CLIMAT_data.txt",
+    ]
+    for url in cands:
+        try:
+            r = get(url)
+            print(f"  {url.rsplit('/', 1)[-1]}: HTTP {r.status_code}, {len(r.content)} B")
+            if r.ok:
+                print(f"    ukázka: {r.text[:300]!r}")
+        except Exception as e:
+            print(f"  {url.rsplit('/', 1)[-1]}: CHYBA {str(e)[:120]}")
+
+
+def probe_meteostat_catalog():
+    """Meteostat číselník jako lookup souřadnic pro IMGW/DWD podle national/WMO id."""
+    head("5) Meteostat číselník — použitelnost jako lookup pro PL/DE")
+    try:
+        r = get("https://bulk.meteostat.net/v2/stations/lite.json.gz")
+        if not r.ok:
+            print(f"  HTTP {r.status_code}")
+            return
+        arr = json.loads(gzip.decompress(r.content))
+        inb = []
+        for s in arr:
+            loc = s.get("location") or {}
+            if in_bbox(_f(loc.get("latitude")), _f(loc.get("longitude"))):
+                inb.append(s)
+        by_c = Counter(s.get("country") for s in inb)
+        print(f"  v bboxu: {len(inb)}  {dict(by_c)}")
+        for c in ("PL", "DE", "AT", "SK"):
+            sub = [s for s in inb if s.get("country") == c]
+            nat = sum(1 for s in sub if (s.get("identifiers") or {}).get("national"))
+            wmo = sum(1 for s in sub if (s.get("identifiers") or {}).get("wmo"))
+            print(f"    {c}: {len(sub)} stanic, s national id {nat}, s WMO id {wmo}")
+    except Exception as e:
+        print(f"  CHYBA {e}")
+
+
 def main():
-    print(f"Sonda zdrojů stanic — {datetime.now(timezone.utc).isoformat()}")
+    print(f"Sonda zdrojů stanic (kolo 2) — {datetime.now(timezone.utc).isoformat()}")
     print(f"bbox: {LAT0}–{LAT1} N, {LON0}–{LON1} E")
-    for fn in (probe_chmi_recent, probe_imgw, probe_geosphere, probe_dwd,
-               probe_meteostat, probe_sensor_community):
+    for fn in (probe_chmi_bottleneck, probe_chmi_10min_recent, probe_geosphere,
+               probe_dwd_coords, probe_meteostat_catalog):
         try:
             fn()
         except Exception as e:
