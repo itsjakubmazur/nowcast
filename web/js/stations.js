@@ -226,7 +226,7 @@ export function renderWuMarkers() {
 
 // ── ČHMÚ stanice ──────────────────────────────────────────────────────────────
 
-function chmiMarkerColor(layer, value) {
+export function chmiMarkerColor(layer, value) {
   if (value == null) return "#94a3b8";
   if (layer === "temp" || layer === "dewpoint") {
     if (value <= -15) return "#bfdbfe";

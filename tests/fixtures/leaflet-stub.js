@@ -49,6 +49,18 @@
       const map = makeLayer({ el, _zoom: 7 });
       map.setView = function (latlng, zoom) { this._center = latlng; this._zoom = zoom; return this; };
       map.getZoom = function () { return this._zoom; };
+      // Výřez odvozený od středu — worldtemp.js podle něj vybírá dlaždice.
+      // Bez getBounds by teplotní vrstva v testu tiše nic nevykreslila.
+      map.getBounds = function () {
+        const c = this._center || { lat: 50.0, lng: 14.4 };
+        const lat = Array.isArray(c) ? c[0] : (c.lat ?? 50.0);
+        const lon = Array.isArray(c) ? c[1] : (c.lng ?? 14.4);
+        const d = 180 / Math.pow(2, this._zoom || 7);
+        return {
+          getSouth: () => lat - d, getNorth: () => lat + d,
+          getWest: () => lon - d * 2, getEast: () => lon + d * 2,
+        };
+      };
       if (el) {
         el.addEventListener("click", ev => {
           // Simulace: střed testovací lokace (odpovídá URL ?lat=50.09&lon=14.40 ve smoke testu)

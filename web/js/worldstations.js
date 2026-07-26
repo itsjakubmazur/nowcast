@@ -20,12 +20,59 @@ export function metarTileId(lat, lon) {
   return `${ty}_${tx}`;
 }
 
-export async function loadMetarTile(lat, lon) {
-  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return [];
-  const id = metarTileId(lat, lon);
+// Dlaždice protínající obdélník mapy. Používá to teplotní vrstva, která na
+// rozdíl od "nejbližší stanice" nepotřebuje jeden bod, ale celý výřez.
+export function tilesForBounds(south, west, north, east) {
+  const out = new Set();
+  // Přes datovou hranici se výřez rozpadne na dva kusy — jinak by smyčka
+  // od west k east obletěla svět z opačné strany a nahrnula 36 dlaždic.
+  const spans = west <= east ? [[west, east]] : [[west, 180], [-180, east]];
+  for (const [w, e] of spans) {
+    for (let lat = Math.floor(south / 10) * 10; lat <= north; lat += 10) {
+      for (let lon = Math.floor(w / 10) * 10; lon <= e; lon += 10) {
+        out.add(metarTileId(Math.min(89.9, Math.max(-89.9, lat + 0.01)), lon + 0.01));
+      }
+    }
+  }
+  return [...out];
+}
+
+// Rejstřík existujících dlaždic. Bez něj bychom nad oceánem stahovali
+// neexistující soubory — appka si s 404 poradí, ale prohlížeč každý takový
+// požadavek vypíše do konzole a při posouvání mapy je jich spousta.
+// Rejstřík má ~313 položek, takže je levnější než jediná zbytečná 404.
+let _indexPromise = null;
+let _tileSet = null;
+
+export function loadTileIndex() {
+  if (_indexPromise) return _indexPromise;
+  _indexPromise = (async () => {
+    try {
+      const v = state.MANIFEST?.generated_at_utc;
+      const r = await fetch(`data/metar/index.json${v ? `?v=${encodeURIComponent(v)}` : ""}`);
+      if (!r.ok) return null;
+      const j = await r.json();
+      const ids = (j?.tiles || []).map(t => t.tile).filter(Boolean);
+      _tileSet = new Set(ids);
+      return _tileSet;
+    } catch {
+      return null;   // bez rejstříku jedeme dál, jen s možnými 404
+    }
+  })();
+  return _indexPromise;
+}
+
+export async function loadTile(id) {
   if (cache.has(id)) return cache.get(id);
   if (inflight.has(id)) return inflight.get(id);
+  await loadTileIndex();
+  // null = rejstřík se nenačetl; pak radši zkusíme stáhnout, než abychom
+  // kvůli chybějícímu pomocnému souboru přišli o data.
+  if (_tileSet && !_tileSet.has(id)) { cache.set(id, []); return []; }
+  return fetchTile(id);
+}
 
+function fetchTile(id) {
   const p = (async () => {
     try {
       // Verzujeme podle běhu pipeline, stejně jako ostatní datové soubory —
@@ -48,6 +95,11 @@ export async function loadMetarTile(lat, lon) {
   })();
   inflight.set(id, p);
   return p;
+}
+
+export async function loadMetarTile(lat, lon) {
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return [];
+  return loadTile(metarTileId(lat, lon));
 }
 
 // Nasype dlaždici pro dané místo do state, odkud si ji vezme

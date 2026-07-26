@@ -797,6 +797,35 @@ async function main() {
   assertTrue(rainSt.far === null,
     `mimo dosah 25 km se srážkoměr nepoužije (${JSON.stringify(rainSt.far)})`);
 
+  // Teploty na mapě: nativně zapnuté, tlačítko je skrývá (jako vrstva větru).
+  const tempsOn = await pageMod.evaluate(async () => {
+    const { renderWorldTemps, tempsEnabled, thinStations } = await import("./js/worldtemp.js");
+    const { state } = await import("./js/state.js");
+    await renderWorldTemps();
+    const before = (state.worldTempMarkers || []).length;
+    // Prořezání: 3 stanice v jedné buňce mřížky → zůstane jedna
+    const thin = thinStations([
+      { lat: 50.0, lon: 14.4, time_utc: new Date().toISOString() },
+      { lat: 50.001, lon: 14.401, time_utc: new Date().toISOString() },
+      { lat: 50.002, lon: 14.402, time_utc: new Date().toISOString() },
+      { lat: 40.0, lon: -74.0, time_utc: new Date().toISOString() },
+    ], 7).length;
+    document.getElementById("btn-temps").click();
+    await new Promise(r => setTimeout(r, 150));
+    const off = (state.worldTempMarkers || []).length;
+    const offClass = document.getElementById("btn-temps").classList.contains("active");
+    document.getElementById("btn-temps").click();
+    await new Promise(r => setTimeout(r, 150));
+    return { enabled: tempsEnabled(), before, thin, off, offClass,
+             onClass: document.getElementById("btn-temps").classList.contains("active"),
+             after: (state.worldTempMarkers || []).length };
+  });
+  assertTrue(tempsOn.enabled === true, "teploty jsou nativně zapnuté (bez uloženého nastavení)");
+  assertTrue(tempsOn.thin === 2, `prořezání nechá jednu stanici na buňku (${tempsOn.thin} ze 4)`);
+  assertTrue(tempsOn.off === 0 && tempsOn.offClass === false,
+    `tlačítko teploty schová (markerů ${tempsOn.off}, active=${tempsOn.offClass})`);
+  assertTrue(tempsOn.onClass === true, "opětovný klik teploty zase zapne");
+
   // Letištní METAR stanice zahušťují řídkou síť ČHMÚ — musí být v nabídce
   const metarSeen = await pageMod.evaluate(async () => {
     const { state } = await import("./js/state.js");

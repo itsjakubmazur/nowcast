@@ -1148,6 +1148,10 @@ button.ctrl.active { background: var(--accent); color: #fff;
 #rain-measured b { color: var(--fg); }
 #rain-measured.rain-wet b { color: var(--blue, #0A84FF); }
 
+/* Popisky teplot ze světových stanic — o stupínek decentnější než české
+   stanice, ať je poznat, co je hustá domácí síť a co doplněk z letišť. */
+.temp-label-marker.wt-label { font-size: .66rem; opacity: .92; padding: 1px 4px; }
+
 /* ── Průběh dne — fáze dne jako pás ─────────────────────────────────────── */
 #daytl-panel {
   display: none; background: var(--glass); border: 1px solid var(--glass-border);

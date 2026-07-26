@@ -15,6 +15,7 @@ export const state = {
   METAR: null,          // letištní stanice doma (doplněk řídké sítě ČHMÚ)
   METAR_WORLD: null,    // dlaždice 10° pro aktuální místo mimo ČR (lazy)
   CHMI_RAIN: null,      // srážkoměrná síť ČHMÚ (436 stanic, jen srážky)
+  worldTempMarkers: [], // popisky teplot na mapě (worldtemp.js)
 
   warningsLayerGroup: null,
   stormLayer: null,      // dráhy bouřkových buněk (stormtrack.js)

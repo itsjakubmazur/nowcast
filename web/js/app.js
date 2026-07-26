@@ -43,6 +43,7 @@ import { shareCurrentView, copyEmbedLink, initEmbedMode } from "./share.js";
 import { prefetchGlobalRadar } from "./globalrain.js";
 import { renderModelsPanel } from "./models.js";
 import { ensureWorldStations } from "./worldstations.js";
+import { initWorldTemps, renderWorldTemps } from "./worldtemp.js";
 import { esc } from "./utils.js";
 import { initUiIcons } from "./uiicons.js";
 
@@ -496,6 +497,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   document.getElementById("btn-wind")?.addEventListener("click", toggleWindLayer);
   document.getElementById("btn-hydro")?.addEventListener("click", toggleHydro);
   initAccumButton();
+  initWorldTemps();   // teploty ze stanic — zapnuté nativně, tlačítko je skrývá
   setInterval(() => { refreshAll(); checkRainNotifications(); }, AUTO_REFRESH_MS);
 
   document.getElementById("chmi-detail-close").addEventListener("click", closeChmiDetail);
