@@ -20,10 +20,16 @@ jobs:
         run: python -m py_compile pipeline/*.py
 
       - name: Install deps pro unit testy
-        run: pip install requests
+        run: pip install requests numpy h5py pyproj
 
       - name: Unit testy pipeline (windgrid — slepení děr, práh zápisu)
         run: python tests/test_windgrid.py
 
       - name: Unit testy pipeline (metar — dlaždice světových stanic)
         run: python tests/test_metar.py
+
+      - name: Unit testy pipeline (chmi_fct + echotop — geometrie a jednotky)
+        run: python tests/test_chmi_fct.py
+
+      - name: Unit testy pipeline (chmi_extra — parsery nekonzistentních CSV)
+        run: python tests/test_chmi_extra.py

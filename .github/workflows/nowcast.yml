@@ -68,6 +68,8 @@ jobs:
             data/chmi_forecast.json
             data/chmi_air.json
             data/chmi_regional.json
+            data/chmi_aero.json
+            data/chmi_air_map.json
           key: station-data-${{ github.run_id }}
           restore-keys: |
             station-data-
@@ -173,6 +175,30 @@ jobs:
         continue-on-error: true
         run: python pipeline/chmi_stats.py || echo "chmi_stats.py selhalo, pokračuji"
 
+      - name: Run chmi_forecast (textová předpověď ČHMÚ)
+        if: steps.mode.outputs.mode == 'full'
+        timeout-minutes: 2
+        continue-on-error: true
+        run: python pipeline/chmi_forecast.py || echo "chmi_forecast.py selhalo, pokračuji"
+
+      - name: Run chmi_air (měřená kvalita ovzduší)
+        if: steps.mode.outputs.mode == 'full'
+        timeout-minutes: 3
+        continue-on-error: true
+        run: python pipeline/chmi_air.py || echo "chmi_air.py selhalo, pokračuji"
+
+      - name: Run chmi_aero (aerologie — CAPE/CIN z radiosondáží)
+        if: steps.mode.outputs.mode == 'full'
+        timeout-minutes: 2
+        continue-on-error: true
+        run: python pipeline/chmi_aero.py || echo "chmi_aero.py selhalo, pokračuji"
+
+      - name: Run chmi_regional (krajské průměry 1961-dnes)
+        if: steps.mode.outputs.mode == 'full'
+        timeout-minutes: 3
+        continue-on-error: true
+        run: python pipeline/chmi_regional.py || echo "chmi_regional.py selhalo, pokračuji"
+
       - name: Run chmi_normals (normály 1991-2020 — statická data, stáhne se jednou)
         if: steps.mode.outputs.mode == 'full'
         timeout-minutes: 4
@@ -211,6 +237,8 @@ jobs:
             data/chmi_forecast.json
             data/chmi_air.json
             data/chmi_regional.json
+            data/chmi_aero.json
+            data/chmi_air_map.json
           key: station-data-${{ github.run_id }}
 
       - name: Validate publikovaná data (poslední pojistka před deployem)
