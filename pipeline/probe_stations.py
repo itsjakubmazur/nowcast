@@ -1,152 +1,79 @@
 """
 Diagnostická sonda (ruční workflow_dispatch) — nic nezapisuje do data/.
 
-Kolo 11: dvě otevřené otázky.
-  (a) KTERÉ stanice mají teplotu? meta2 je strojově čitelný katalog prvků
-      (OBS_TYPE, WSI, EG_EL_ABBREVIATION, NAME, UN_DESCRIPTION, HEIGHT,
-      SCHEDULE), 6591 řádků — tam je odpověď přesně, bez hádání zkratek.
-      Nehledám podle názvů zkratek, ale podle českého NAME obsahujícího
-      "tepl", ať mi nic neproteče kvůli špatně odhadnuté zkratce (což už se
-      mi jednou stalo s WIGOS prefixem).
-  (b) Co je v oficiálním popisu Klimatologicka_data_popis.pdf — ať se
-      nespoléhám na to, co si o struktuře myslím.
+Ověřuje NASAZENÝ web, ne jen to, co si myslíme, že pipeline udělala.
+
+Doložená zjištění z předchozích kol:
+  * ČHMÚ opendata je čistě česká. Oficiální popis (Klimatologicka_data_popis.pdf)
+    mluví o "síti meteorologických pozemních stanic ve správě ČHMÚ a dalších
+    spolupracujících subjektů", nic o zahraničí, a naměřený rozsah stanic je
+    48,6–51,0 N / 12,2–18,8 E — mimo ČR ani jedna.
+  * V now/data/ je 476 stanic (436 národních 0-203-0 + 40 WMO 0-20000-0).
+    Podle katalogu prvků meta2 měří teplotu vzduchu (prvek T) 296 z nich.
+  * Celý svět pokrývá METAR bulk (~5000 stanic).
 """
 
-import re
-import subprocess
 import sys
-from collections import Counter, defaultdict
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
+from math import radians, sin, cos, asin, sqrt
 
 import requests
 
 UA = {"User-Agent": "nowcast-probe/1.0 (+github actions)"}
-T = (15, 90)
-BASE = "https://opendata.chmi.cz/meteorology/climate"
-
-
-def head(t):
-    print(f"\n{'=' * 70}\n{t}\n{'=' * 70}", flush=True)
+T = (15, 60)
+PAGES = "https://itsjakubmazur.github.io/nowcast/data"
 
 
 def get(u):
     return requests.get(u, headers=UA, timeout=T)
 
 
-def now_data_ids():
-    r = get(f"{BASE}/now/data/")
-    pat = re.compile(r'^(?:10m|1h)-(.+?)-\d{8}\.json$')
-    ids = set()
-    for f in re.findall(r'href="([^"?][^"]*)"', r.text):
-        m = pat.match(f)
-        if m:
-            ids.add(m.group(1))
-    return ids
-
-
-def probe_elements(ids):
-    head("(a) meta2 — které stanice mají teplotu (podle NAME, ne podle zkratky)")
-    today = datetime.now(timezone.utc).strftime("%Y%m%d")
-    yday = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y%m%d")
-    values = None
-    for d in (today, yday):
-        r = get(f"{BASE}/now/metadata/meta2-{d}.json")
-        if r.ok:
-            try:
-                values = r.json()["data"]["data"]["values"]
-                print(f"  meta2-{d}: {len(values)} řádků")
-                break
-            except Exception as e:
-                print(f"  meta2-{d} parse: {e}")
-    if not values:
-        print("  meta2 nedostupná")
-        return
-
-    # OBS_TYPE, WSI, EG_EL_ABBREVIATION, NAME, UN_DESCRIPTION, HEIGHT, SCHEDULE
-    per_el_stations = defaultdict(set)
-    el_name, el_unit = {}, {}
-    for row in values:
-        if len(row) < 5:
-            continue
-        wsi, abbr, name, unit = str(row[1]), str(row[2]), str(row[3]), str(row[4])
-        per_el_stations[abbr].add(wsi)
-        el_name.setdefault(abbr, name)
-        el_unit.setdefault(abbr, unit)
-
-    print(f"  různých prvků: {len(per_el_stations)}")
-    print("  20 nejrozšířenějších prvků:")
-    for abbr, st in sorted(per_el_stations.items(), key=lambda kv: -len(kv[1]))[:20]:
-        print(f"    {abbr:14s} {len(st):5d} stanic  {el_name[abbr][:44]:46s} [{el_unit[abbr]}]")
-
-    # Teplotní prvky — podle českého názvu, ne podle odhadnuté zkratky
-    temp_els = {a: s for a, s in per_el_stations.items()
-                if "tepl" in el_name[a].lower()}
-    print(f"\n  TEPLOTNÍ prvky ({len(temp_els)}):")
-    for abbr, st in sorted(temp_els.items(), key=lambda kv: -len(kv[1])):
-        have = len(st & ids)
-        print(f"    {abbr:14s} {len(st):5d} v katalogu, {have:5d} publikuje data  "
-              f"{el_name[abbr][:40]}")
-
-    any_temp = set().union(*temp_els.values()) if temp_els else set()
-    print(f"\n  stanic s JAKOUKOLI teplotou v katalogu: {len(any_temp)}")
-    print(f"  z toho publikuje data v now/: {len(any_temp & ids)}")
-    print(f"  (dnes používáme 40)")
-
-    # Srážky pro srovnání
-    rain_els = {a: s for a, s in per_el_stations.items()
-                if "srá" in el_name[a].lower() or "srazk" in el_name[a].lower()}
-    any_rain = set().union(*rain_els.values()) if rain_els else set()
-    print(f"  stanic se srážkami: {len(any_rain)} v katalogu, "
-          f"{len(any_rain & ids)} publikuje data")
-
-    # Rozpad podle WIGOS prefixu — kolik teplotních je národních?
-    pref = Counter("-".join(w.split("-")[:3]) for w in (any_temp & ids))
-    print(f"  teplotní stanice s daty podle prefixu: {dict(pref)}")
-
-
-def probe_manual():
-    head("(b) Oficiální popis dat — Klimatologicka_data_popis.pdf")
-    url = f"{BASE}/Klimatologicka_data_popis.pdf"
-    r = get(url)
-    print(f"  {url.rsplit('/', 1)[-1]}: HTTP {r.status_code}, {len(r.content)} B")
-    if not r.ok:
-        return
-    open("/tmp/popis.pdf", "wb").write(r.content)
-    try:
-        out = subprocess.run(["pdftotext", "-layout", "/tmp/popis.pdf", "-"],
-                             capture_output=True, text=True, timeout=60)
-        txt = out.stdout
-    except FileNotFoundError:
-        print("  pdftotext není k dispozici")
-        return
-    except Exception as e:
-        print(f"  pdftotext: {e}")
-        return
-    print(f"  textu: {len(txt)} znaků")
-    # Zajímají nás pasáže o rozsahu sítě, prvcích a o tom, jestli jsou data
-    # jen česká — hledám klíčová slova a tiskneme okolí.
-    for kw in ("globál", "svět", "zahranič", "mezinárod", "WIGOS", "0-203",
-               "0-20000", "teplot", "síť", "stanic"):
-        hits = [m.start() for m in re.finditer(kw, txt, re.IGNORECASE)][:2]
-        for h in hits:
-            frag = " ".join(txt[max(0, h - 160):h + 240].split())
-            print(f"  [{kw}] …{frag}…")
+def hav(a, b, c, d):
+    p1, p2 = radians(a), radians(c)
+    return 2 * 6371 * asin(sqrt(sin((p2 - p1) / 2) ** 2
+                                + cos(p1) * cos(p2) * sin(radians(d - b) / 2) ** 2))
 
 
 def main():
-    print(f"Sonda kolo 11 — {datetime.now(timezone.utc).isoformat()}")
-    try:
-        ids = now_data_ids()
-        print(f"stanic s daty v now/: {len(ids)}")
-    except Exception as e:
-        print(f"!! seznam stanic: {e}", file=sys.stderr)
-        ids = set()
-    for fn in (lambda: probe_elements(ids), probe_manual):
-        try:
-            fn()
-        except Exception as e:
-            print(f"  !! {e}", file=sys.stderr)
+    print(f"Sonda — nasazená data, {datetime.now(timezone.utc).isoformat()}")
+    print("=" * 70)
+
+    r = get(f"{PAGES}/chmi_stations.json")
+    print(f"chmi_stations.json: HTTP {r.status_code}, {len(r.content)} B")
+    if r.ok:
+        j = r.json()
+        st = [s for s in j.get("stations", []) if s.get("temp") is not None]
+        print(f"  stanic celkem: {j.get('count')}, s teplotou: {len(st)}")
+        lats = [s["lat"] for s in st if s.get("lat") is not None]
+        lons = [s["lon"] for s in st if s.get("lon") is not None]
+        if lats:
+            print(f"  rozsah: {min(lats):.2f}–{max(lats):.2f} N, "
+                  f"{min(lons):.2f}–{max(lons):.2f} E")
+        elevs = [s["elev"] for s in st if s.get("elev") is not None]
+        if elevs:
+            print(f"  nadmořská výška: {min(elevs):.0f}–{max(elevs):.0f} m")
+        # Jak daleko a jak vysoko je nejbližší teplotní stanice?
+        for name, la, lo in (("Rychvald", 49.86, 18.36), ("Brno", 49.20, 16.61),
+                             ("Praha", 50.08, 14.42), ("Vendryně", 49.66, 18.72)):
+            near = sorted(((hav(la, lo, s["lat"], s["lon"]), s) for s in st),
+                          key=lambda x: x[0])[:1]
+            if near:
+                d, s = near[0]
+                print(f"  {name:10s} {str(s['name'])[:26]:28s} {d:5.1f} km  "
+                      f"{s['temp']} °C  {s.get('elev')} m")
+
+    for name in ("chmi_rain.json", "metar/index.json"):
+        rr = get(f"{PAGES}/{name}")
+        if rr.ok:
+            jj = rr.json()
+            print(f"{name}: HTTP 200 — "
+                  f"{jj.get('count') or jj.get('stations')} položek")
+        else:
+            print(f"{name}: HTTP {rr.status_code}")
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        print(f"!! {e}", file=sys.stderr)
