@@ -119,6 +119,25 @@ def main():
     check("chybějící vítr nevadí (jen bude None)",
           (metar.parse_bulk_row(row(wind_speed_kt=""), now) or {}).get("wind_kmh") is None)
 
+    # --- jména letišť z pole `site` ----------------------------------------
+    cases = [
+        ("Prague/Havel Arpt", "Prague"),
+        ("New York/JF Kennedy Intl", "New York"),
+        ("Tokyo/Haneda Intl", "Tokyo"),
+        ("Dresden Arpt", "Dresden"),
+        ("Munich Intl", "Munich"),
+        ("Hof/Plauen Arpt", "Hof"),
+        ("Brno/Turany", "Brno"),
+        ("", None),
+        ("   ", None),
+    ]
+    bad = [f"{inp!r}→{metar.city_from_site(inp)!r} (čekáno {exp!r})"
+           for inp, exp in cases if metar.city_from_site(inp) != exp]
+    check("město se vytáhne z pole site (místo ICAO kódu)", not bad, "; ".join(bad))
+    check("samotný typ letiště nezůstane jako jméno",
+          metar.city_from_site("Intl") in (None, ""),
+          repr(metar.city_from_site("Intl")))
+
     print()
     if FAILS:
         print(f"✗ {len(FAILS)} selhalo: {', '.join(FAILS)}")

@@ -810,13 +810,16 @@ async function main() {
       { lat: 50.002, lon: 14.402, time_utc: new Date().toISOString() },
       { lat: 40.0, lon: -74.0, time_utc: new Date().toISOString() },
     ], 7).length;
+    const chmiBefore = (state.chmiMarkers || []).length;
     document.getElementById("btn-temps").click();
     await new Promise(r => setTimeout(r, 150));
     const off = (state.worldTempMarkers || []).length;
+    const chmiOff = (state.chmiMarkers || []).length;
     const offClass = document.getElementById("btn-temps").classList.contains("active");
     document.getElementById("btn-temps").click();
     await new Promise(r => setTimeout(r, 150));
-    return { enabled: tempsEnabled(), before, thin, off, offClass,
+    return { enabled: tempsEnabled(), before, thin, off, offClass, chmiBefore, chmiOff,
+             chmiAfter: (state.chmiMarkers || []).length,
              onClass: document.getElementById("btn-temps").classList.contains("active"),
              after: (state.worldTempMarkers || []).length };
   });
@@ -825,6 +828,12 @@ async function main() {
   assertTrue(tempsOn.off === 0 && tempsOn.offClass === false,
     `tlačítko teploty schová (markerů ${tempsOn.off}, active=${tempsOn.offClass})`);
   assertTrue(tempsOn.onClass === true, "opětovný klik teploty zase zapne");
+  // Regrese: tlačítko dřív schovalo jen letištní popisky a české stanice
+  // svítily dál, takže "skrýt kvůli výhledu na mapu" nefungovalo.
+  assertTrue(tempsOn.chmiBefore > 0 && tempsOn.chmiOff === 0,
+    `tlačítko schová i české stanice (${tempsOn.chmiBefore} → ${tempsOn.chmiOff})`);
+  assertTrue(tempsOn.chmiAfter > 0,
+    `české stanice se po opětovném zapnutí vrátí (${tempsOn.chmiAfter})`);
 
   // Letištní METAR stanice zahušťují řídkou síť ČHMÚ — musí být v nabídce
   const metarSeen = await pageMod.evaluate(async () => {

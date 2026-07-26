@@ -12,7 +12,7 @@
 import { state } from "./state.js";
 import { esc, haversine, ageMinutes } from "./utils.js";
 import { tilesForBounds, loadTile } from "./worldstations.js";
-import { chmiMarkerColor } from "./stations.js";
+import { chmiMarkerColor, renderChmiMarkers } from "./stations.js";
 
 const LS_KEY = "nowcast_temps_on";
 const MIN_ZOOM = 4;        // níž je celý kontinent a popisky by byly kaše
@@ -31,6 +31,7 @@ export function tempsEnabled() {
 
 function setEnabled(on) {
   localStorage.setItem(LS_KEY, on ? "1" : "0");
+  state.tempsOn = on;
 }
 
 function clearMarkers() {
@@ -133,6 +134,7 @@ export function initWorldTemps() {
   btn?.classList.toggle("active", tempsEnabled());
   btn?.addEventListener("click", () => {
     setEnabled(!tempsEnabled());
+    renderChmiMarkers();   // české stanice se schovají/objeví spolu s letištními
     renderWorldTemps();
   });
   // Překreslujeme až po doposunutí — během tažení mapy by to jen zdržovalo.

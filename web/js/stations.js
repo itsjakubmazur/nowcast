@@ -315,6 +315,10 @@ function chmiMarkerText(layer, s) {
 export function renderChmiMarkers() {
   state.chmiMarkers.forEach(m => m.remove());
   state.chmiMarkers = [];
+  // Tlačítko Teploty schovává VŠECHNY popisky stanic, ne jen letištní —
+  // jinak by "skrytí kvůli lepšímu výhledu na mapu" nechalo tu hustší
+  // českou vrstvu svítit dál a nic by to nevyřešilo.
+  if (!state.tempsOn) return;
   if (!state.CHMI || !state.CHMI.stations || !state.map) return;
 
   state.CHMI.stations.forEach(s => {

@@ -34,7 +34,7 @@ import json
 import math
 import sys
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import requests
@@ -45,6 +45,10 @@ DATA_DIR = Path(__file__).parent.parent / "data"
 
 API = "https://aviationweather.gov/api/data/metar"
 BULK = "https://aviationweather.gov/data/cache/metars.cache.csv.gz"
+STATIONINFO = "https://aviationweather.gov/api/data/stationinfo"
+PAGES_BASE = "https://itsjakubmazur.github.io/nowcast"
+NAME_BATCH = 200            # kolik ICAO se vejde do jednoho dotazu
+HISTORY_HOURS = 48
 # ČR + pásmo pohraničí (DE/PL/AT/SK letiště pomůžou u hranic)
 BBOX = "48.3,11.8,51.3,19.2"          # lat0,lon0,lat1,lon1
 MAX_AGE_MIN = 150                      # starší hlášení nemá pro "teď" cenu
@@ -94,6 +98,146 @@ def parse_time(m) -> str | None:
     if isinstance(ot, (int, float)) and ot > 0:
         return datetime.fromtimestamp(ot, timezone.utc).isoformat()
     return None
+
+
+# ── Jména letišť ─────────────────────────────────────────────────────────────
+# Bulk CSV má jen ICAO kód, takže by na mapě svítilo "LKPR" místo "Praha".
+# stationinfo vrací pole `site` ve tvaru "Prague/Havel Arpt", "Munich Intl",
+# "Tokyo/Haneda Intl". Z toho se dá vytáhnout město.
+#
+# Číselník se drží v data/metar_names.json a dotahují se jen ICAO, která v něm
+# ještě nejsou — množina letišť je stabilní, takže po prvním naplnění je to
+# nula requestů navíc.
+
+AIRPORT_WORDS = ("intl", "arpt", "airport", "airfield", "afb", "aerodrome",
+                 "int'l", "ap", "field", "muni", "municipal", "rgnl", "regional")
+
+
+def city_from_site(site: str) -> str | None:
+    """"Prague/Havel Arpt" → "Praha"? Ne — → "Prague". Překládat neumíme,
+    ale ICAO kód nahradit umíme."""
+    if not site:
+        return None
+    site = site.strip()
+    if "/" in site:
+        head, tail = site.split("/", 1)
+        # "New York/JF Kennedy Intl" → město je před lomítkem, ale
+        # "Hof/Plauen Arpt" jsou dvě města — první stačí.
+        if any(w in tail.lower() for w in AIRPORT_WORDS):
+            return head.strip() or None
+        return head.strip() or None
+    # bez lomítka: "Munich Intl" / "Dresden Arpt" → uřízni typ letiště
+    parts = site.split()
+    while parts and parts[-1].lower().strip(".") in AIRPORT_WORDS:
+        parts.pop()
+    return " ".join(parts).strip() or None
+
+
+def load_name_cache():
+    path = DATA_DIR / "metar_names.json"
+    for src in ("local", "pages"):
+        try:
+            if src == "local":
+                if not path.exists():
+                    continue
+                d = json.loads(path.read_text())
+            else:
+                r = SESSION.get(f"{PAGES_BASE}/data/metar_names.json", timeout=(10, 30))
+                if not r.ok:
+                    continue
+                d = r.json()
+            names = d.get("names") or {}
+            if names:
+                print(f"  číselník jmen ({src}): {len(names)}", file=sys.stderr)
+                return names
+        except Exception as e:
+            print(f"  číselník jmen ({src}): {e}", file=sys.stderr)
+    return {}
+
+
+def fill_names(icaos, cache):
+    """Doplní chybějící ICAO do cache. Vrací počet nově dotažených."""
+    missing = sorted(i for i in icaos if i not in cache)
+    if not missing:
+        return 0
+    added = 0
+    for i in range(0, len(missing), NAME_BATCH):
+        batch = missing[i:i + NAME_BATCH]
+        try:
+            r = SESSION.get(STATIONINFO, params={"ids": ",".join(batch),
+                                                 "format": "json"}, timeout=(15, 60))
+            if not r.ok:
+                print(f"  stationinfo HTTP {r.status_code}", file=sys.stderr)
+                break
+            for row in r.json() or []:
+                icao = (row.get("icaoId") or row.get("id") or "").strip()
+                city = city_from_site(row.get("site") or "")
+                if icao and city:
+                    cache[icao] = city
+                    added += 1
+        except Exception as e:
+            print(f"  stationinfo dávka {i // NAME_BATCH}: {e}", file=sys.stderr)
+            break
+    # ICAO, ke kterým jméno neexistuje, si zapamatuj jako prázdné — ať se
+    # nedotahují znovu při každém běhu.
+    for icao in missing:
+        cache.setdefault(icao, "")
+    print(f"  jména letišť: chybělo {len(missing)}, dotaženo {added}", file=sys.stderr)
+    return added
+
+
+def save_name_cache(cache, now):
+    (DATA_DIR / "metar_names.json").write_text(json.dumps(
+        {"generated_at_utc": now.isoformat(), "count": len(cache), "names": cache},
+        ensure_ascii=False, separators=(",", ":")))
+
+
+# ── Historie teplot (domácí letiště) ─────────────────────────────────────────
+# Stejný princip jako wu_history.json: načti z Pages, přisyp aktuální měření,
+# ořízni na 48 h. Záměrně jen pro domácí bbox — pro všech ~5000 světových
+# letišť by jeden soubor narostl na jednotky MB a nikdo by ho nestahoval.
+
+def update_history(stations, now):
+    path = DATA_DIR / "metar_history.json"
+    hist = {"stations": {}}
+    for src in ("pages", "local"):
+        try:
+            if src == "pages":
+                r = SESSION.get(f"{PAGES_BASE}/data/metar_history.json", timeout=(10, 30))
+                if not r.ok:
+                    continue
+                hist = r.json()
+            else:
+                if not path.exists():
+                    continue
+                hist = json.loads(path.read_text())
+            break
+        except Exception as e:
+            print(f"  historie ({src}): {e}", file=sys.stderr)
+    hist.setdefault("stations", {})
+
+    cutoff = (now - timedelta(hours=HISTORY_HOURS)).isoformat(timespec="minutes")
+    for s in stations:
+        if not s.get("time_utc") or s.get("temp") is None:
+            continue
+        rec = hist["stations"].setdefault(s["id"], {
+            "name": s["name"], "lat": s["lat"], "lon": s["lon"], "series": [],
+        })
+        rec["name"] = s["name"]      # jméno se mohlo zpřesnit z číselníku
+        entry = {"dt": s["time_utc"], "temp": s["temp"]}
+        for k in ("humidity", "wind_kmh", "wind_dir", "pressure"):
+            if s.get(k) is not None:
+                entry[k] = s[k]
+        series = rec["series"]
+        if not series or series[-1].get("dt") != entry["dt"]:
+            series.append(entry)
+        rec["series"] = [e for e in series if e.get("dt", "") >= cutoff]
+
+    hist["updated_at_utc"] = now.isoformat()
+    path.write_text(json.dumps(hist, ensure_ascii=False, separators=(",", ":")))
+    total = sum(len(v.get("series", [])) for v in hist["stations"].values())
+    print(f"  ✓ metar_history.json — {len(hist['stations'])} stanic, "
+          f"{total} záznamů", file=sys.stderr)
 
 
 def tile_xy(lat, lon):
@@ -185,6 +329,22 @@ def build_world_tiles(now):
         print(f"  podezřele málo stanic ({len(best)}) — dlaždice nepřepisuji",
               file=sys.stderr)
         return
+
+    # ICAO → město. Bez toho by na mapě svítily jen kódy typu LKPR.
+    names = load_name_cache()
+    icaos = {rec["id"].removeprefix("metar-") for rec in best.values()}
+    try:
+        fill_names(icaos, names)
+        save_name_cache(names, now)
+    except Exception as e:
+        print(f"  doplnění jmen selhalo: {e} — jedu s ICAO", file=sys.stderr)
+    named = 0
+    for rec in best.values():
+        city = names.get(rec["id"].removeprefix("metar-"))
+        if city:
+            rec["name"] = f"{city} (letiště)"
+            named += 1
+    print(f"  pojmenováno městem: {named}/{len(best)}", file=sys.stderr)
 
     tiles = defaultdict(list)
     for rec in best.values():
@@ -297,6 +457,7 @@ def build_home(now):
     for s in stations[:25]:
         print(f"    {s['name'][:34]:36s} {s['lat']:.2f},{s['lon']:.2f}  "
               f"{s['temp']}°C  {s['time_utc'][11:16]}Z", file=sys.stderr)
+    return stations
 
 
 def main():
@@ -304,8 +465,10 @@ def main():
     print("=== METAR (letištní stanice, NOAA) ===", file=sys.stderr)
     # Obě větve jsou nezávislé: když spadne domácí bbox, svět se stejně
     # postaví (a naopak). Dřív by jeden `return` tiše zabil obojí.
-    build_home(now)
+    home = build_home(now)
     build_world_tiles(now)
+    if home:
+        update_history(home, now)
 
 
 if __name__ == "__main__":

@@ -29,7 +29,9 @@ from pathlib import Path
 
 DATA_DIR = Path(__file__).parent.parent / "data"
 TIMEOUT  = (5, 15)
-BUDGET_S = 100   # tvrdý časový rozpočet na běh — opendata server umí být POMALÝ
+BUDGET_S = 150   # tvrdý časový rozpočet na běh — opendata server umí být POMALÝ
+                 # (zvednuto ze 100 s: stanic je po rozšíření 290, ne 40, takže
+                 #  plný refresh by jinak trval zbytečně mnoho běhů)
                  # a pipeline jede co 5–10 min; zbytek stanic doběhne v dalších
                  # bězích (resume: hotové stanice se drží ve výstupu)
 

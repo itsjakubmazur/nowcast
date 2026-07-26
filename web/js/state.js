@@ -16,6 +16,13 @@ export const state = {
   METAR_WORLD: null,    // dlaždice 10° pro aktuální místo mimo ČR (lazy)
   CHMI_RAIN: null,      // srážkoměrná síť ČHMÚ (436 stanic, jen srážky)
   worldTempMarkers: [], // popisky teplot na mapě (worldtemp.js)
+  // Vypínač popisků stanic (tlačítko Teploty). Vlastníkem logiky je
+  // worldtemp.js; tady je jen výchozí hodnota, protože renderChmiMarkers()
+  // běží dřív než initWorldTemps() a musí už vědět, jestli kreslit.
+  tempsOn: (() => {
+    try { const v = localStorage.getItem("nowcast_temps_on"); return v === null ? true : v === "1"; }
+    catch { return true; }
+  })(),
 
   warningsLayerGroup: null,
   stormLayer: null,      // dráhy bouřkových buněk (stormtrack.js)

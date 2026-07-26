@@ -60,6 +60,8 @@ jobs:
             data/metar_stations.json
             data/metar
             data/chmi_rain.json
+            data/metar_names.json
+            data/metar_history.json
           key: station-data-${{ github.run_id }}
           restore-keys: |
             station-data-
@@ -176,6 +178,8 @@ jobs:
             data/metar_stations.json
             data/metar
             data/chmi_rain.json
+            data/metar_names.json
+            data/metar_history.json
           key: station-data-${{ github.run_id }}
 
       - name: Validate publikovaná data (poslední pojistka před deployem)
