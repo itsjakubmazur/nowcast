@@ -1,93 +1,88 @@
 """
-Diagnostická sonda dostupnosti sítí meteostanic (ruční workflow_dispatch).
+Diagnostická sonda (ruční workflow_dispatch) — nic nezapisuje do data/.
 
-Souhrn kol 1–5:
-  * ČHMÚ: 40 stanic v now/ i v denní větvi recent/, tečka. Měsíční větev má
-    482 stanic, ale uzavírá se ~2 měsíce zpětně (jen klimatologie).
+Souhrn kol 1–6 (zdroje stanic):
+  * ČHMÚ: 40 stanic v now/ i v denní větvi recent/. Měsíční větev má 482
+    stanic, ale uzavírá se ~2 měsíce zpětně (jen klimatologie).
   * GeoSphere AT: dataset.api.hub.geosphere.at — 288 stanic, 35 u nás.
   * IMGW PL: 62 stanic bez souřadnic (id_stacji = WMO id).
   * DWD: 974 POI souborů, souřadnice v stations_list_CLIMAT_data.txt.
-  * METAR s globálním bboxem vrátí jen 158 stanic — API velký výřez
-    PODVZORKUJE (145 neprázdných dlaždic 10°, medián 1 stanice). Náš český
-    bbox přitom vrací 19 stanic, tedy plný obsah. Jeden dotaz na svět
-    nestačí a je potřeba zjistit, kde je strop.
+  * METAR JSON API výřezy nad ~10° PODVZORKUJE (celý svět = 158 stanic),
+    ale bulk metars.cache.csv.gz dá ~5000 stanic jedním requestem.
 
-Kolo 6: hledá cestu ke kompletním globálním datům —
-  (a) bulk cache dump NOAA (jeden soubor pro celý svět),
-  (b) jak počet vrácených stanic škáluje s velikostí bboxu.
+Kolo 7 už neověřuje zdroje, ale NÁS: opravdu se celosvětové dlaždice
+dostanou až na nasazený web? Krok metar.py v CI trvá pod sekundu, což vypadá
+podezřele, a z Claude Code sandboxu jsou Pages za proxy (403) — takže tohle
+je jediný způsob, jak si to potvrdit, a ne jen doufat.
 """
 
-import gzip
+import json
 import sys
 from datetime import datetime, timezone
 
 import requests
 
+PAGES = "https://itsjakubmazur.github.io/nowcast/data"
 UA = {"User-Agent": "nowcast-probe/1.0 (+github actions)"}
-TIMEOUT = (15, 120)
-API = "https://aviationweather.gov/api/data/metar"
-
-
-def head(t):
-    print(f"\n{'=' * 70}\n{t}\n{'=' * 70}", flush=True)
-
-
-def probe_bulk():
-    head("(a) Bulk dump — celý svět jedním souborem?")
-    cands = [
-        "https://aviationweather.gov/data/cache/metars.cache.csv.gz",
-        "https://aviationweather.gov/data/cache/metars.cache.xml.gz",
-        "https://aviationweather.gov/api/data/metar?format=json&hours=1",
-    ]
-    for url in cands:
-        try:
-            r = requests.get(url, headers=UA, timeout=TIMEOUT)
-            print(f"  {url.rsplit('/', 1)[-1][:45]}: HTTP {r.status_code}, "
-                  f"{len(r.content)} B ({len(r.content) / 1_048_576:.2f} MB)")
-            if not r.ok:
-                continue
-            body = r.content
-            if url.endswith(".gz"):
-                try:
-                    body = gzip.decompress(body)
-                    print(f"    rozbaleno: {len(body)} B "
-                          f"({len(body) / 1_048_576:.2f} MB)")
-                except Exception as e:
-                    print(f"    gunzip selhal: {e}")
-                    continue
-            txt = body.decode("utf-8", "replace")
-            lines = txt.splitlines()
-            print(f"    řádků: {len(lines)}")
-            for l in lines[:8]:
-                print(f"      {l[:170]}")
-        except Exception as e:
-            print(f"  {url.rsplit('/', 1)[-1][:45]}: CHYBA {str(e)[:150]}")
-
-
-def probe_bbox_scaling():
-    """Kde API přestane vracet všechno? Měříme hustou oblast (střední Evropa)."""
-    head("(b) Škálování počtu stanic s velikostí bboxu (střed 50N/15E)")
-    for half in (1.5, 3, 5, 8, 12, 20, 30, 45):
-        bbox = f"{50 - half},{15 - half * 1.5},{50 + half},{15 + half * 1.5}"
-        try:
-            r = requests.get(API, params={"bbox": bbox, "format": "json"},
-                             headers=UA, timeout=TIMEOUT)
-            n = len(r.json()) if r.ok else -1
-            area = (2 * half) * (3 * half)
-            print(f"  ±{half:>4}°  bbox {bbox:38s} → {n:5d} stanic "
-                  f"({n / area:.2f} na čtvereční stupeň)")
-        except Exception as e:
-            print(f"  ±{half}°: CHYBA {str(e)[:120]}")
+TIMEOUT = (15, 60)
 
 
 def main():
-    print(f"Sonda kolo 6 — {datetime.now(timezone.utc).isoformat()}")
-    for fn in (probe_bulk, probe_bbox_scaling):
-        try:
-            fn()
-        except Exception as e:
-            print(f"  !! {fn.__name__} spadlo: {e}", file=sys.stderr)
+    print(f"Sonda kolo 7 — {datetime.now(timezone.utc).isoformat()}")
+    print("=" * 70)
+    print("Dorazily světové dlaždice METAR na nasazený web?")
+    print("=" * 70)
+
+    r = requests.get(f"{PAGES}/metar/index.json", headers=UA, timeout=TIMEOUT)
+    print(f"  index.json: HTTP {r.status_code}, {len(r.content)} B")
+    if not r.ok:
+        print("  → dlaždice na Pages NEJSOU")
+        return
+    idx = r.json()
+    tiles = idx.get("tiles", [])
+    print(f"  generated_at_utc: {idx.get('generated_at_utc')}")
+    print(f"  tile_deg={idx.get('tile_deg')} margin_deg={idx.get('margin_deg')}")
+    print(f"  stanic celkem: {idx.get('stations')}, dlaždic: {len(tiles)}")
+    top = sorted(tiles, key=lambda t: -t["count"])[:5]
+    print(f"  největší dlaždice: {[(t['tile'], t['count']) for t in top]}")
+
+    # Konkrétní místa: stáhni dlaždici tak, jak by to udělal prohlížeč,
+    # a zkontroluj, že v ní je stanice do 40 km (to je limit hledání v UI).
+    def tile_id(lat, lon):
+        tx = int((((lon + 180) % 360) + 360) % 360 / 10) % 36
+        ty = min(17, max(0, int((lat + 90) // 10)))
+        return f"{ty}_{tx}"
+
+    def hav(a, b, c, d):
+        from math import radians, sin, cos, asin, sqrt
+        p1, p2 = radians(a), radians(c)
+        return 2 * 6371 * asin(sqrt(sin((p2 - p1) / 2) ** 2 + cos(p1) * cos(p2)
+                               * sin(radians(d - b) / 2) ** 2))
+
+    print()
+    for name, lat, lon in (("New York", 40.71, -74.01), ("Tokio", 35.68, 139.69),
+                           ("Sydney", -33.87, 151.21), ("Nairobi", -1.29, 36.82),
+                           ("São Paulo", -23.55, -46.63), ("Reykjavík", 64.13, -21.90),
+                           ("Rychvald", 49.86, 18.36), ("Brno", 49.20, 16.61),
+                           ("uprostřed Pacifiku", 0.0, -150.0)):
+        tid = tile_id(lat, lon)
+        rr = requests.get(f"{PAGES}/metar/{tid}.json", headers=UA, timeout=TIMEOUT)
+        if not rr.ok:
+            print(f"  {name:20s} {tid:6s} HTTP {rr.status_code} — žádná dlaždice")
+            continue
+        st = rr.json().get("stations", [])
+        near = min(((hav(lat, lon, s["lat"], s["lon"]), s) for s in st),
+                   default=(None, None), key=lambda x: x[0])
+        d, s = near
+        mark = "✓" if d is not None and d <= 40 else "·"
+        print(f"  {mark} {name:20s} {tid:6s} {len(st):4d} stanic, nejbližší "
+              f"{(s or {}).get('name', '—'):22s} {d:6.1f} km  "
+              f"{(s or {}).get('temp')}°C" if d is not None else
+              f"  · {name:20s} {tid:6s} prázdná")
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        print(f"!! sonda spadla: {e}", file=sys.stderr)
