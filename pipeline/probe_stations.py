@@ -1,22 +1,21 @@
 """
-Diagnostická sonda: které další sítě meteostanic jsou z našeho CI runneru
-opravdu dosažitelné, v jakém tvaru odpovídají a kolik stanic přidají.
+Diagnostická sonda dostupnosti dalších sítí meteostanic (ruční workflow_dispatch).
 
-Ruční workflow_dispatch (probe-sources.yml), nic nezapisuje do data/.
+Souhrn zjištění kol 1–3 — viz probe-sources.yml běhy:
+  * ČHMÚ now/: opravdu jen 40 stanic (průnik data ∩ metadata = 40, nic
+    "v datech ale ne v metadatech"). meta1 je globální WMO číselník (759
+    řádků včetně Reykjavíku), ne seznam českých stanic.
+  * ČHMÚ recent/data/10min/: 12 měsíčních podadresářů + ~11 875 denních
+    souborů; v 01/ je 482 souborů = 482 stanic. Měsíční soubory se uzavírají
+    po konci měsíce (lednový má Last-Modified 2. 3. 2026).
+  * GeoSphere AT: dataset.api.hub.geosphere.at, 288 stanic, 35 v našem bboxu.
+  * IMGW PL: 62 stanic, bez souřadnic (id_stacji = WMO id → lze dohledat).
+  * DWD: 974 POI souborů; souřadnice ve stations_list_CLIMAT_data.txt.
+  * Sensor.Community: 1092 záznamů v bboxu, 491 s teplotou (levné čidla).
 
-Zjištění kol 1–2:
-  * now/data/ má 2734 souborů, ale to je ~34 dní historie pro 40 stanic —
-    ČHMÚ v now/ opravdu publikuje jen 40 stanic (průnik s metadaty = 40,
-    "v datech ale ne v metadatech" = 0). meta1 je globální číselník WMO
-    (je v něm i Reykjavík), ne seznam českých stanic.
-  * GeoSphere AT žije na dataset.api.hub.geosphere.at — 288 stanic, 35 u nás.
-  * IMGW vrací 62 stanic bez souřadnic; id_stacji = WMO id → jde spojit
-    s číselníkem (Meteostat má 13 PL stanic s WMO id v našem bboxu).
-  * DWD POI: 974 souborů; souřadnice jde dohledat v stations_list_CLIMAT_data.txt.
-
-Kolo 3 řeší poslední otevřenou otázku: recent/data/10min má 11888 položek
-ve stromu 01/ 02/ … — kolik je to stanic a jak moc data zaostávají? Na
-ověřování přesnosti (ne na "teď") by i několikahodinové zpoždění stačilo.
+Kolo 4 doplňuje jediné zbývající číslo, na kterém závisí největší položka:
+jak čerstvé jsou DENNÍ soubory v recent/10min? Pokud zaostávají o den, je to
+pro "teď" k ničemu, ale pro zpětné hodnocení přesnosti modelů zlato.
 """
 
 import re
@@ -26,94 +25,71 @@ from datetime import datetime, timezone
 import requests
 
 UA = {"User-Agent": "nowcast-probe/1.0 (+github actions)"}
-TIMEOUT = (15, 45)
+TIMEOUT = (15, 60)
 BASE = "https://opendata.chmi.cz/meteorology/climate"
-
-
-def head(title):
-    print(f"\n{'=' * 70}\n{title}\n{'=' * 70}", flush=True)
 
 
 def get(url, **kw):
     return requests.get(url, headers=UA, timeout=TIMEOUT, **kw)
 
 
-def links(html):
-    return [l for l in re.findall(r'href="([^"?][^"]*)"', html)
-            if not l.startswith("http") and l != "../"]
+def main():
+    print(f"Sonda kolo 4 — {datetime.now(timezone.utc).isoformat()}")
+    print("=" * 70)
+    print("ČHMÚ recent/data/10min — kolik stanic a jak čerstvé denní soubory")
+    print("=" * 70)
 
-
-def probe_recent_tree():
-    """Kolik stanic je v recent/10min a jak čerstvá ta data jsou."""
-    head("ČHMÚ recent/data/10min — hloubka stromu, počet stanic, zpoždění")
-    root = f"{BASE}/recent/data/10min/"
-    r = get(root)
+    r = get(f"{BASE}/recent/data/10min/")
     if not r.ok:
         print(f"  HTTP {r.status_code}")
         return
-    top = links(r.text)
-    dirs = [l for l in top if l.endswith("/")]
-    files = [l for l in top if not l.endswith("/")]
-    print(f"  kořen: {len(dirs)} podadresářů, {len(files)} souborů")
-    print(f"  podadresáře: {dirs[:15]}")
-    print(f"  soubory (ukázka): {files[:10]}")
 
-    if not dirs:
-        return
-    sub = dirs[0]
-    r2 = get(root + sub)
-    if not r2.ok:
-        print(f"  {sub}: HTTP {r2.status_code}")
-        return
-    lvl2 = links(r2.text)
-    d2 = [l for l in lvl2 if l.endswith("/")]
-    f2 = [l for l in lvl2 if not l.endswith("/")]
-    print(f"  {sub}: {len(d2)} podadresářů, {len(f2)} souborů")
-    print(f"    ukázka adresářů: {d2[:10]}")
-    print(f"    ukázka souborů: {f2[:10]}")
+    daily = re.findall(r'(10m-0-20000-0-(\d+)-(\d{8})\.json)', r.text)
+    stations = {sid for _, sid, _ in daily}
+    dates = sorted({d for _, _, d in daily})
+    print(f"  denních souborů: {len(daily)}")
+    print(f"  unikátních stanic: {len(stations)}")
+    print(f"  rozsah dat: {dates[0]} … {dates[-1]}  ({len(dates)} dní)")
 
-    # Zkus dojít až k datovému souboru a zjistit, jak je starý
-    path = root + sub
-    listing = lvl2
-    for _ in range(3):
-        dd = [l for l in listing if l.endswith("/")]
-        ff = [l for l in listing if not l.endswith("/")]
-        if ff:
-            target = path + ff[0]
-            print(f"  vzorek: {target}")
-            rr = get(target)
-            print(f"    HTTP {rr.status_code}, {len(rr.content)} B, "
-                  f"Last-Modified: {rr.headers.get('Last-Modified')}")
-            txt = rr.text[:600]
-            print(f"    začátek: {txt!r}")
-            break
-        if not dd:
-            break
-        path += dd[0]
-        rn = get(path)
-        if not rn.ok:
-            break
-        listing = links(rn.text)
+    # Jak stará jsou data za nejnovější den?
+    newest = dates[-1]
+    sample = [f for f, _, d in daily if d == newest][:3]
+    for fn in sample:
+        rr = get(f"{BASE}/recent/data/10min/{fn}", stream=True)
+        lm = rr.headers.get("Last-Modified")
+        print(f"  {fn}: HTTP {rr.status_code}, Last-Modified {lm}")
+        # poslední časové razítko uvnitř souboru
+        txt = rr.text
+        stamps = re.findall(r'"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z)"', txt)
+        if stamps:
+            last = max(stamps)
+            age_h = (datetime.now(timezone.utc)
+                     - datetime.fromisoformat(last.replace("Z", "+00:00"))
+                     ).total_seconds() / 3600
+            print(f"    nejnovější měření v souboru: {last}  → stáří {age_h:.1f} h")
+        rr.close()
 
+    # Kolik stanic je v ČR (11xxx = české WMO bloky)
+    cz = {s for s in stations if s.startswith("11")}
+    print(f"  z toho s českým WMO blokem 11xxx: {len(cz)}")
 
-def probe_recent_metadata():
-    """Číselník k recent/ — kolik stanic a kde jsou."""
-    head("ČHMÚ recent/ — metadata (číselník stanic klimatologické sítě)")
-    for url in (f"{BASE}/recent/metadata/", f"{BASE}/recent/"):
-        r = get(url)
-        print(f"  {url}: HTTP {r.status_code}")
-        if r.ok:
-            print(f"    {links(r.text)[:25]}")
-
-
-def main():
-    print(f"Sonda kolo 3 — {datetime.now(timezone.utc).isoformat()}")
-    for fn in (probe_recent_tree, probe_recent_metadata):
+    # Číselník k recent/ — má souřadnice pro všech 482?
+    rm = get(f"{BASE}/recent/metadata/meta1-{dates[-1]}.json")
+    print(f"  meta1-{dates[-1]}: HTTP {rm.status_code}")
+    if rm.ok:
         try:
-            fn()
+            values = rm.json()["data"]["data"]["values"]
+            sids = {re.search(r'(\d+)$', str(v[0])).group(1)
+                    for v in values if re.search(r'(\d+)$', str(v[0]))}
+            print(f"    řádků: {len(values)}, unikátních ID: {len(sids)}")
+            print(f"    PRŮNIK se stanicemi v datech: {len(stations & sids)}")
+            print(f"    ukázka: {values[0]}")
         except Exception as e:
-            print(f"  !! {fn.__name__} spadlo: {e}", file=sys.stderr)
+            print(f"    parse chyba: {e}")
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        print(f"!! sonda spadla: {e}", file=sys.stderr)
