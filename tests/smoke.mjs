@@ -135,6 +135,18 @@ function buildMultiModelFixture(om) {
 
 function rmrf(p) { fs.rmSync(p, { recursive: true, force: true }); }
 
+// Čekání na podmínku, která potřebuje dynamický import (a tedy async).
+// page.waitForFunction() se na to nedá použít: async callback vrací Promise,
+// kterou Playwright vyhodnotí jako truthy hned napoprvé.
+async function waitForAsync(page, fn, timeoutMs = 8000, stepMs = 100) {
+  const until = Date.now() + timeoutMs;
+  while (Date.now() < until) {
+    if (await page.evaluate(fn)) return true;
+    await new Promise(r => setTimeout(r, stepMs));
+  }
+  return false;
+}
+
 function prepareServeDir() {
   rmrf(SERVE);
   fs.mkdirSync(SERVE, { recursive: true });
@@ -902,10 +914,14 @@ async function main() {
   // Světové stanice: dlaždice 10° se dotáhne až po výběru místa mimo ČR a
   // nearestFreshStation ji musí vidět stejně jako ČHMÚ/WU doma. Bez toho by
   // žebříček přesnosti modelů fungoval jen v Česku.
-  await pageG.waitForFunction(async () => {
+  // POZOR: waitForFunction s ASYNC funkcí tady nefunguje — vrácená Promise je
+  // truthy hned při prvním pollu, takže čekání skončí okamžitě a test závodí
+  // s načítáním dlaždice. (Přesně na tohle upozorňuje i poznámka u gRadar níž
+  // — a stejně jsem do toho spadl.) Proto se poll dělá v Node přes evaluate.
+  await waitForAsync(pageG, async () => {
     const { state } = await import("./js/state.js");
     return (state.METAR_WORLD?.stations || []).length > 0;
-  }, { timeout: 8000 }).catch(() => {});
+  });
   const worldSt = await pageG.evaluate(async () => {
     const { state } = await import("./js/state.js");
     const { metarTileId } = await import("./js/worldstations.js");

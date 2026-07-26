@@ -82,20 +82,24 @@ const LAPSE_MAX_DZ = 800;   // větší převýšení = stanice není reprezenta
 export function nearestFreshStation(lat, lon) {
   const all = [...(state.CHMI?.stations || []), ...(state.WU?.stations || []),
     ...(state.METAR?.stations || []), ...(state.METAR_WORLD?.stations || [])];
-  // POZN.: zkoušel jsem sem přidat výběr podle kombinace vzdálenosti a
-  // výškového rozdílu (stanice na hřebeni je pro údolí špatná reference).
-  // Shodilo to smoke test načítání světových dlaždic způsobem, který jsem
-  // nestihl vysvětlit — a neotestovaná "chytrost" ve výběru referenční
-  // stanice je horší než poctivě nejbližší. Vráceno, k dořešení.
-  let best = null, bd = Infinity;
+  // Nevybíráme čistě nejbližší, ale nejbližší ROZUMNOU. Stanice na hřebeni
+  // 6 km daleko a o 550 m výš je pro teplotu v údolí horší referencí než
+  // stanice 12 km daleko ve stejné výšce — a čím míň se musí přepočítávat,
+  // tím míň se dá zkazit. 50 m převýšení ≈ 1 km vzdálenosti.
+  const ELEV_PENALTY_PER_M = 1 / 50;
+  const here = state.elevation;
+  let best = null, bd = Infinity, bestScore = Infinity;
   for (const s of all) {
     if (s.temp == null || s.lat == null) continue;
     const age = ageMinutes(s.time_utc);
     if (age == null || age > 120) continue;  // ČHMÚ jede po hodinách — 90 min bylo těsné
     const d = haversine(lat, lon, s.lat, s.lon);
-    if (d < bd) { bd = d; best = s; }
+    if (d > STATION_MAX_KM) continue;
+    const dzAbs = (here != null && s.elev != null) ? Math.abs(here - s.elev) : 0;
+    const score = d + dzAbs * ELEV_PENALTY_PER_M;
+    if (score < bestScore) { bestScore = score; bd = d; best = s; }
   }
-  if (!best || bd > STATION_MAX_KM) return null;
+  if (!best) return null;
 
   const elevHere = state.elevation;
   const dz = (elevHere != null && best.elev != null) ? elevHere - best.elev : 0;
