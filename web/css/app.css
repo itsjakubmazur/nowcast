@@ -1141,6 +1141,12 @@ button.ctrl.active { background: var(--accent); color: #fff;
 #station-check { display: none; font-size: .72rem; color: var(--muted); margin-top: .35rem; line-height: 1.45; }
 #station-check.show { display: block; }
 #station-check.station-off b { color: var(--orange); }
+/* Naměřené srážky ze srážkoměrné sítě ČHMÚ — vizuálně sesterská řádka
+   ke station-check, ať je jasné, že jde o MĚŘENÍ, ne o model. */
+#rain-measured { display: none; font-size: .72rem; color: var(--muted); margin-top: .3rem; line-height: 1.45; }
+#rain-measured.show { display: block; }
+#rain-measured b { color: var(--fg); }
+#rain-measured.rain-wet b { color: var(--blue, #0A84FF); }
 
 /* ── Průběh dne — fáze dne jako pás ─────────────────────────────────────── */
 #daytl-panel {

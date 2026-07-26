@@ -772,6 +772,31 @@ async function main() {
   assertTrue(farSt && farSt.km >= 20 && farSt.km <= 30 && Math.abs(farSt.tempAdj - 13.9) < 0.2,
     `stanice ve 25 km se použije s výškovou korekcí (${farSt?.km} km, ${farSt?.raw}→${farSt?.tempAdj} °C)`);
 
+  // Srážkoměrná síť ČHMÚ (436 stanic) — jiná logika než teplotní stanice:
+  // dosah jen 25 km a zastaralé záznamy se musí zahodit, jinak by appka
+  // ukazovala jako "naměřeno" hodnotu z předvčerejška.
+  const rainSt = await pageMod.evaluate(async () => {
+    const { nearestRainStation, renderRainMeasured } = await import("./js/extras.js");
+    const { state } = await import("./js/state.js");
+    const near = nearestRainStation(50.008, 14.447);
+    renderRainMeasured();
+    const el = document.getElementById("rain-measured");
+    // stanice "Stará data" má stale:true a mm 9.9 — nesmí se nikdy vybrat
+    const far = nearestRainStation(10.0, 10.0);   // Afrika → nic v 25 km
+    return {
+      name: near?.name, mm1: near?.mm_1h, km: near && Math.round(near.distKm),
+      shown: el?.classList.contains("show"), wet: el?.classList.contains("rain-wet"),
+      text: el?.textContent || "", far, count: state.CHMI_RAIN?.stations?.length,
+    };
+  });
+  assertTrue(rainSt.count === 3, `chmi_rain.json se načetl (${rainSt.count} stanic)`);
+  assertTrue(rainSt.name === "Praha, Libuš" && rainSt.mm1 === 1.4,
+    `nejbližší čerstvý srážkoměr, ne ten zastaralý (${rainSt.name}, ${rainSt.mm1} mm/h)`);
+  assertTrue(rainSt.shown && rainSt.wet && /1,4 mm/.test(rainSt.text),
+    `řádka naměřených srážek se vykreslila ("${rainSt.text}")`);
+  assertTrue(rainSt.far === null,
+    `mimo dosah 25 km se srážkoměr nepoužije (${JSON.stringify(rainSt.far)})`);
+
   // Letištní METAR stanice zahušťují řídkou síť ČHMÚ — musí být v nabídce
   const metarSeen = await pageMod.evaluate(async () => {
     const { state } = await import("./js/state.js");

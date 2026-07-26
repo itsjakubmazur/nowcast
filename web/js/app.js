@@ -30,7 +30,7 @@ import {
 import { initSearch, reverseGeocode } from "./search.js";
 import {
   renderMinutely, renderActivities, renderDeltaLine, renderAstro, renderWinter,
-  renderDayTimeline, renderStationCheck,
+  renderDayTimeline, renderStationCheck, renderRainMeasured,
 } from "./extras.js";
 import { renderClimateAnomaly, renderDayInHistory } from "./climate.js";
 import { initSettingsPanel, applySettingsOnLoad, saveSettings } from "./settings.js";
@@ -72,12 +72,14 @@ async function loadData() {
     fetchJson("chmi_stations.json"),
     fetchJson("accuracy.json"),
     fetchJson("metar_stations.json"),
+    fetchJson("chmi_rain.json"),
   ]);
-  const [wu, chmi, accuracy, metar] = optional.map(r => (r.status === "fulfilled" ? r.value : null));
+  const [wu, chmi, accuracy, metar, chmiRain] = optional.map(r => (r.status === "fulfilled" ? r.value : null));
   state.WU = wu;
   state.CHMI = chmi;
   state.ACCURACY = accuracy;
   state.METAR = metar;
+  state.CHMI_RAIN = chmiRain;
 }
 
 // ── Forecast pro vybrané místo (24h strip + meteogram + AQ + AI verdikt) ────
@@ -124,6 +126,10 @@ async function showFc24(lat, lon, label) {
       renderWinter(fc, data);
       renderDayTimeline(fc);                  // den jako příběh po fázích
       renderStationCheck(fc);                 // bias modelu vs. nejbližší stanice
+      // Vlastní try: všechny panely tu visí na JEDNOM try bloku, takže výjimka
+      // v kterémkoli z nich sebere i všechny následující (což mi tenhle panel
+      // rovnou předvedl — shodil kartu verifikace pod sebou).
+      try { renderRainMeasured(); } catch (e) { console.error("rain-measured:", e); }
       renderVerifCard();                      // "Trefili jsme se?" po dnech
       addModelSpread(lat, lon, fc);           // async — pásmo nejistoty do meteogramu
       addEnsembleFan(lat, lon, data);         // async — rozptyl ensemble do 7 dní

@@ -377,3 +377,44 @@ export function renderStationCheck(fc) {
   el.classList.toggle("station-off", absD >= 2);
   el.classList.add("show");
 }
+
+// ── Naměřené srážky ze srážkoměrné sítě ČHMÚ ────────────────────────────────
+// Proč zvlášť od renderStationCheck: tohle NENÍ kontrola modelu proti teplotě,
+// ale skutečně naměřený úhrn. Srážkoměrů je 436 (rozestup ~15 km) proti 40
+// klimatologickým stanicím (~50 km), takže "kolik u nás spadlo" je tady
+// mnohem blíž pravdě než cokoliv, co umíme dopočítat.
+const RAIN_STATION_MAX_KM = 25;   // srážky jsou prostorově mnohem členitější
+                                  // než teplota, takže dosah držíme krátký
+
+export function nearestRainStation(lat, lon) {
+  const all = state.CHMI_RAIN?.stations || [];
+  let best = null, bd = Infinity;
+  for (const s of all) {
+    if (s.stale || s.lat == null || s.mm_1h == null) continue;
+    const d = haversine(lat, lon, s.lat, s.lon);
+    if (d < bd) { bd = d; best = s; }
+  }
+  return best && bd <= RAIN_STATION_MAX_KM ? { ...best, distKm: bd } : null;
+}
+
+const mm = v => v.toFixed(1).replace(".", ",");
+
+export function renderRainMeasured() {
+  const el = document.getElementById("rain-measured");
+  if (!el) return;
+  el.classList.remove("show", "rain-wet");
+  if (!state.inCZ) return;              // síť je jen česká
+  const st = nearestRainStation(state.currentLat, state.currentLon);
+  if (!st) return;
+
+  const wet = st.mm_1h > 0;
+  // Když neprší, nemá cenu vypisovat čtyři nuly — stačí 24h kontext.
+  const body = wet
+    ? `naměřil <b>${mm(st.mm_1h)} mm</b> za hodinu, <b>${mm(st.mm_24h)} mm</b> za 24 h`
+    : (st.mm_24h > 0
+      ? `za 24 h naměřil <b>${mm(st.mm_24h)} mm</b>, teď nesrší`
+      : `za 24 h <b>nic nenaměřil</b>`);
+  el.innerHTML = `Srážkoměr <b>${esc(st.name)}</b> (${st.distKm.toFixed(0)} km) ${body}.`;
+  el.classList.toggle("rain-wet", wet);
+  el.classList.add("show");
+}
