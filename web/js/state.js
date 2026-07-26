@@ -21,6 +21,7 @@ export const state = {
   CHMI_AERO: null,      // aerologie — CAPE/CIN z radiosondáží Praha a Prostějov
   CHMI_NORMALS: null,   // klimatické normály 1991–2020 po stanicích
   CHMI_TEXT: null,      // oficiální textová předpověď ČHMÚ
+  CHMI_REGIONAL: null,  // areálové průměry po krajích 1961→dnes + normály
   worldTempMarkers: [], // popisky teplot na mapě (worldtemp.js)
   // Vypínač popisků stanic (tlačítko Teploty). Vlastníkem logiky je
   // worldtemp.js; tady je jen výchozí hodnota, protože renderChmiMarkers()

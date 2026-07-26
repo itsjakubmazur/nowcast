@@ -81,9 +81,10 @@ async function loadData() {
     fetchJson("chmi_aero.json"),
     fetchJson("chmi_normals.json"),
     fetchJson("chmi_forecast.json"),
+    fetchJson("chmi_regional.json"),
   ]);
   const [wu, chmi, accuracy, metar, chmiRain,
-    cotrec, echotop, chmiAir, chmiAero, chmiNormals, chmiText] =
+    cotrec, echotop, chmiAir, chmiAero, chmiNormals, chmiText, chmiRegional] =
     optional.map(r => (r.status === "fulfilled" ? r.value : null));
   state.WU = wu;
   state.CHMI = chmi;
@@ -96,6 +97,7 @@ async function loadData() {
   state.CHMI_AERO = chmiAero;
   state.CHMI_NORMALS = chmiNormals;
   state.CHMI_TEXT = chmiText;
+  state.CHMI_REGIONAL = chmiRegional;
 }
 
 // ── Forecast pro vybrané místo (24h strip + meteogram + AQ + AI verdikt) ────

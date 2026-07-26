@@ -71,7 +71,10 @@ def build_map() -> dict:
     """
     {idRegistration: {code, name, unit, locality, lat, lon, elev, region}}
 
-    Prochází se jen aktivní měření (DateTo je None) sledovaných látek.
+    Prochází se všechna aktivní měření (DateTo je None), NE jen sledované
+    látky: řádky s indexem kvality ovzduší (idValueType 148) mají vlastní
+    idRegistration, a kdyby se registr filtroval podle ComponentCode, index
+    by spadl mezi "neznámé" a tiše se zahodil. Filtruje se až při čtení dat.
     """
     r = SESSION.get(META_JSON, timeout=TIMEOUT)
     r.raise_for_status()
@@ -109,8 +112,6 @@ def build_map() -> dict:
                 if meas.get("DateTo"):
                     continue          # ukončené měření
                 comp = (meas.get("ComponentCode") or "").strip()
-                if comp not in COMPONENTS:
-                    continue
                 rid = meas.get("IdRegistration")
                 if rid is None:
                     continue
@@ -200,7 +201,7 @@ def main():
         })
         if vtype == VALUE_TYPE_INDEX:
             indexes[key] = round(value, 2)
-        else:
+        elif info["comp"] in COMPONENTS:
             st["v"][info["comp"]] = {"val": round(value, 1), "unit": info["unit"]}
 
     # Index se přidá k té stanici, ke které patří; stanice bez jediné látky
@@ -208,6 +209,8 @@ def main():
     for key, idx in indexes.items():
         if key in stations:
             stations[key]["index"] = idx
+    print(f"  index kvality ovzduší: {sum(1 for s in stations.values() if 'index' in s)}"
+          f"/{len(stations)} stanic", file=sys.stderr)
     stations = {k: s for k, s in stations.items() if s["v"] or "index" in s}
 
     if not stations:

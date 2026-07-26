@@ -282,6 +282,31 @@ function prepareServeDir() {
       },
     }));
 
+    // Krajské průměry: jen sloupec CR se v UI používá, ale fixture drží
+    // všech 14 krajů, ať se otestuje i hledání indexu podle kódu.
+    const REG = ["CR", "JHC", "JHM", "KVK", "HKK", "LBK", "MSK", "OLK", "PAK",
+      "PLK", "PHA+STC", "ULK", "VYS", "ZLK"];
+    const pad = (v) => REG.map((_, i) => (i === 0 ? v : v + i * 0.1));
+    const nowY = String(new Date().getFullYear());
+    const nowM = String(new Date().getMonth() + 1).padStart(2, "0");
+    fs.writeFileSync(path.join(SERVE, "data", "chmi_regional.json"), JSON.stringify({
+      generated_at_utc: nowIso2,
+      source: "ČHMÚ — areálové průměry po krajích (products/regional_averages)",
+      normal_period: "1991-2020",
+      regions: REG.map(c => ({ code: c, name: c })),
+      temp_annual: [
+        { year: "2024", element: "T", v: pad(9.6) },
+        { year: "2025", element: "T", v: pad(8.8) },
+      ],
+      temp_current: [{ year: nowY, month: nowM, element: "T", v: pad(19.1) }],
+      temp_normal: [
+        { month: nowM, element: "T", v: pad(18.0) },
+        { month: "Year", element: "T", v: pad(8.3) },
+      ],
+      prec_current: [{ year: nowY, month: nowM, element: "SRA", v: pad(40) }],
+      prec_normal: [{ month: nowM, element: "SRA", v: pad(80) }],
+    }));
+
     fs.writeFileSync(path.join(SERVE, "data", "chmi_forecast.json"), JSON.stringify({
       generated_at_utc: nowIso2,
       source: "ČHMÚ — textová předpověď (weather/forecast/now)",
@@ -923,6 +948,7 @@ async function main() {
       air: grab("air-panel"),
       normal: grab("normal-panel"),
       text: grab("chmitext-panel"),
+      regional: grab("regional-panel"),
       cotrecLoaded: !!state.COTREC, etLoaded: !!state.ECHOTOP,
       airLoaded: !!state.CHMI_AIR, normLoaded: !!state.CHMI_NORMALS,
       nearAir: m.nearestAirStation(50.008, 14.447)?.name,
@@ -985,6 +1011,16 @@ async function main() {
     "mimo dosah 40 km se normál nepoužije");
   assertTrue(chmiX.text.shown && /Teplá noc/.test(chmiX.text.text),
     `textová předpověď ČHMÚ se vykreslila ("${chmiX.text.text.slice(0, 70)}")`);
+
+  // fixture: letošní měsíc 19,1 °C proti normálu 18,0 → +1,1
+  assertTrue(chmiX.regional.shown && /\+1,1 °C/.test(chmiX.regional.text),
+    `odchylka od normálu se spočítala ("${chmiX.regional.text.slice(0, 110)}")`);
+  // srážky 40 z 80 mm = 50 % normálu
+  assertTrue(/50 % normálu/.test(chmiX.regional.text),
+    `srážky proti normálu v procentech ("${chmiX.regional.text.slice(0, 140)}")`);
+  // poslední rok 8,8 proti ročnímu normálu 8,3 → +0,5
+  assertTrue(/Rok 2025/.test(chmiX.regional.text) && /\+0,5 °C/.test(chmiX.regional.text),
+    `poslední uzavřený rok proti ročnímu normálu ("${chmiX.regional.text.slice(0, 160)}")`);
 
   // Teploty na mapě: nativně zapnuté, tlačítko je skrývá (jako vrstva větru).
   const tempsOn = await pageMod.evaluate(async () => {

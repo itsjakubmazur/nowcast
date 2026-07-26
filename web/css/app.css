@@ -1160,8 +1160,8 @@ button.ctrl.active { background: var(--accent); color: #fff;
 
 /* ── Panely nad daty ČHMÚ (ovzduší, normály, bouřkové prostředí, text) ─────
    Sdílí vzhled s astro-panel, ať sekce Podrobnější data drží jednotný rytmus. */
-#air-panel, #normal-panel, #convect-panel, #chmitext-panel { display: none; }
-#air-panel.show, #normal-panel.show, #convect-panel.show, #chmitext-panel.show { display: block; }
+#air-panel, #normal-panel, #convect-panel, #chmitext-panel, #regional-panel { display: none; }
+#air-panel.show, #normal-panel.show, #convect-panel.show, #chmitext-panel.show, #regional-panel.show { display: block; }
 
 .ct-row { display: flex; align-items: baseline; justify-content: space-between; gap: .5rem;
           padding: .28rem 0; border-bottom: 1px solid var(--hairline, rgba(128,128,128,.14)); font-size: .8rem; }

@@ -321,6 +321,86 @@ export function renderNormals(todayMaxC) {
   panel.classList.add("show");
 }
 
+// ── Klimatický kontext: letošní rok proti normálu 1991–2020 ────────────────
+// Areálové průměry jsou po krajích, ale mapovat lat/lon na kraj by chtělo
+// polygony, které nemáme. Ukazujeme proto celostátní hodnotu (sloupec "CR") —
+// je poctivá a nepotřebuje geometrii. Kraje jsou v datech připravené, až bude
+// čím je přiřadit.
+
+const MONTHS_SHORT = ["led", "úno", "bře", "dub", "kvě", "črv",
+  "čvc", "srp", "zář", "říj", "lis", "pro"];
+
+function regionIndex(code = "CR") {
+  const regions = state.CHMI_REGIONAL?.regions || [];
+  const i = regions.findIndex(r => r.code === code);
+  return i >= 0 ? i : null;
+}
+
+export function renderRegionalClimate() {
+  const panel = document.getElementById("regional-panel");
+  const body = document.getElementById("regional-body");
+  if (!panel || !body) return;
+  panel.classList.remove("show");
+  body.innerHTML = "";
+  if (!state.inCZ) return;
+
+  const rg = state.CHMI_REGIONAL;
+  const ri = regionIndex("CR");
+  if (!rg || ri == null) return;
+
+  const val = (rows, pred) => {
+    const row = (rows || []).find(pred);
+    const v = row?.v?.[ri];
+    return typeof v === "number" ? v : null;
+  };
+
+  const now = new Date();
+  const mm = String(now.getMonth() + 1).padStart(2, "0");
+  const yyyy = String(now.getFullYear());
+  const rows = [];
+
+  // Letošní měsíc proti normálu téhož měsíce
+  const curT = val(rg.temp_current, r => r.year === yyyy && r.month === mm);
+  const normT = val(rg.temp_normal, r => r.month === mm);
+  if (curT != null && normT != null) {
+    const d = curT - normT;
+    const sign = d >= 0 ? "+" : "−";
+    rows.push(`<div class="ct-row"><span>${MONTHS_SHORT[now.getMonth()]} ${yyyy} ` +
+      `proti normálu</span><b>${sign}${Math.abs(d).toFixed(1).replace(".", ",")} °C</b> ` +
+      `<span class="muted">${String(curT).replace(".", ",")} vs ` +
+      `${String(normT).replace(".", ",")}</span></div>`);
+  }
+
+  const curP = val(rg.prec_current, r => r.year === yyyy && r.month === mm);
+  const normP = val(rg.prec_normal, r => r.month === mm);
+  if (curP != null && normP != null && normP > 0) {
+    const pct = Math.round((curP / normP) * 100);
+    rows.push(`<div class="ct-row"><span>Srážky tento měsíc</span>` +
+      `<b>${pct} % normálu</b> <span class="muted">` +
+      `${Math.round(curP)} z ${Math.round(normP)} mm</span></div>`);
+  }
+
+  // Poslední uzavřený rok proti normálu roku ("Year" řádek v normálech)
+  const annual = rg.temp_annual || [];
+  const last = annual.length ? annual[annual.length - 1] : null;
+  const normYear = val(rg.temp_normal, r => String(r.month).toLowerCase() === "year");
+  if (last && typeof last.v?.[ri] === "number" && normYear != null) {
+    const d = last.v[ri] - normYear;
+    const sign = d >= 0 ? "+" : "−";
+    rows.push(`<div class="ct-row"><span>Rok ${esc(last.year)} proti normálu</span>` +
+      `<b>${sign}${Math.abs(d).toFixed(1).replace(".", ",")} °C</b> ` +
+      `<span class="muted">${String(last.v[ri]).replace(".", ",")} °C</span></div>`);
+  }
+
+  if (!rows.length) return;
+  const span = annual.length
+    ? `${annual[0].year}–${annual[annual.length - 1].year}` : "1961–dnes";
+  body.innerHTML = rows.join("") +
+    `<div class="ct-note">Areálové průměry ČHMÚ za celou ČR, řada ${esc(span)}, ` +
+    `normál ${esc(rg.normal_period || "1991-2020")}.</div>`;
+  panel.classList.add("show");
+}
+
 // ── Oficiální textová předpověď ─────────────────────────────────────────────
 
 export function renderChmiText() {
@@ -355,6 +435,7 @@ export function renderChmiExtras(todayMaxC) {
     ["convect", () => renderConvect()],
     ["air", () => renderAirMeasured()],
     ["normals", () => renderNormals(todayMaxC)],
+    ["regional", () => renderRegionalClimate()],
     ["chmitext", () => renderChmiText()],
   ];
   for (const [name, fn] of jobs) {

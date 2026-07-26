@@ -40,15 +40,18 @@ BASE = "https://opendata.chmi.cz/meteorology/products/regional_averages"
 TIMEOUT = (10, 30)
 
 # (klíč, podadresář, soubor, popisné sloupce na začátku řádku)
+#
+# Měsíční řady za celé období (Monthly_areal_*.csv, 1961→dnes) se ZÁMĚRNĚ
+# nestahují: je to 65 let × 12 měsíců × 14 krajů, tedy zdaleka největší část
+# souboru, a appka z nich neukazuje nic, co by roční řada + normál + letošní
+# rok nepokryly. Na mobilu by to byly stovky kB navíc za nic.
 SOURCES = [
     ("temp_annual",   "temperature",   "Annual_areal_temperature_mean.csv",        ("Year", "Element")),
-    ("temp_monthly",  "temperature",   "Monthly_areal_temperature_mean.csv",       ("Year", "Month", "Element")),
     ("temp_current",  "temperature",   f"Monthly_areal_temperature_mean_{datetime.now(timezone.utc).year}.csv",
                                                                                    ("Year", "Month", "Element")),
     ("temp_normal",   "temperature",   "Normal_1991_2020_areal_temperature.csv",   ("Month", "Element")),
     # pozor: "pecipitation" je překlep přímo v názvu souboru na serveru
     ("prec_annual",   "precipitation", "Annual_areal_pecipitation.csv",            ("Year", "Element")),
-    ("prec_monthly",  "precipitation", "Monthly_areal_precipitation.csv",          ("Year", "Month", "Element")),
     ("prec_current",  "precipitation", f"Monthly_areal_precipitation_{datetime.now(timezone.utc).year}.csv",
                                                                                    ("Year", "Month", "Element")),
     ("prec_normal",   "precipitation", "Normal_1991_2020_areal_precipitation.csv", ("Month", "Element")),
