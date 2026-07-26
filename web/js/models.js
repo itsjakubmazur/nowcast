@@ -54,18 +54,35 @@ function saveStore(s) {
   } catch { /* plné úložiště nevadí — hodnocení je bonus */ }
 }
 
-// Nejbližší stanice s čerstvou teplotou — "pravda" pro verifikaci
-function nearestFreshStation(lat, lon) {
+// Nejbližší stanice s čerstvou teplotou — "pravda" pro verifikaci.
+//
+// Dosah 40 km, ne 15: ČHMÚ publikuje jen ~40 profesionálních stanic na celou
+// ČR (rozestup ~50 km), takže s 15km limitem se žebříček přesnosti NIKDY
+// nerozjel skoro nikde — třeba v Rychvaldu u Ostravy je nejbližší stanice
+// ~20 km daleko a panel navždy hlásil "0/3".
+//
+// Cenou za větší dosah je výškový rozdíl (stanice na kopci měří jinak než
+// obec v údolí), proto teplotu přepočítáme standardním gradientem 0,65 °C
+// na 100 m na nadmořskou výšku vybraného místa (state.elevation z Open-Meteo).
+const STATION_MAX_KM = 40;
+const LAPSE_C_PER_M = 0.0065;
+
+export function nearestFreshStation(lat, lon) {
   const all = [...(state.CHMI?.stations || []), ...(state.WU?.stations || [])];
   let best = null, bd = Infinity;
   for (const s of all) {
     if (s.temp == null || s.lat == null) continue;
     const age = ageMinutes(s.time_utc);
-    if (age == null || age > 90) continue;
+    if (age == null || age > 120) continue;  // ČHMÚ jede po hodinách — 90 min bylo těsné
     const d = haversine(lat, lon, s.lat, s.lon);
     if (d < bd) { bd = d; best = s; }
   }
-  return best && bd <= 15 ? { ...best, distKm: bd } : null;
+  if (!best || bd > STATION_MAX_KM) return null;
+
+  const elevHere = state.elevation;
+  const dz = (elevHere != null && best.elev != null) ? elevHere - best.elev : 0;
+  const tempAdj = Math.round((best.temp - dz * LAPSE_C_PER_M) * 10) / 10;
+  return { ...best, distKm: bd, tempAdj, elevDiff: dz };
 }
 
 async function fetchModels(lat, lon, signal) {
@@ -120,7 +137,8 @@ function verifyAndSnapshot(lat, lon, series) {
       if (!preds || snap.done?.includes(nowHour)) continue;
       for (const [id, temp] of Object.entries(preds)) {
         const sc = rec.scores[id] || { errs: [] };
-        sc.errs.push(Math.round(Math.abs(temp - st.temp) * 10) / 10);
+        // tempAdj = měření stanice přepočtené na nadmořskou výšku místa
+        sc.errs.push(Math.round(Math.abs(temp - (st.tempAdj ?? st.temp)) * 10) / 10);
         if (sc.errs.length > SCORE_WINDOW) sc.errs = sc.errs.slice(-SCORE_WINDOW);
         rec.scores[id] = sc;
       }
@@ -284,11 +302,13 @@ export async function renderModelsPanel(lat, lon, signal) {
       </div>`).join("");
 
     const st = nearestFreshStation(lat, lon);
+    const stStr = st ? `${esc(st.name)} (${st.distKm.toFixed(0)} km${
+      Math.abs(st.elevDiff || 0) >= 100 ? `, přepočet na výšku ${Math.round(st.elevDiff > 0 ? st.elevDiff : -st.elevDiff)} m` : ""})` : "";
     const note = ranked
-      ? `Přesnost = průměrná chyba slibované teploty proti měření stanice${st ? ` ${esc(st.name)}` : ""} — hodnoceno z tvých návštěv, jen pro tohle místo.`
+      ? `Přesnost = průměrná chyba slibované teploty proti měření stanice ${stStr} — hodnoceno z tvých návštěv, jen pro tohle místo.`
       : st
-        ? `Žebříček se učí: při každé návštěvě porovnám starší sliby modelů s měřením stanice ${esc(st.name)}.`
-        : `Bez meteostanice do 15 km se přesnost modelů nehodnotí — ukazuji jen dnešní předpovědi.`;
+        ? `Žebříček se učí: při každé návštěvě porovnám starší sliby modelů s měřením stanice ${stStr}. Potřebuje pár návštěv v odstupu aspoň 3 h.`
+        : `V okruhu ${STATION_MAX_KM} km není čerstvě hlásící meteostanice, takže přesnost modelů tu nejde poctivě ověřit — ukazuji jen dnešní předpovědi.`;
 
     panel.innerHTML = `
       <div class="mdl-title">Modely pro tohle místo <span class="mdl-sub">${rows.length} modelů · dnes max / srážky / přesnost</span></div>

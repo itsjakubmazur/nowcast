@@ -26,6 +26,7 @@ export const state = {
   // tz = časová zóna vybraného místa (z Open-Meteo timezone=auto) — všechny
   // zobrazované časy jedou v místním čase daného místa, ne natvrdo v Praze.
   inCZ: true, tz: "Europe/Prague",
+  elevation: null,      // nadm. výška vybraného místa (Open-Meteo) — výšková korekce stanic
   _globalRadar: null,   // navzorkované RainViewer dlaždice (globalrain.js)
   _autoGlobal: false,   // globální radar zapnutý automaticky (ne uživatelem)
 

@@ -158,7 +158,17 @@ export function warningsForPt(ptId) {
   // Výstrahy ČHMÚ existují jen pro body českého gridu
   if (ptId == null || !state.GRID?.warnings || !state.GRID?.wmatch) return [];
   const matchIdx = new Set(state.GRID.wmatch[String(ptId)] || []);
-  return state.GRID.warnings.filter((w, wi) => w.global || matchIdx.has(wi));
+  const hits = state.GRID.warnings.filter((w, wi) => w.global || matchIdx.has(wi));
+  // ČHMÚ tutéž výstrahu publikuje zvlášť pro každou zasaženou oblast, takže
+  // se na jednom místě potkalo i 3× "Riziko požárů". Deduplikuj podle jevu,
+  // barvy a platnosti — pro uživatele je to jedna a tatáž výstraha.
+  const seen = new Set();
+  return hits.filter(w => {
+    const key = `${w.event}|${w.color}|${w.onset_utc}|${w.expires_utc}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 export function templateVerdict(ptId) {

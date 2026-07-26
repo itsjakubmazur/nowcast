@@ -325,6 +325,10 @@ async function main() {
   await page.waitForSelector(".warn-chip", { timeout: 5000 });
   const chipText = await page.textContent(".warn-chip");
   assertTrue(chipText.includes("Bouřky"), `výstražný chip "Bouřky" se zobrazil (obsah: "${chipText}")`);
+  // Fixture má tutéž výstrahu 2× (ČHMÚ ji publikuje per oblast) — UI ji smí
+  // ukázat jen jednou (regrese "Riziko požárů" 3× vedle sebe)
+  const chipCount = await page.locator(".warn-chip").count();
+  assertTrue(chipCount === 1, `duplicitní výstraha se zobrazí jen jednou (chipů: ${chipCount})`);
 
   // ── AI verdikt (progressive enhancement přes worker) ─────────────────────
   await page.waitForSelector(".verdict-ai-badge", { timeout: 8000 }).catch(() => {});
@@ -698,6 +702,25 @@ async function main() {
   // ALADIN/ČHMÚ (z data/aladin.json, mimo Open-Meteo) se přidal jako model
   const mdlText = await pageMod.textContent("#models-panel");
   assertTrue(mdlText.includes("ALADIN"), "ALADIN/ČHMÚ je v panelu modelů");
+
+  // Scénář "Rychvald": nejbližší stanice je 25 km daleko a o 600 m výš.
+  // Se starým limitem 15 km se žebříček nikdy nerozjel (navždy "0/3"); nově
+  // se stanice použije a její teplota se přepočte na výšku místa.
+  const farSt = await pageMod.evaluate(async () => {
+    const { state } = await import("./js/state.js");
+    const { nearestFreshStation } = await import("./js/models.js");
+    const keepChmi = state.CHMI, keepWu = state.WU, keepEl = state.elevation;
+    state.CHMI = { stations: [{ name: "Daleká", lat: 50.315, lon: 14.40, elev: 800,
+      temp: 10, time_utc: new Date().toISOString() }] };
+    state.WU = null;
+    state.elevation = 200;
+    const st = nearestFreshStation(50.09, 14.40);
+    state.CHMI = keepChmi; state.WU = keepWu; state.elevation = keepEl;
+    return st && { km: Math.round(st.distKm), tempAdj: st.tempAdj, raw: st.temp };
+  });
+  // 800 m → 200 m = +600 m níž ⇒ teplota +3,9 °C (gradient 0,65 °C/100 m)
+  assertTrue(farSt && farSt.km >= 20 && farSt.km <= 30 && Math.abs(farSt.tempAdj - 13.9) < 0.2,
+    `stanice ve 25 km se použije s výškovou korekcí (${farSt?.km} km, ${farSt?.raw}→${farSt?.tempAdj} °C)`);
   const mdlScore = await pageMod.evaluate(() => {
     const s = JSON.parse(localStorage.getItem("nowcast_model_scores_v1") || "{}");
     return s["50.09,14.40"]?.scores?.icon_seamless?.errs || [];

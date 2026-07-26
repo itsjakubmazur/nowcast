@@ -6,6 +6,7 @@ import { state } from "./state.js";
 import { esc, revealSwap, nowLocStr, haversine, ageMinutes } from "./utils.js";
 import { moonIconImg, wImg, wcIconSvg, mostSevere } from "./icons.js";
 import { computeNight } from "./stargaze.js";
+import { nearestFreshStation } from "./models.js";
 
 function locMonth() {
   return +new Date().toLocaleString("sv-SE", { timeZone: state.tz }).slice(5, 7);
@@ -359,27 +360,20 @@ export function renderStationCheck(fc) {
   const modelT = fc?.hourlyFull?.[0]?.tempRaw;
   if (lat == null || modelT == null) return;
 
-  const all = [
-    ...(state.CHMI?.stations || []),
-    ...(state.WU?.stations || []),
-  ];
-  let best = null, bd = Infinity;
-  for (const s of all) {
-    if (s.temp == null || s.lat == null) continue;
-    const age = ageMinutes(s.time_utc);
-    if (age == null || age > 90) continue; // zastaralé měření nic nedokazuje
-    const d = haversine(lat, lon, s.lat, s.lon);
-    if (d < bd) { bd = d; best = s; }
-  }
-  if (!best || bd > 15) return;
+  // Stejný výběr stanice jako žebříček modelů (dosah 40 km + přepočet na
+  // nadmořskou výšku místa) — dřív tu byla duplicitní kopie s limitem 15 km.
+  const st = nearestFreshStation(lat, lon);
+  if (!st) return;
 
-  const diff = Math.round((best.temp - modelT) * 10) / 10;
+  const measured = st.tempAdj ?? st.temp;
+  const diff = Math.round((measured - modelT) * 10) / 10;
   const absD = Math.abs(diff);
   const diffStr = absD >= 1
     ? ` — o <b>${absD.toFixed(1).replace(".", ",")} °C ${diff > 0 ? "tepleji" : "chladněji"}</b> než model`
     : " — model sedí";
-  el.innerHTML = `📡 Stanice <b>${esc(best.name)}</b> (${bd.toFixed(0)} km) hlásí `
-    + `<b>${best.temp.toFixed(1).replace(".", ",")} °C</b>${diffStr}.`;
+  const adjStr = Math.abs(st.elevDiff || 0) >= 100 ? " (přepočteno na výšku)" : "";
+  el.innerHTML = `Stanice <b>${esc(st.name)}</b> (${st.distKm.toFixed(0)} km) hlásí `
+    + `<b>${measured.toFixed(1).replace(".", ",")} °C</b>${adjStr}${diffStr}.`;
   el.classList.toggle("station-off", absD >= 2);
   el.classList.add("show");
 }

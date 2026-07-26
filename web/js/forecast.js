@@ -868,6 +868,7 @@ export async function fetchOpenMeteo(lat, lon, signal) {
     // timezone=auto → API vrací zónu místa; všechny zobrazované časy pak
     // jedou v ní (utils.localHM / nowLocStr čtou state.tz)
     state.tz = data.timezone || "Europe/Prague";
+    state.elevation = data.elevation ?? null;   // pro výškovou korekci měření stanic
     // past_days=1 posouvá i daily o den zpět — ořízni včerejšek, ať všichni
     // konzumenti (fc7, meteogram, astro) dál dostávají [0] = dnešek
     if (data.daily?.time?.length) {
