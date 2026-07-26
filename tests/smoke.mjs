@@ -1009,6 +1009,117 @@ async function main() {
     `normál z nejbližší stanice (${chmiX.nearNorm})`);
   assertTrue(chmiX.farNorm === null,
     "mimo dosah 40 km se normál nepoužije");
+  // ── Prořezávání popisků podle zoomu ─────────────────────────────────────
+  // Regrese, kterou to hlídá: české stanice se dřív kreslily VŠECHNY bez
+  // ohledu na zoom, takže při oddálení byla mapa pod souvislou plochou štítků.
+  const thin = await page.evaluate(async () => {
+    const { thinByZoom, stationRank, cellSizeDeg, maxLabelsFor } =
+      await import("./js/labelthin.js");
+    // Umělá hustá síť: 200 stanic na malé ploše, jako je tomu v ČR.
+    const mk = (i) => ({
+      id: i % 10 === 0 ? `0-20000-0-11${400 + i}` : `0-203-0-${i}`,
+      lat: 49 + (i % 20) * 0.1, lon: 14 + Math.floor(i / 20) * 0.1,
+      temp: 20, time_utc: new Date().toISOString(),
+    });
+    const all = Array.from({ length: 200 }, (_, i) => mk(i));
+    const out = {};
+    for (const z of [5, 7, 9, 12]) out[z] = thinByZoom(all, z).length;
+    return {
+      counts: out,
+      cellShrinks: cellSizeDeg(5) > cellSizeDeg(9),
+      capGrows: maxLabelsFor(5) < maxLabelsFor(10),
+      // hlavní síť musí mít přednost před národní
+      wmoBeatsNational: stationRank({ id: "0-20000-0-11518" })
+        > stationRank({ id: "0-203-0-41701105001" }),
+      // Skutečný invariant: v každé obsazené buňce musí vyhrát stanice
+      // s NEJVYŠŠÍ prioritou, jaká tam je. Tvrdit "vždycky jen hlavní síť"
+      // by bylo špatně — v buňce, kde žádná hlavní stanice není, je národní
+      // ta správná volba.
+      violations: (() => {
+        const z = 6;
+        const cell = cellSizeDeg(z);
+        const keyOf = (s) => {
+          const lonCell = cell / Math.max(0.2, Math.cos(s.lat * Math.PI / 180));
+          return `${Math.floor(s.lat / cell)}_${Math.floor(s.lon / lonCell)}`;
+        };
+        const bestInCell = new Map();
+        for (const s of all) {
+          const k = keyOf(s);
+          const cur = bestInCell.get(k);
+          if (!cur || stationRank(s) > stationRank(cur)) bestInCell.set(k, s);
+        }
+        const bad = [];
+        for (const s of thinByZoom(all, z)) {
+          const best = bestInCell.get(keyOf(s));
+          if (best && stationRank(best) > stationRank(s)) bad.push(s.id);
+        }
+        return bad;
+      })(),
+      // preference se musí projevit: podíl hlavních stanic ve výběru je vyšší
+      // než v celém vstupu (vstup má 10 %)
+      wmoShareOut: (() => {
+        const out = thinByZoom(all, 6);
+        return out.filter(s => s.id.startsWith("0-20000")).length / out.length;
+      })(),
+    };
+  });
+  assertTrue(thin.counts[5] < thin.counts[9] && thin.counts[9] <= thin.counts[12],
+    `přiblížení odkrývá víc popisků (z5=${thin.counts[5]}, z9=${thin.counts[9]}, z12=${thin.counts[12]})`);
+  assertTrue(thin.counts[5] <= 18,
+    `při oddálení zbyde jen hrstka popisků (${thin.counts[5]})`);
+  assertTrue(thin.cellShrinks && thin.capGrows,
+    "buňka se se zoomem zmenšuje a strop popisků roste");
+  assertTrue(thin.wmoBeatsNational,
+    "hlavní klimatologická stanice má přednost před národní");
+  assertTrue(thin.violations.length === 0,
+    `v buňce vždy vyhraje nejlepší dostupná stanice (porušení: ${JSON.stringify(thin.violations)})`);
+  assertTrue(thin.wmoShareOut > 0.1,
+    `hlavní stanice jsou ve výběru nadreprezentované (${Math.round(thin.wmoShareOut * 100)} % vs 10 % vstupu)`);
+
+  // ── Shlukování blesků do bouřek ─────────────────────────────────────────
+  const storms = await page.evaluate(async () => {
+    const { clusterStrikes } = await import("./js/storms.js");
+    const now = Date.now();
+    const strikes = [];
+    // Bouřka A: 40 úderů těsně u sebe (Praha)
+    for (let i = 0; i < 40; i++) {
+      strikes.push({ lat: 50.05 + Math.random() * 0.06, lon: 14.4 + Math.random() * 0.06,
+        t: now - Math.random() * 8 * 60000 });
+    }
+    // Bouřka B: 8 úderů daleko (Brno)
+    for (let i = 0; i < 8; i++) {
+      strikes.push({ lat: 49.2 + Math.random() * 0.05, lon: 16.6 + Math.random() * 0.05,
+        t: now - Math.random() * 5 * 60000 });
+    }
+    // Osamocený výboj — nesmí se stát "bouřkou"
+    strikes.push({ lat: 48.9, lon: 18.2, t: now - 60000 });
+    // Starý shluk mimo okno — musí vypadnout
+    for (let i = 0; i < 20; i++) {
+      strikes.push({ lat: 51.0, lon: 15.0, t: now - 90 * 60000 });
+    }
+    const out = clusterStrikes(strikes, now);
+    return {
+      n: out.length,
+      biggest: out[0]?.count,
+      near: out.map(s => ({ lat: Math.round(s.lat * 10) / 10, lon: Math.round(s.lon * 10) / 10,
+        count: s.count, perMin: s.perMin, r: Math.round(s.radiusKm) })),
+      empty: clusterStrikes([], now).length,
+    };
+  });
+  assertTrue(storms.n === 2,
+    `dvě bouřky, ne dvacet bodů ani nula (${storms.n}: ${JSON.stringify(storms.near)})`);
+  assertTrue(storms.biggest === 40,
+    `největší bouřka má všech 40 úderů (${storms.biggest})`);
+  assertTrue(storms.near.some(s => s.lat === 50.1 || s.lat === 50),
+    `bouřka sedí na Praze (${JSON.stringify(storms.near)})`);
+  assertTrue(!storms.near.some(s => s.lat === 51),
+    "shluk mimo časové okno se nepočítá");
+  assertTrue(!storms.near.some(s => s.count < 3),
+    "osamocený výboj se nevydává za bouřku");
+  assertTrue(storms.empty === 0, "bez úderů nejsou žádné bouřky");
+  assertTrue(storms.near.every(s => s.r >= 5 && s.r <= 60),
+    `poloměr bouřky je v rozumných mezích (${JSON.stringify(storms.near.map(s => s.r))})`);
+
   assertTrue(chmiX.text.shown && /Teplá noc/.test(chmiX.text.text),
     `textová předpověď ČHMÚ se vykreslila ("${chmiX.text.text.slice(0, 70)}")`);
 

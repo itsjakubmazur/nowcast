@@ -173,9 +173,14 @@ function verifyAndSnapshot(lat, lon, series) {
     }
   }
 
-  // nový snapshot: sliby všech modelů na příštích 24 h (zaokrouhleně, ať je malý)
+  // Nový snapshot: sliby všech modelů na příštích 24 h (zaokrouhleně, ať je malý).
+  //
+  // Iteruje se přes series, NE přes MODELS: ALADIN je definovaný zvlášť (není
+  // z Open-Meteo), takže procházení MODELS ho tiše vynechalo — do snapshotu se
+  // nikdy nedostal, nikdy nenasbíral jedinou chybu a v žebříčku proto věčně
+  // svítil "0/3" a padal na konec, protože se řadí podle (mae ?? 99).
   const snapH = {};
-  for (const [id] of MODELS) {
+  for (const id of Object.keys(series)) {
     const s = series[id];
     if (!s) continue;
     for (const [iso, t] of Object.entries(s)) {

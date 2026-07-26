@@ -187,6 +187,97 @@ export function pushSupported() {
   return "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
 }
 
+// Běží appka jako nainstalovaná PWA? Na iOS je to TVRDÁ podmínka Web Pushe:
+// v Safari na kartě push nefunguje vůbec, ať uživatel klikne na co chce.
+function isStandalone() {
+  return window.matchMedia?.("(display-mode: standalone)")?.matches
+    || window.navigator.standalone === true;
+}
+
+function isIOS() {
+  const ua = navigator.userAgent || "";
+  return /iPad|iPhone|iPod/.test(ua)
+    || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+}
+
+/**
+ * Proč upozornění (ne)chodí. Vrací { ok, code, msg, hint }.
+ *
+ * Vzniklo z konkrétní stížnosti: "notifky chodí při spuštění aplikace, jinak
+ * ne". To je přesně podpis stavu, kdy funguje jen in-page Notification API
+ * (běží, dokud je appka otevřená) a Web Push aktivní není. Rozdíl mezi těmi
+ * dvěma věcmi ale nebyl nikde vidět, takže se to nedalo diagnostikovat.
+ */
+export async function pushDiagnosis() {
+  if (!pushSupported()) {
+    return { ok: false, code: "unsupported",
+      msg: "Tenhle prohlížeč Web Push neumí.",
+      hint: "Upozornění budou chodit jen s otevřenou appkou." };
+  }
+  if (isIOS() && !isStandalone()) {
+    return { ok: false, code: "ios-not-installed",
+      msg: "Na iPhonu je potřeba appku nainstalovat na plochu.",
+      hint: "Sdílet → Přidat na plochu, pak upozornění zapnout znovu. " +
+            "V Safari na kartě iOS push nedoručuje." };
+  }
+  if (Notification.permission === "denied") {
+    return { ok: false, code: "denied",
+      msg: "Upozornění máš v prohlížeči zakázaná.",
+      hint: "Povol je v nastavení webu a zkus to znovu." };
+  }
+  if (!loadFavs().length) {
+    return { ok: false, code: "no-favs",
+      msg: "Nemáš uložené žádné oblíbené místo.",
+      hint: "Push hlídá právě oblíbená místa — ulož si aspoň jedno (☆)." };
+  }
+
+  const reg = await navigator.serviceWorker.ready.catch(() => null);
+  const sub = reg ? await reg.pushManager.getSubscription().catch(() => null) : null;
+  if (!sub) {
+    return { ok: false, code: "not-subscribed",
+      msg: "Upozornění na pozadí nejsou zapnutá.",
+      hint: "Zapni je tlačítkem 🔕 — bez toho chodí jen s otevřenou appkou." };
+  }
+
+  // Poslední a nejzrádnější případ: prohlížeč subscription má, ale server o ní
+  // neví (vypršela, KV ji zahodilo, subscribe kdysi selhal). Zvenku vypadá
+  // všechno zapnuté a přitom nikdy nic nepřijde.
+  try {
+    const r = await fetch(`${WORKER_BASE}/push-status`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ endpoint: sub.endpoint }),
+    });
+    if (r.ok) {
+      const st = await r.json();
+      if (!st.registered) {
+        return { ok: false, code: "server-missing",
+          msg: "Server o tvém zařízení neví — registrace vypršela.",
+          hint: "Vypni a znovu zapni upozornění, tím se obnoví." };
+      }
+      return { ok: true, code: "ok",
+        msg: `Upozornění na pozadí jsou aktivní pro ${st.favorites} ` +
+             `${st.favorites === 1 ? "místo" : st.favorites < 5 ? "místa" : "míst"}.`,
+        hint: st.lastNotified ? `Poslední odeslané: ${st.lastNotified}` : "" };
+    }
+  } catch { /* server nedostupný — nižší jistota, ale ne chyba uživatele */ }
+
+  return { ok: true, code: "ok-unverified",
+    msg: "Upozornění na pozadí jsou zapnutá.",
+    hint: "Stav na serveru se teď nepodařilo ověřit." };
+}
+
+export async function renderPushDiagnosis() {
+  const el = document.getElementById("push-status");
+  if (!el) return;
+  let d;
+  try { d = await pushDiagnosis(); }
+  catch { el.classList.remove("show"); return; }
+  el.innerHTML = `<b>${d.ok ? "✓" : "!"}</b> ${esc(d.msg)}` +
+    (d.hint ? ` <span class="muted">${esc(d.hint)}</span>` : "");
+  el.classList.toggle("push-bad", !d.ok);
+  el.classList.add("show");
+}
+
 export async function initPushButton() {
   const btn = document.getElementById("btn-push");
   if (!btn || !pushSupported()) return;
@@ -209,10 +300,12 @@ export async function initPushButton() {
       await subscribePush(reg);
     }
     _renderPushBtn(btn);
+    renderPushDiagnosis();
   });
 
   // Pokud už je subscribed, obnov TTL + aktuální oblíbená místa na serveru.
   if (existing) maybeResubscribePush();
+  renderPushDiagnosis();
 }
 
 function _renderPushBtn(btn) {

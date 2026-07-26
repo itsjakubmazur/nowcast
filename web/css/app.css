@@ -1148,6 +1148,46 @@ button.ctrl.active { background: var(--accent); color: #fff;
 #rain-measured b { color: var(--fg); }
 #rain-measured.rain-wet b { color: var(--blue, #0A84FF); }
 
+/* ── Bouřky: shluky blesků jako plochy ──────────────────────────────────────
+   Blob je záměrně polopropustný a bez ostré hrany — hranice bouřky z úderů
+   nikdo přesně neví, takže by ostrý obrys předstíral přesnost, kterou nemáme. */
+.storm-blob { filter: blur(0.4px); }
+@keyframes storm-pulse {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.08); }
+}
+.storm-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  gap: .15rem; padding: .1rem .35rem; border-radius: 999px;
+  font-size: .72rem; font-weight: 700; line-height: 1;
+  color: #14161a; background: var(--sc, #FFD60A);
+  box-shadow: 0 1px 4px rgba(0,0,0,.45);
+  white-space: nowrap;
+  animation: storm-pulse 3.2s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) { .storm-badge { animation: none; } }
+
+#storm-summary {
+  display: none; margin: .35rem 0 0; padding: .4rem .6rem;
+  border-radius: 12px; font-size: .76rem; line-height: 1.4;
+  color: var(--fg); background: var(--chip-bg, rgba(128,128,128,.10));
+}
+#storm-summary.show { display: block; }
+#storm-summary b { font-variant-numeric: tabular-nums; }
+#push-status {
+  display: none; margin: .3rem 0 .1rem; font-size: .72rem;
+  line-height: 1.45; color: var(--muted);
+}
+#push-status.show { display: block; }
+#push-status b { color: var(--green, #30D158); }
+#push-status.push-bad b { color: var(--orange, #FF9F0A); }
+#push-status .muted { opacity: .85; }
+
+#storm-summary.storm-close {
+  background: rgba(255, 55, 95, .16);
+  box-shadow: inset 0 0 0 1px rgba(255, 55, 95, .35);
+}
+
 /* ── Druhý názor: COTREC ČHMÚ ───────────────────────────────────────────────
    Sesterská řádka ke station-check a rain-measured. Barva nese informaci:
    zelená = dvě nezávislé metody se shodly, oranžová = neshodly. */

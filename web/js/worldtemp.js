@@ -13,6 +13,7 @@ import { state } from "./state.js";
 import { esc, haversine, ageMinutes } from "./utils.js";
 import { tilesForBounds, loadTile } from "./worldstations.js";
 import { chmiMarkerColor, renderChmiMarkers } from "./stations.js";
+import { thinByZoom, maxLabelsFor } from "./labelthin.js";
 
 const LS_KEY = "nowcast_temps_on";
 const MIN_ZOOM = 4;        // níž je celý kontinent a popisky by byly kaše
@@ -41,20 +42,11 @@ function clearMarkers() {
 
 // Prořezání popisků: v jedné buňce mřížky necháme jen jednu stanici, jinak
 // by se u hustých oblastí (Německo, východní pobřeží USA) čísla slila.
-// Velikost buňky odvozujeme ze zoomu, ne z pixelů — nepotřebujeme projekci
-// a chová se to stejně i v testovacím stubu Leafletu.
+// Sdíleno s českou vrstvou (labelthin.js), ať se obě chovají stejně —
+// dřív měla každá vrstva vlastní pravidlo a české stanice se neprořezávaly
+// vůbec.
 export function thinStations(stations, zoom, maxLabels = MAX_LABELS) {
-  const cell = 90 / Math.pow(2, Math.max(1, zoom));
-  const seen = new Map();
-  // Čerstvější napřed, ať v buňce zůstane ta lepší stanice.
-  const sorted = [...stations].sort(
-    (a, b) => (ageMinutes(a.time_utc) ?? 1e9) - (ageMinutes(b.time_utc) ?? 1e9));
-  for (const s of sorted) {
-    const key = `${Math.round(s.lat / cell)}_${Math.round(s.lon / cell)}`;
-    if (!seen.has(key)) seen.set(key, s);
-    if (seen.size >= maxLabels) break;
-  }
-  return [...seen.values()];
+  return thinByZoom(stations, zoom, { maxLabels: maxLabelsFor(zoom, maxLabels) });
 }
 
 function nearChmi(s) {
@@ -128,6 +120,7 @@ export async function renderWorldTemps() {
 }
 
 let _debounce = null;
+let _debounceCz = null;
 
 export function initWorldTemps() {
   const btn = document.getElementById("btn-temps");
@@ -138,6 +131,12 @@ export function initWorldTemps() {
     renderWorldTemps();
   });
   // Překreslujeme až po doposunutí — během tažení mapy by to jen zdržovalo.
+  // České stanice se musí překreslit taky: prořezání závisí na zoomu a výřezu,
+  // takže bez tohohle by po přiblížení zůstal starý (řídký) výběr.
+  state.map?.on?.("moveend", () => {
+    clearTimeout(_debounceCz);
+    _debounceCz = setTimeout(() => renderChmiMarkers(), 250);
+  });
   state.map?.on?.("moveend", () => {
     clearTimeout(_debounce);
     _debounce = setTimeout(renderWorldTemps, 250);

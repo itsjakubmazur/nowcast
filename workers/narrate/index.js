@@ -69,6 +69,9 @@ export default {
       if (url.pathname === "/unsubscribe" && request.method === "POST") {
         return await handleUnsubscribe(request, env);
       }
+      if (url.pathname === "/push-status" && request.method === "POST") {
+        return await handlePushStatus(request, env);
+      }
       // Zpětná kompatibilita se starým klientem (POST / s {lat,lon,label})
       if (url.pathname === "/" && request.method === "POST") {
         return await handleVerdictLegacyPost(request, env);
@@ -385,6 +388,36 @@ async function handleUnsubscribe(request, env) {
   const key = "sub:" + (await sha256Hex(endpoint));
   await env.SUBSCRIPTIONS.delete(key);
   return json({ ok: true });
+}
+
+// Diagnostika: má server tenhle endpoint opravdu uložený?
+//
+// Bez toho se "notifikace nechodí" nedá odlišit od "prohlídeč si myslí, že je
+// přihlášený, ale na serveru žádný záznam není" — a to je přesně stav, který
+// nastane, když subscription vyprší nebo ji smaže systém. Vrací jen metadata,
+// žádný obsah subscription.
+async function handlePushStatus(request, env) {
+  if (!env.SUBSCRIPTIONS) return json({ error: "Push není na serveru nakonfigurovaný" }, 501);
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "Invalid JSON" }, 400);
+  }
+  const endpoint = body?.endpoint;
+  if (!endpoint) return json({ error: "endpoint required" }, 400);
+  const key = "sub:" + (await sha256Hex(endpoint));
+  let rec = null;
+  try {
+    rec = await env.SUBSCRIPTIONS.get(key, "json");
+  } catch { /* ignore */ }
+  if (!rec) return json({ registered: false });
+  return json({
+    registered: true,
+    favorites: (rec.favorites || []).length,
+    updatedAt: rec.updatedAt || null,
+    lastNotified: Object.values(rec.notified || {}).sort().slice(-1)[0] || null,
+  });
 }
 
 // ── Cron: zkontroluj oblíbená místa všech subscriberů, pošli push ───────────

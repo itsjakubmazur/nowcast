@@ -1,5 +1,6 @@
 import { state } from "./state.js";
 import { esc, ageMinutes, degToCompass, beaufortLabel } from "./utils.js";
+import { thinByZoom } from "./labelthin.js";
 
 // ── WU stanice (Weather Underground PWS) ─────────────────────────────────────
 
@@ -321,10 +322,25 @@ export function renderChmiMarkers() {
   if (!state.tempsOn) return;
   if (!state.CHMI || !state.CHMI.stations || !state.map) return;
 
-  state.CHMI.stations.forEach(s => {
-    if (s.lat == null || s.lon == null) return;
+  // Prořezání podle zoomu: 296 stanic naráz je při oddálení souvislá plocha
+  // štítků, pod kterou není vidět mapa ani radar. Při oddálení se ukazují
+  // hlavní klimatologické stanice, přiblížení postupně odkrývá místní.
+  const zoom = state.map.getZoom?.() ?? 8;
+  const candidates = state.CHMI.stations.filter(s => {
+    if (s.lat == null || s.lon == null) return false;
     const val = s[state.chmiLayer];
-    if (state.chmiLayer !== "temp" && val == null) return;
+    return state.chmiLayer === "temp" || val != null;
+  });
+  // Ve výřezu se prořezává jen to, co je vidět — jinak by stanice za okrajem
+  // obrazovky "vyhrávaly" buňky a ubíraly místa těm viditelným.
+  const bounds = state.map.getBounds?.();
+  const inView = typeof bounds?.contains === "function"
+    ? candidates.filter(s => bounds.contains([s.lat, s.lon]))
+    : candidates;
+  const shown = thinByZoom(inView.length ? inView : candidates, zoom);
+
+  shown.forEach(s => {
+    const val = s[state.chmiLayer];
 
     const color = chmiMarkerColor(state.chmiLayer, val);
     const text = chmiMarkerText(state.chmiLayer, s);

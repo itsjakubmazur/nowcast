@@ -87,6 +87,7 @@
     <button class="ctrl" id="btn-global" data-icon="globe" title="Globální radarové dlaždice (RainViewer)">Svět</button>
     <button class="ctrl" id="btn-satellite" data-icon="satellite" title="Satelitní IR vrstva — oblačnost (RainViewer)">Družice</button>
     <button class="ctrl active" id="btn-temps" data-icon="thermometer" title="Naměřené teploty ze stanic (celosvětově) — vypni pro lepší výhled na mapu">Teploty</button>
+    <button class="ctrl active" id="btn-storms" data-icon="bolt" title="Bouřky — shluky blesků z poslední půlhodiny (Blitzortung)">Bouřky</button>
     <button class="ctrl" id="btn-wind" data-icon="wind" title="Animované částice větru (10 m)">Vítr</button>
     <button class="ctrl" id="btn-hydro" data-icon="waves" title="Hlásné profily — stavy a průtoky toků (ČHMÚ)">Hladiny</button>
     <button class="ctrl" id="btn-accum" data-icon="droplets" title="Úhrn srážek za posledních 24 h (model)">Úhrn</button>
@@ -212,6 +213,9 @@
   <button id="btn-compare" title="Porovnat aktuální místo s jinou obcí">⇄ Porovnat s jiným místem</button>
   <button id="btn-fav" style="display:none">☆ Uložit místo</button>
   <button id="btn-push">🔕 Zapnout upozornění</button>
+  <!-- Proč upozornění (ne)chodí — bez tohohle nešlo odlišit "funguje jen
+       s otevřenou appkou" od "je opravdu zapnuté na pozadí". -->
+  <div id="push-status"></div>
   <div class="share-row embed-hide">
     <button id="btn-share-2">🔗 Sdílet</button>
     <button id="btn-embed">🖼 Embed</button>
@@ -302,6 +306,9 @@
 <div id="offline-badge"><i></i><span id="offline-text">Offline — ukazuji poslední data</span></div>
 
 <!-- Blesky — nejbližší úder -->
+<!-- Souhrn bouřek — kolik jich je vidět a jak daleko je nejbližší -->
+<div id="storm-summary"></div>
+
 <div id="lightning-chip" data-icon="bolt">blesky <b id="lightning-dist">—</b>&nbsp;<span id="lightning-trend"></span>&nbsp;<span id="lightning-age" style="color:var(--muted)"></span></div>
 
 <!-- ČHMÚ detail panel -->

@@ -4,11 +4,21 @@
 // degraduje — chip i markery prostě zůstanou skryté.
 
 import { state } from "./state.js";
+import { renderStorms, initStormsButton, stormsEnabled } from "./storms.js";
 
 const WS_HOSTS = ["wss://ws1.blitzortung.org", "wss://ws7.blitzortung.org", "wss://ws8.blitzortung.org"];
 const BBOX = { latMin: 47.5, latMax: 52.5, lonMin: 10.0, lonMax: 20.5 }; // ČR + okolí
-const MAX_MARKERS = 150;
-const MARKER_TTL_MS = 10 * 60 * 1000;
+// Jednotlivé body úderů zůstávají jen krátce a je jich málo: "kde je bouřka"
+// od téhle verze říkají shluky ze storms.js, takže sto rozsypaných blesků na
+// mapě už jen překáželo.
+const MAX_MARKERS = 60;
+const MARKER_TTL_MS = 4 * 60 * 1000;
+
+// Surové údery pro shlukování — delší okno a větší strop než u markerů,
+// protože z nich vzniká plocha bouřky, ne body.
+const STRIKE_TTL_MS = 25 * 60 * 1000;
+const MAX_STRIKES = 4000;
+const STORM_REDRAW_MS = 20 * 1000;
 
 const NOTIFY_KM = 12;              // úder blíž = upozorni
 const NOTIFY_SNOOZE_MS = 10 * 60 * 1000;
@@ -21,6 +31,8 @@ let _chipTimer = null;
 let _reconnectTimer = null;
 let _prevNearKm = null;  // nejbližší úder z minulého tiku — pro trend
 let _lastNotify = 0;
+let _strikes = [];       // { lat, lon, t } — vstup pro shlukování bouřek
+let _lastStormDraw = 0;
 
 // LZW dekodér Blitzortung streamu (publikovaný komunitní postup)
 function decode(b) {
@@ -51,6 +63,11 @@ function haversineKm(lat1, lon1, lat2, lon2) {
 }
 
 function addStrike(lat, lon, timeMs) {
+  // Do bufferu pro shlukování jde úder vždy, i když se bod nekreslí —
+  // bouřková vrstva na jednotlivých markerech nezávisí.
+  _strikes.push({ lat, lon, t: timeMs });
+  if (_strikes.length > MAX_STRIKES) _strikes.splice(0, _strikes.length - MAX_STRIKES);
+
   if (!state.map || typeof L === "undefined") return;
   const icon = L.divIcon({
     className: "lightning-marker",
@@ -65,6 +82,32 @@ function addStrike(lat, lon, timeMs) {
   }
   _lastStrike = { lat, lon, time: timeMs };
   updateChip();
+  maybeRedrawStorms();
+}
+
+export function getStrikes() {
+  return _strikes;
+}
+
+function pruneStrikes() {
+  const cutoff = Date.now() - STRIKE_TTL_MS;
+  if (_strikes.length && _strikes[0].t < cutoff) {
+    _strikes = _strikes.filter(s => s.t >= cutoff);
+  }
+}
+
+// Překreslení bouřek je dražší než posun markeru, tak se škrtí. Nový úder
+// v už zakreslené bouřce nemusí vyvolat překreslení okamžitě.
+function maybeRedrawStorms(force = false) {
+  const now = Date.now();
+  if (!force && now - _lastStormDraw < STORM_REDRAW_MS) return;
+  _lastStormDraw = now;
+  pruneStrikes();
+  try { renderStorms(_strikes, now); } catch (e) { console.error("storms:", e); }
+}
+
+export function redrawStorms() {
+  maybeRedrawStorms(true);
 }
 
 function pruneMarkers() {
@@ -174,8 +217,17 @@ function scheduleReconnect() {
 }
 
 export function initLightning() {
+  // Tlačítko a prázdné vykreslení jdou i bez WebSocketu — jinak by po vypnutí
+  // sítě zůstalo tlačítko mrtvé a stará vrstva viset na mapě.
+  initStormsButton(() => redrawStorms());
+  try { renderStorms(_strikes, Date.now()); } catch { /* mapa ještě nemusí být */ }
   if (!("WebSocket" in window)) return;
   connect();
-  _chipTimer = setInterval(() => { pruneMarkers(); updateChip(); }, 15000);
+  _chipTimer = setInterval(() => {
+    pruneMarkers();
+    updateChip();
+    maybeRedrawStorms(true);   // i bez nových úderů: staré bouřky musí vyblednout
+  }, 15000);
   void _chipTimer;
+  void stormsEnabled;
 }

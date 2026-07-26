@@ -56,9 +56,18 @@
         const lat = Array.isArray(c) ? c[0] : (c.lat ?? 50.0);
         const lon = Array.isArray(c) ? c[1] : (c.lng ?? 14.4);
         const d = 180 / Math.pow(2, this._zoom || 7);
+        const south = lat - d, north = lat + d;
+        const west = lon - d * 2, east = lon + d * 2;
         return {
-          getSouth: () => lat - d, getNorth: () => lat + d,
-          getWest: () => lon - d * 2, getEast: () => lon + d * 2,
+          getSouth: () => south, getNorth: () => north,
+          getWest: () => west, getEast: () => east,
+          // stations.js filtruje popisky na viditelný výřez — bez contains()
+          // by se ta větev v testu vůbec neprošla
+          contains(ll) {
+            const la = Array.isArray(ll) ? ll[0] : (ll?.lat ?? ll?.[0]);
+            const lo = Array.isArray(ll) ? ll[1] : (ll?.lng ?? ll?.[1]);
+            return la >= south && la <= north && lo >= west && lo <= east;
+          },
         };
       };
       if (el) {
@@ -74,6 +83,8 @@
     imageOverlay(url) { return makeLayer({ _url: url }); },
     marker(latlng) { return makeLayer({ _latlng: latlng }); },
     circleMarker(latlng, opts) { return makeLayer({ _latlng: latlng, options: opts }); },
+    // poloměr v METRECH (na rozdíl od circleMarker) — bouřkové blobky
+    circle(latlng, opts) { return makeLayer({ _latlng: latlng, options: opts }); },
     divIcon(opts) { return { options: opts }; },
     polygon(latlngs) { return makeLayer({ _latlngs: latlngs }); },
     polyline(latlngs) { return makeLayer({ _latlngs: latlngs }); },
