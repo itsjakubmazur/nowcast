@@ -316,10 +316,16 @@ export function renderFc7(data, label) {
 // každý den rozptyl denních maxim a podíl členů se srážkami — "sobota:
 // 60 % scénářů beze srážek, maxima 22–29 °C". Načítá se líně po vykreslení
 // fc7 a jen doplní řádek do už stojících denních buněk.
+// Token proti souběhu: funkce je async a volá se "fire and forget", takže
+// při rychlém překreslení (auto-refresh, znovuvybrání místa) mohly běžet dvě
+// naráz a KAŽDÁ si připsala vlastní řádek — v kartě pak stálo dvakrát totéž.
+let _ensToken = 0;
+
 export async function addEnsembleFan(lat, lon, data) {
   const grid = document.getElementById("fc7-grid");
   const dates = data?.daily?.time;
   if (!grid || !dates?.length) return;
+  const my = ++_ensToken;
   try {
     const url = `https://ensemble-api.open-meteo.com/v1/ensemble?latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}`
       + `&hourly=temperature_2m,precipitation&models=icon_seamless&forecast_days=7&timezone=auto`;
@@ -361,11 +367,15 @@ export async function addEnsembleFan(lat, lon, data) {
 
     // mezitím se mohlo přepnout místo — fc7 by už patřil jinam
     if (state.currentLat?.toFixed(4) !== lat.toFixed(4)) return;
+    if (my !== _ensToken) return;   // mezitím odstartoval novější běh
 
     const cols = grid.querySelectorAll(".fc7-day");
     perDay.forEach((d, di) => {
       const col = cols[di];
       if (!col || d.tmax.length < 5) return;
+      // Vykreslení musí být idempotentní: appendChild bez úklidu byl přesně
+      // ten důvod, proč se řádek zdvojoval.
+      col.querySelectorAll(".fc7-ens").forEach(el => el.remove());
       const lo = Math.round(Math.min(...d.tmax)), hi = Math.round(Math.max(...d.tmax));
       const wetPct = Math.round(d.wet / d.members * 100);
       const wetStr = wetPct >= 20 ? ` · <span class="prec">${wetPct} % scénářů déšť</span>` : "";
