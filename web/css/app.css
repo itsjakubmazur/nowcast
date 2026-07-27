@@ -617,7 +617,8 @@ button.glass-btn svg { width: 17px; height: 17px; display: block; }
   padding: .8rem .9rem .7rem;
   display: none;
 }
-.fc24-title, .fc7-title, .aq-title, .meteo-title, .astro-title {
+.fc24-title, .fc7-title, .aq-title, .meteo-title, .astro-title,
+.mdl-title {
   font-size: .68rem; font-weight: 700; color: var(--muted);
   text-transform: uppercase; letter-spacing: .07em;
   margin-bottom: .55rem; overflow: hidden;
@@ -1191,11 +1192,23 @@ button.ctrl.active { background: var(--accent); color: #fff;
 /* ── Druhý názor: COTREC ČHMÚ ───────────────────────────────────────────────
    Sesterská řádka ke station-check a rain-measured. Barva nese informaci:
    zelená = dvě nezávislé metody se shodly, oranžová = neshodly. */
-#cotrec-card { display: none; font-size: .72rem; color: var(--muted); margin-top: .3rem; line-height: 1.45; }
+/* Druhý názor sedí těsně pod hero countdownem, takže vypadá jako jeho patička,
+   ne jako samostatná karta. Barevný proužek vlevo nese verdikt: zelený =
+   dvě nezávislé metody se shodly, oranžový = neshodly. */
+#cotrec-card {
+  display: none; margin: .35rem .75rem 0; padding: .45rem .7rem;
+  border-radius: 12px; font-size: .72rem; line-height: 1.45; color: var(--muted);
+  background: var(--glass2);
+  box-shadow: inset 0 1px 0 var(--spec), inset 0 0 0 1px var(--gring);
+  border-left: 3px solid var(--muted);
+}
 #cotrec-card.show { display: block; }
 #cotrec-card b { color: var(--fg); }
-#cotrec-card .muted { color: var(--muted); opacity: .85; }
+#cotrec-card .muted { color: var(--muted); opacity: .8; font-size: .68rem; }
+#cotrec-card.cotrec-agree { border-left-color: var(--green, #30D158); }
 #cotrec-card.cotrec-agree b:first-child { color: var(--green, #30D158); }
+#cotrec-card.cotrec-partial { border-left-color: var(--blue, #0A84FF); }
+#cotrec-card.cotrec-disagree { border-left-color: var(--orange, #FF9F0A); }
 #cotrec-card.cotrec-disagree b:first-child { color: var(--orange, #FF9F0A); }
 
 /* ── Panely nad daty ČHMÚ (ovzduší, normály, bouřkové prostředí, text) ─────
@@ -1315,14 +1328,57 @@ button.ctrl.active { background: var(--accent); color: #fff;
   transform: rotate(-45deg); transition: transform .2s; margin-right: 3px;
 }
 #more-panels:not(.collapsed) .more-caret { transform: rotate(45deg); margin-top: -3px; }
+/* ── Jedna karta pro všechny panely ─────────────────────────────────────────
+   Než tohle vzniklo, měla appka TŘI různá provedení karty: minutový graf
+   a aktivity měly sklo s vnitřním prstencem, panel modelů plné sklo s borderem
+   a backdrop-filtrem, a astro/ovzduší/historie neměly pozadí vůbec (dostávaly
+   ho jen na desktopu z #right-panel). Na mobilu tak část panelů vypadala jako
+   karty a část jako holý text nasypaný do stránky.
+
+   Sklo se skládá ze tří vrstev, ne z jedné barvy — proto to má hloubku:
+     1) poloprůhledné pozadí + rozostření toho, co je pod ním
+     2) spekulární horní hrana (--spec) = odlesk na horním okraji skla
+     3) 1px vnitřní prstenec (--gring) místo tvrdého borderu
+   Vnější stín drží kartu nad pozadím, aby "plavala", ne ležela. */
+.card-glass {
+  border-radius: var(--r-card);
+  padding: .8rem .9rem .7rem;
+  background: var(--glass2);
+  -webkit-backdrop-filter: blur(18px) saturate(1.5);
+  backdrop-filter: blur(18px) saturate(1.5);
+  box-shadow:
+    inset 0 1px 0 var(--spec),
+    inset 0 0 0 1px var(--gring),
+    0 6px 18px -10px rgba(0, 0, 0, .55);
+}
+
+/* Všechny panely stejně — ať už mají vlastní pravidla kdekoliv jinde. */
+#minutely-panel, #activities-panel, #models-panel, .aq-panel,
+#astro-panel, #winter-panel, #history-panel,
+#air-panel, #normal-panel, #convect-panel, #regional-panel, #chmitext-panel {
+  border-radius: var(--r-card);
+  background: var(--glass2);
+  -webkit-backdrop-filter: blur(18px) saturate(1.5);
+  backdrop-filter: blur(18px) saturate(1.5);
+  box-shadow:
+    inset 0 1px 0 var(--spec),
+    inset 0 0 0 1px var(--gring),
+    0 6px 18px -10px rgba(0, 0, 0, .55);
+  border: none;
+}
+/* Panely v sekci "Podrobnější data" potřebují vnitřní odsazení — ty nad ní
+   si ho už nesou samy a dvojité by je roztáhlo. */
+#air-panel, #normal-panel, #convect-panel, #regional-panel, #chmitext-panel {
+  padding: .8rem .9rem .7rem;
+}
+
 .more-body { display: flex; flex-direction: column; gap: .5rem; margin-top: .5rem; }
 #more-panels.collapsed .more-body { display: none; }
 
 /* ── Modely pro tohle místo (9 modelů + přesnost) ───────────────────────── */
 #models-panel {
-  display: none; background: var(--glass); border: 1px solid var(--glass-border);
-  border-radius: var(--radius, 16px); padding: .7rem .9rem;
-  backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+  display: none; padding: .8rem .9rem .7rem;
+  /* vzhled karty řeší sdílené pravidlo výš — tady zbývá jen rozvržení */
 }
 #models-panel.show { display: block; }
 #models-panel .mdl-title { font-size: .78rem; font-weight: 700; margin-bottom: .35rem; }

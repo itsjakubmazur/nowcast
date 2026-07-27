@@ -32,7 +32,7 @@
     script-src 'self' https://unpkg.com https://cdn.jsdelivr.net;
     style-src 'self' 'unsafe-inline' https://unpkg.com;
     font-src 'self';
-    img-src 'self' data: blob: https://*.basemaps.cartocdn.com https://*.rainviewer.com https://unpkg.com;
+    img-src 'self' data: blob: https://*.basemaps.cartocdn.com https://server.arcgisonline.com https://*.rainviewer.com https://unpkg.com;
     connect-src 'self' https://api.open-meteo.com https://geocoding-api.open-meteo.com https://air-quality-api.open-meteo.com https://archive-api.open-meteo.com https://ensemble-api.open-meteo.com https://api.rainviewer.com https://*.rainviewer.com https://*.workers.dev https://nominatim.openstreetmap.org wss://*.blitzortung.org;
     manifest-src 'self';
     base-uri 'self';
@@ -154,6 +154,11 @@
     </div>
   </div>
 
+  <!-- Druhý názor na odpočet výš: publikovaná extrapolace ČHMÚ (COTREC).
+       Patří sem, a ne dolů mezi doplňky — je to výpověď o tom, jestli se dá
+       číslu v odpočtu věřit, takže musí být vidět spolu s ním. -->
+  <div id="cotrec-card"></div>
+
   <!-- Minutový graf srážek 0–120 min (radar + model) -->
   <div id="minutely-panel">
     <div class="minutely-label"><span>Srážky · 120 minut</span><span id="minutely-src">radar + model</span></div>
@@ -199,8 +204,6 @@
     <!-- Kontrola proti nejbližší meteostanici (bias modelu) -->
     <div id="station-check"></div>
     <div id="rain-measured"></div>
-    <!-- Druhý názor: publikovaná extrapolace ČHMÚ (COTREC) vedle naší -->
-    <div id="cotrec-card"></div>
   </div>
 
   <!-- Aktivitní indexy -->
@@ -339,6 +342,15 @@
       <h3>Nastavení</h3>
       <button id="settings-close" title="Zavřít" aria-label="Zavřít">✕</button>
     </div>
+    <label class="set-row">
+      <span>Podkladová mapa</span>
+      <select id="set-basemap">
+        <option value="voyager">Barevná</option>
+        <option value="terrain">Terén</option>
+        <option value="satellite">Satelit</option>
+        <option value="minimal">Minimální</option>
+      </select>
+    </label>
     <label class="set-row">
       <span>Výchozí vrstva stanic</span>
       <select id="set-layer">
