@@ -36,3 +36,6 @@ jobs:
 
       - name: Unit testy pipeline (verify_precip — CSI/POD/FAR srážek)
         run: python tests/test_verify_precip.py
+
+      - name: Unit testy pipeline (carry_over — meze stáří přenášených dat)
+        run: python tests/test_carry_over.py

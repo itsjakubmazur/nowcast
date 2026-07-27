@@ -249,6 +249,13 @@ jobs:
             data/accuracy_precip.json
           key: station-data-${{ github.run_id }}
 
+      # Fast běh nevyrábí stanice, ALADIN ani METAR a deploy publikuje CELÝ
+      # adresář data/. Bez tohohle kroku by každý druhý deploy web o ty
+      # soubory připravil — a přesně to se dělo.
+      - name: Carry over (doplň z posledního nasazení, co tenhle běh nevyrobil)
+        continue-on-error: true
+        run: python pipeline/carry_over.py || echo "carry_over.py selhalo, pokračuji"
+
       - name: Validate publikovaná data (poslední pojistka před deployem)
         run: python pipeline/validate.py
 
