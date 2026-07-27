@@ -1,7 +1,14 @@
-"""Sonda 8: ověření, že nová data ČHMÚ skutečně dorazila na nasazený web.
+"""Sonda 9: běží cron Cloudflare workeru a doručuje push?
 
-Kontroluje se to, co reálně uvidí prohlížeč, ne co proběhlo v pipeline —
-soubor se může vyrobit a přesto se nedostat do deploye.
+Diagnostika hlásí "upozornění aktivní", takže server registraci má — problém
+je tedy dál v řetězu. Tahle sonda se ptá workeru zvenku:
+  - je vůbec nasazený (odpoví /vapid-public-key)?
+  - běžel někdy cron a kdy naposledy?
+  - kolik má odběratelů a kolik jim naposledy poslal?
+  - s jakým HTTP stavem skončilo poslední odeslání?
+
+Rozliší to tři úplně jiné příčiny, které zvenku vypadají stejně:
+  cron neběží · cron běží, ale nemá co poslat · posílá, ale push služba odmítá
 """
 import json
 from datetime import datetime, timezone
@@ -9,107 +16,89 @@ import requests
 
 UA = {"User-Agent": "Mozilla/5.0 (compatible; NowcastBot/1.0)"}
 T = (15, 60)
-PAGES = "https://itsjakubmazur.github.io/nowcast/data"
+# Musí sedět s WORKER_BASE ve web/js/state.js — jiná subdoména
+# by vrátila 404 a vypadalo by to, že worker není nasazený.
+WORKER = "https://nowcast-narrate.kubajzek.workers.dev"
 
-FILES = ["chmi_fct.json", "echotop.json", "chmi_normals.json", "chmi_air.json",
-         "chmi_aero.json", "chmi_forecast.json", "chmi_regional.json",
-         "forecast_grid.json", "accuracy.json"]
+
+def get(path):
+    try:
+        r = requests.get(f"{WORKER}{path}", headers=UA, timeout=T)
+        return r.status_code, r.text[:2000]
+    except Exception as e:
+        return None, f"CHYBA {str(e)[:200]}"
 
 
 def main():
-    print(f"Sonda 8 — {datetime.now(timezone.utc).isoformat()}\n")
-    docs = {}
-    for name in FILES:
-        try:
-            r = requests.get(f"{PAGES}/{name}", headers=UA, timeout=T)
-            if not r.ok:
-                print(f"  ✗ {name}: HTTP {r.status_code}")
-                continue
-            docs[name] = j = r.json()
-            print(f"  ✓ {name}: {len(r.content) / 1024:.1f} kB")
-        except Exception as e:
-            print(f"  ✗ {name}: {str(e)[:120]}")
+    print(f"Sonda 9 — {datetime.now(timezone.utc).isoformat()}")
+    print(f"Worker: {WORKER}\n")
 
-    grid = docs.get("forecast_grid.json") or {}
+    print("=== je worker nasazený? ===")
+    code, body = get("/vapid-public-key")
+    print(f"  /vapid-public-key: HTTP {code}")
+    print(f"    {body[:200]}")
+    if code != 200:
+        print("  → worker neodpovídá; cron ani push nemůžou fungovat")
 
-    print("\n=== COTREC ===")
-    c = docs.get("chmi_fct.json")
-    if c:
-        print(f"  báze {c.get('base_utc')} (stáří {c.get('age_min')} min), "
-              f"metoda {c.get('method')}, kroků {len(c.get('timeseries', []))}")
-        print(f"  špička {c.get('peak_mm_h')} mm/h, příchod {c.get('arrival_utc')}")
-        g = c.get("grid") or {}
-        same = g.get("t0_utc") == grid.get("t0_utc")
-        cnt = g.get("n_pts") == len(grid.get("pts", []))
-        print(f"  mřížka: {len(g.get('series', {}))} bodů se srážkami z {g.get('n_pts')}")
-        print(f"  párování s forecast_grid: t0 {'OK' if same else 'ROZEJITÉ'}, "
-              f"počet bodů {'OK' if cnt else 'ROZEJITÝ'}")
+    print("\n=== stav cronu ===")
+    code, body = get("/cron-status")
+    print(f"  /cron-status: HTTP {code}")
+    if code == 404:
+        print("  → endpoint neexistuje = nasazená verze workeru je STARŠÍ")
+        print("     než tenhle commit. Deploy workeru neproběhl.")
+        return
+    if code != 200:
+        print(f"    {body[:400]}")
+        return
 
-    print("\n=== echotop ===")
-    e = docs.get("echotop.json")
-    if e:
-        print(f"  pozorování {e.get('obs_utc')} (stáří {e.get('age_min')} min)")
-        print(f"  max {e.get('max_m')} m ({e.get('max_severity')}), "
-              f"p95 {e.get('p95_m')} m, pokrytí {e.get('coverage_pct')} %")
-        print(f"  bodů s vrcholem: {len(e.get('tops_m', {}))} z {e.get('n_pts')}")
-        print(f"  párování: {'OK' if e.get('grid_t0_utc') == grid.get('t0_utc') else 'ROZEJITÉ'}")
+    try:
+        st = json.loads(body)
+    except Exception:
+        print(f"    nečitelná odpověď: {body[:300]}")
+        return
 
-    print("\n=== normály ===")
-    n = docs.get("chmi_normals.json")
-    if n:
-        st = n.get("stations", {})
-        nat = [k for k in st if k.startswith("0-203-0")]
-        print(f"  období {n.get('period')}, stanic {n.get('count')}, prvky {n.get('elements')}")
-        print(f"  z toho národních (0-203-0): {len(nat)}")
-        for k in list(st)[:2]:
-            s = st[k]
-            print(f"  {k} {s.get('name')} {s.get('lat')},{s.get('lon')} "
-                  f"{s.get('elev')} m → {list(s.get('normals', {}))}")
+    print(json.dumps(st, ensure_ascii=False, indent=2))
 
-    print("\n=== ovzduší ===")
-    a = docs.get("chmi_air.json")
-    if a:
-        print(f"  stanic {a.get('count')}, látky {a.get('components')}, "
-              f"stáří {a.get('age_min')} min")
-        for s in a.get("stations", [])[:2]:
-            print(f"  {s.get('name')} ({s.get('region')}): "
-                  f"{ {k: v['val'] for k, v in (s.get('v') or {}).items()} } "
-                  f"index={s.get('index')}")
+    print("\n=== čtení ===")
+    age = st.get("lastRunAgeMin")
+    if st.get("lastRunUtc") is None:
+        print("  ✗ cron NIKDY neproběhl → trigger se nespouští")
+        print("     (Cloudflare cron triggery jsou na free plánu, ale musí být")
+        print("      nasazené přes wrangler s [triggers] crons — zkontroluj deploy)")
+    elif age is not None and age > 30:
+        print(f"  ✗ poslední běh před {age} min → cron se zastavil")
+    else:
+        print(f"  ✓ cron běžel před {age} min")
 
-    print("\n=== aerologie ===")
-    ae = docs.get("chmi_aero.json")
-    if ae:
-        for s in ae.get("stations", []):
-            print(f"  {s.get('name')}: CAPE {s.get('cape')} ({s.get('cape_label')}), "
-                  f"CIN {s.get('cin')}, Tkonv {s.get('t_konv')}, "
-                  f"VKH {s.get('lcl')}, KKH {s.get('ccl')}, stáří {s.get('age_h')} h")
+    subs = st.get("subscribers")
+    print(f"  odběratelů v KV: {subs}")
+    if subs == 0:
+        print("     ✗ nula → registrace se neuložila (a diagnostika lže)")
 
-    print("\n=== textová předpověď ===")
-    f = docs.get("chmi_forecast.json")
-    if f:
-        print(f"  „{f.get('headline')}“ — {f.get('author')}, stáří {f.get('age_h')} h")
-        for b in f.get("blocks", [])[:2]:
-            print(f"  [{b.get('name')}] {(b.get('text') or '')[:150]}")
+    ss = st.get("lastSendStatus")
+    if ss is None:
+        print("  poslední odeslání: ŽÁDNÉ — cron nikdy neměl co poslat")
+        print("     (to je normální, když u oblíbených míst neprší)")
+    elif ss == 201:
+        print("  ✓ poslední odeslání: 201 = push služba ho přijala")
+        print("     → pokud přesto nic nedorazilo, je to na straně zařízení")
+    elif ss in (401, 403):
+        print(f"  ✗ poslední odeslání: {ss} = VAPID podpis odmítnut")
+        print("     → chybí nebo nesedí VAPID_PRIVATE_KEY jako secret workeru")
+    elif ss == 410:
+        print("  ✗ poslední odeslání: 410 = odběr vypršel, je potřeba obnovit")
+    else:
+        print(f"  ? poslední odeslání: HTTP {ss}")
 
-    print("\n=== krajské průměry ===")
-    rg = docs.get("chmi_regional.json")
-    if rg:
-        print(f"  kraje: {[r['code'] for r in rg.get('regions', [])]}")
-        for key in ("temp_annual", "temp_normal", "prec_annual", "temp_current"):
-            v = rg.get(key)
-            if v:
-                print(f"  {key}: {len(v)} řádků, poslední {json.dumps(v[-1], ensure_ascii=False)[:120]}")
+    if st.get("lastError"):
+        print(f"  ✗ poslední chyba cronu: {st['lastError']}")
+    if not st.get("vapidConfigured"):
+        print("  ✗ VAPID_PUBLIC_KEY není ve workeru nastavený")
 
-    print("\n=== srovnání přesnosti (COTREC vs. naše) ===")
-    acc = docs.get("accuracy.json")
-    if acc:
-        print(f"  naše  10 min: {acc.get('leadtime_10min')}")
-        cot = acc.get("cotrec")
-        if cot:
-            print(f"  COTREC 10 min: {cot.get('leadtime_10min')} (n_runs={cot.get('n_runs')})")
-        else:
-            print("  COTREC: zatím bez vyhodnocených záznamů "
-                  "(pozorování pro čas platnosti musí teprve dorazit)")
+    print("\n=== sdílené učení (nové endpointy) ===")
+    code, body = get("/model-scores?lat=50.08&lon=14.42")
+    print(f"  /model-scores: HTTP {code}")
+    print(f"    {body[:300]}")
 
 
 if __name__ == "__main__":

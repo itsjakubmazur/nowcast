@@ -78,6 +78,9 @@ export default {
       if (url.pathname === "/model-scores" && request.method === "GET") {
         return await handleModelScores(url, env);
       }
+      if (url.pathname === "/cron-status" && request.method === "GET") {
+        return await handleCronStatus(env);
+      }
       // Zpětná kompatibilita se starým klientem (POST / s {lat,lon,label})
       if (url.pathname === "/" && request.method === "POST") {
         return await handleVerdictLegacyPost(request, env);
@@ -520,8 +523,48 @@ async function handleModelScores(url, env) {
 
 // ── Cron: zkontroluj oblíbená místa všech subscriberů, pošli push ───────────
 
+// Tep cronu. Bez něj se "notifikace nechodí" nedá odlišit od "cron se vůbec
+// nespouští" — a to jsou dvě úplně jiné příčiny. Zapisuje se i při chybě,
+// takže z KV je vidět i to, že běh spadl a proč.
+const CRON_KEY = "meta:cron";
+
+async function writeCronBeat(env, patch) {
+  try {
+    const prev = (await env.SUBSCRIPTIONS.get(CRON_KEY, "json")) || {};
+    await env.SUBSCRIPTIONS.put(CRON_KEY, JSON.stringify({ ...prev, ...patch }),
+      { expirationTtl: 60 * 60 * 24 * 30 });
+  } catch { /* diagnostika nesmí shodit cron */ }
+}
+
+async function handleCronStatus(env) {
+  if (!env.SUBSCRIPTIONS) return json({ error: "Úložiště není nakonfigurované" }, 501);
+  let beat = null;
+  try { beat = await env.SUBSCRIPTIONS.get(CRON_KEY, "json"); } catch { /* ignore */ }
+
+  // Kolik je vůbec odběratelů — bez toho nejde poznat, jestli cron nemá koho obeslat.
+  let subs = 0;
+  try {
+    const page = await env.SUBSCRIPTIONS.list({ prefix: "sub:", limit: 1000 });
+    subs = page.keys.length;
+  } catch { /* ignore */ }
+
+  const last = beat?.finishedAt ? Date.parse(beat.finishedAt) : null;
+  return json({
+    subscribers: subs,
+    vapidConfigured: !!env.VAPID_PUBLIC_KEY,
+    lastRunUtc: beat?.finishedAt || null,
+    lastRunAgeMin: last ? Math.round((Date.now() - last) / 60000) : null,
+    lastChecked: beat?.checked ?? null,
+    lastNotified: beat?.notified ?? null,
+    lastExpired: beat?.expired ?? null,
+    lastError: beat?.error || null,
+    lastSendStatus: beat?.sendStatus ?? null,
+  });
+}
+
 async function runPushCheck(env) {
   if (!env.SUBSCRIPTIONS) return;
+  await writeCronBeat(env, { startedAt: new Date().toISOString(), error: null });
   const base = env.PAGES_BASE || "https://itsjakubmazur.github.io/nowcast";
   let grid;
   try {
@@ -530,6 +573,10 @@ async function runPushCheck(env) {
     grid = await r.json();
   } catch (e) {
     console.log(`runPushCheck: grid fetch selhal: ${e.message}`);
+    await writeCronBeat(env, {
+      finishedAt: new Date().toISOString(),
+      error: `grid fetch: ${e.message}`.slice(0, 200),
+    });
     return;
   }
 
@@ -559,6 +606,11 @@ async function runPushCheck(env) {
   } while (cursor);
 
   console.log(`runPushCheck: checked=${checked} notified=${notified} expired=${expired}`);
+  await writeCronBeat(env, {
+    finishedAt: new Date().toISOString(),
+    checked, notified, expired,
+    gridT0: grid.t0_utc || null,
+  });
 }
 
 // ── Ranní briefing (7:00) — shrnutí dne pro první oblíbené místo ─────────────
@@ -872,7 +924,19 @@ async function sendPush(subscription, env, payload = null, ttlSeconds = 600) {
   }
   if (!body) headers["Content-Length"] = "0";
 
-  return fetch(subscription.endpoint, { method: "POST", headers, body });
+  const res = await fetch(subscription.endpoint, { method: "POST", headers, body });
+  // Poslední stav odeslání do KV: 201 = doručeno push službě, 401/403 = špatný
+  // nebo chybějící VAPID klíč, 410 = odběr vypršel. Bez toho by se rozbitý
+  // podpis projevil jen tichým nedoručováním.
+  if (env?.SUBSCRIPTIONS) {
+    try {
+      const prev = (await env.SUBSCRIPTIONS.get("meta:cron", "json")) || {};
+      await env.SUBSCRIPTIONS.put("meta:cron", JSON.stringify({
+        ...prev, sendStatus: res.status, sendAt: new Date().toISOString(),
+      }), { expirationTtl: 60 * 60 * 24 * 30 });
+    } catch { /* diagnostika nesmí shodit odeslání */ }
+  }
+  return res;
 }
 
 // RFC 8291: ECDH(P-256) → HKDF → AES-128-GCM, formát těla aes128gcm (RFC 8188)
