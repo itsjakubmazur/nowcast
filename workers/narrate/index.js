@@ -72,6 +72,12 @@ export default {
       if (url.pathname === "/push-status" && request.method === "POST") {
         return await handlePushStatus(request, env);
       }
+      if (url.pathname === "/model-obs" && request.method === "POST") {
+        return await handleModelObs(request, env);
+      }
+      if (url.pathname === "/model-scores" && request.method === "GET") {
+        return await handleModelScores(url, env);
+      }
       // Zpětná kompatibilita se starým klientem (POST / s {lat,lon,label})
       if (url.pathname === "/" && request.method === "POST") {
         return await handleVerdictLegacyPost(request, env);
@@ -418,6 +424,98 @@ async function handlePushStatus(request, env) {
     updatedAt: rec.updatedAt || null,
     lastNotified: Object.values(rec.notified || {}).sort().slice(-1)[0] || null,
   });
+}
+
+// ── Sdílené učení: přesnost modelů napříč uživateli ─────────────────────────
+//
+// Dosud se každý prohlížeč učil sám do localStorage. Znamenalo to, že po
+// vymazání cache začínala appka od nuly a sto lidí ze stejného města se učilo
+// stokrát totéž. Tady se pozorování slévají po buňkách 0,25° (~20 km), takže
+// se učí APLIKACE, ne jedno zařízení.
+//
+// Ukládá se běžící součet, ne jednotlivé vzorky: paměťově je to konstantní,
+// a k MAE i k systematické odchylce (bias) stačí. Bias je tu důležitější než
+// MAE — o kolik se model mýlí NA JEDNU STRANU se dá odečíst, což zpřesní
+// číslo, které uživatel vidí.
+const CELL_DEG = 0.25;
+const OBS_MAX_PER_REQ = 60;
+const SCORE_TTL_S = 60 * 60 * 24 * 120;   // 120 dní bez zápisu = zapomeneme
+const HALF_LIFE_N = 400;                  // po tolika vzorcích má starší půl váhy
+
+function cellKey(lat, lon) {
+  const la = Math.floor(lat / CELL_DEG);
+  const lo = Math.floor(lon / CELL_DEG);
+  return `ms:${la}_${lo}`;
+}
+
+async function handleModelObs(request, env) {
+  if (!env.SUBSCRIPTIONS) return json({ error: "Úložiště není nakonfigurované" }, 501);
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "Invalid JSON" }, 400);
+  }
+  const lat = Number(body?.lat), lon = Number(body?.lon);
+  const obs = Array.isArray(body?.obs) ? body.obs.slice(0, OBS_MAX_PER_REQ) : null;
+  if (!Number.isFinite(lat) || !Number.isFinite(lon) || !obs?.length) {
+    return json({ error: "lat, lon a neprázdné obs required" }, 400);
+  }
+
+  const key = cellKey(lat, lon);
+  let rec = null;
+  try { rec = await env.SUBSCRIPTIONS.get(key, "json"); } catch { /* ignore */ }
+  rec = rec && typeof rec === "object" ? rec : { models: {} };
+  rec.models = rec.models || {};
+
+  let taken = 0;
+  for (const o of obs) {
+    const id = String(o?.model || "").slice(0, 40);
+    const err = Number(o?.err);        // predikce − měření (SE ZNAMÉNKEM)
+    if (!id || !Number.isFinite(err) || Math.abs(err) > 30) continue;
+    const m = rec.models[id] || { n: 0, sumAbs: 0, sumSigned: 0 };
+    // Exponenciální zapomínání: staré vzorky se nesmí kupit donekonečna,
+    // protože model se v čase mění (nové verze, jiná sezóna).
+    if (m.n >= HALF_LIFE_N) {
+      m.n *= 0.5; m.sumAbs *= 0.5; m.sumSigned *= 0.5;
+    }
+    m.n += 1;
+    m.sumAbs += Math.abs(err);
+    m.sumSigned += err;
+    rec.models[id] = m;
+    taken++;
+  }
+  if (!taken) return json({ ok: true, taken: 0 });
+
+  rec.updatedAt = new Date().toISOString();
+  await env.SUBSCRIPTIONS.put(key, JSON.stringify(rec), { expirationTtl: SCORE_TTL_S });
+  return json({ ok: true, taken });
+}
+
+async function handleModelScores(url, env) {
+  if (!env.SUBSCRIPTIONS) return json({ error: "Úložiště není nakonfigurované" }, 501);
+  const lat = parseFloat(url.searchParams.get("lat"));
+  const lon = parseFloat(url.searchParams.get("lon"));
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+    return json({ error: "lat/lon required" }, 400);
+  }
+  let rec = null;
+  try { rec = await env.SUBSCRIPTIONS.get(cellKey(lat, lon), "json"); } catch { /* ignore */ }
+
+  const models = {};
+  for (const [id, m] of Object.entries(rec?.models || {})) {
+    if (!m?.n) continue;
+    models[id] = {
+      n: Math.round(m.n),
+      mae: Math.round((m.sumAbs / m.n) * 100) / 100,
+      // Kladný bias = model to přestřeluje, takže se od předpovědi odečítá.
+      bias: Math.round((m.sumSigned / m.n) * 100) / 100,
+    };
+  }
+  const res = json({ cell: CELL_DEG, updatedAt: rec?.updatedAt || null, models });
+  // Krátká edge cache: skóre se mění pomalu, ale nesmí zamrznout na hodiny.
+  res.headers.set("Cache-Control", "public, max-age=300");
+  return res;
 }
 
 // ── Cron: zkontroluj oblíbená místa všech subscriberů, pošli push ───────────

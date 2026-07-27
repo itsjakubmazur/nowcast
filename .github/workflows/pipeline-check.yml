@@ -33,3 +33,6 @@ jobs:
 
       - name: Unit testy pipeline (chmi_extra — parsery nekonzistentních CSV)
         run: python tests/test_chmi_extra.py
+
+      - name: Unit testy pipeline (verify_precip — CSI/POD/FAR srážek)
+        run: python tests/test_verify_precip.py

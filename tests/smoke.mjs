@@ -417,6 +417,21 @@ async function main() {
     route.fulfill({ path: path.join(FIXTURES, "velocity-stub.js"), contentType: "text/javascript" }));
   await page.route("https://*.workers.dev/vapid-public-key**", route =>
     route.fulfill({ body: JSON.stringify({ publicKey: "BM60k6heLK2a7KNELX05p5_Wpv1zhUbB2JFLMLVz13uirAVfjkCtoksQ7bdQIMd5hqvwUTwPUWUGfhFm0KkhF3Y" }), contentType: "application/json" }));
+  // Sdílené učení: server vrací skóre za okolí a přijímá pozorování.
+  // Bez stubu by fetch propadl na síť a shodil kontrolu "žádné chyby v konzoli".
+  let obsPosted = 0;
+  await page.route("https://*.workers.dev/model-obs**", route => {
+    obsPosted++;
+    route.fulfill({ body: JSON.stringify({ ok: true, taken: 1 }), contentType: "application/json" });
+  });
+  await page.route("https://*.workers.dev/model-scores**", route =>
+    route.fulfill({ body: JSON.stringify({
+      cell: 0.25, updatedAt: new Date().toISOString(),
+      models: { icon_d2: { n: 30, mae: 1.1, bias: 0.4 } },
+    }), contentType: "application/json" }));
+  await page.route("https://*.workers.dev/push-status**", route =>
+    route.fulfill({ body: JSON.stringify({ registered: true, favorites: 1 }), contentType: "application/json" }));
+
   await page.route("https://*.workers.dev/verdict**", route =>
     route.fulfill({ body: JSON.stringify({ text: "Testovací AI verdikt: dnes odpoledne přeháňky, jinak teplo." }), contentType: "application/json" }));
 
@@ -1009,6 +1024,61 @@ async function main() {
     `normál z nejbližší stanice (${chmiX.nearNorm})`);
   assertTrue(chmiX.farNorm === null,
     "mimo dosah 40 km se normál nepoužije");
+  // ── Učení: bias korekce a vážený konsenzus ──────────────────────────────
+  const learn = await page.evaluate(async () => {
+    const { mergeScores, blendTemperature, MIN_BLEND_MODELS } =
+      await import("./js/models.js");
+
+    // Lokální chyby SE ZNAMÉNKEM: model A stabilně přestřeluje o 2 °C.
+    const local = {
+      A: { errs: [2, 2, 2, 2] },
+      B: { errs: [-0.5, 0.5, -0.5, 0.5] },
+    };
+    const shared = {
+      A: { n: 40, mae: 2.0, bias: 2.0 },
+      C: { n: 20, mae: 1.0, bias: 0 },
+    };
+    const merged = mergeScores(local, shared);
+
+    // Blend: A přestřeluje o 2, B je přesný, C přesný. Vážený průměr po
+    // odečtení biasu musí být blíž pravdě než prostý průměr.
+    const values = { A: 27, B: 25, C: 25 };
+    const blend = blendTemperature(values, merged);
+    const tooFew = blendTemperature({ A: 27 }, merged);
+
+    return {
+      ids: Object.keys(merged).sort(),
+      biasA: merged.A?.bias, maeB: merged.B?.mae,
+      // C je jen ze sdílených dat — musí projít i bez lokálních vzorků
+      cShared: merged.C?.nShared, cLocal: merged.C?.n,
+      blendValue: blend?.value, blendPlain: blend?.plain, blendUsed: blend?.used,
+      tooFewValue: tooFew?.value, tooFewPlain: tooFew?.plain,
+      minModels: MIN_BLEND_MODELS,
+      noData: blendTemperature({}, {}),
+    };
+  });
+
+  assertTrue(learn.ids.join(",") === "A,B,C",
+    `sloučí se lokální i sdílené modely (${learn.ids.join(",")})`);
+  assertTrue(learn.biasA === 2,
+    `systematická odchylka se spočítá se znaménkem (${learn.biasA})`);
+  assertTrue(learn.maeB === 0.5,
+    `MAE se počítá z absolutních hodnot, i když se ukládá znaménko (${learn.maeB})`);
+  assertTrue(learn.cShared === 20 && learn.cLocal === 0,
+    `model jen ze sdílených dat projde bez lokálních vzorků (${learn.cShared}/${learn.cLocal})`);
+  assertTrue(learn.blendValue != null && learn.blendUsed === 3,
+    `konsenzus se spočítá ze všech tří modelů (${learn.blendValue}, n=${learn.blendUsed})`);
+  // A slibuje 27, ale přestřeluje o 2 → po korekci 25; B i C dávají 25.
+  // Prostý průměr by byl 25,7, vážený s korekcí musí být u 25.
+  assertTrue(Math.abs(learn.blendValue - 25) < 0.4,
+    `bias se od předpovědi odečte (${learn.blendValue} °C, prostý průměr ${learn.blendPlain})`);
+  assertTrue(learn.blendPlain > learn.blendValue,
+    `korigovaný konsenzus se liší od prostého průměru (${learn.blendValue} vs ${learn.blendPlain})`);
+  assertTrue(learn.tooFewValue === null && learn.tooFewPlain === 27,
+    `s jedním modelem se vážený konsenzus nedělá, ukáže se prostý průměr (${JSON.stringify(learn.tooFewValue)})`);
+  assertTrue(learn.noData === null,
+    "bez dat konsenzus nic nevymýšlí");
+
   // ── Prořezávání popisků podle zoomu ─────────────────────────────────────
   // Regrese, kterou to hlídá: české stanice se dřív kreslily VŠECHNY bez
   // ohledu na zoom, takže při oddálení byla mapa pod souvislou plochou štítků.

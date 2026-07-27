@@ -70,6 +70,7 @@ jobs:
             data/chmi_regional.json
             data/chmi_aero.json
             data/chmi_air_map.json
+            data/accuracy_precip.json
           key: station-data-${{ github.run_id }}
           restore-keys: |
             station-data-
@@ -199,6 +200,12 @@ jobs:
         continue-on-error: true
         run: python pipeline/chmi_regional.py || echo "chmi_regional.py selhalo, pokračuji"
 
+      - name: Run verify_precip (přesnost srážek proti srážkoměrům)
+        if: steps.mode.outputs.mode == 'full'
+        timeout-minutes: 3
+        continue-on-error: true
+        run: python pipeline/verify_precip.py || echo "verify_precip.py selhalo, pokračuji"
+
       - name: Run chmi_normals (normály 1991-2020 — statická data, stáhne se jednou)
         if: steps.mode.outputs.mode == 'full'
         timeout-minutes: 4
@@ -239,6 +246,7 @@ jobs:
             data/chmi_regional.json
             data/chmi_aero.json
             data/chmi_air_map.json
+            data/accuracy_precip.json
           key: station-data-${{ github.run_id }}
 
       - name: Validate publikovaná data (poslední pojistka před deployem)
