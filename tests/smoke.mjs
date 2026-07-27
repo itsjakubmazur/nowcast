@@ -431,6 +431,11 @@ async function main() {
     }), contentType: "application/json" }));
   await page.route("https://*.workers.dev/push-status**", route =>
     route.fulfill({ body: JSON.stringify({ registered: true, favorites: 1 }), contentType: "application/json" }));
+  let testPushBody = null;
+  await page.route("https://*.workers.dev/test-push**", async route => {
+    testPushBody = JSON.parse(route.request().postData() || "{}");
+    route.fulfill({ body: JSON.stringify({ ok: true, dueAt: new Date(Date.now() + 60000).toISOString(), delaySec: 60 }), contentType: "application/json" });
+  });
 
   await page.route("https://*.workers.dev/verdict**", route =>
     route.fulfill({ body: JSON.stringify({ text: "Testovací AI verdikt: dnes odpoledne přeháňky, jinak teplo." }), contentType: "application/json" }));

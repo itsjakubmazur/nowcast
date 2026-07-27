@@ -17,7 +17,11 @@ PAGES_BASE = "https://itsjakubmazur.github.io/nowcast"
 
 # Cron pro kontrolu oblíbených míst subscriberů (~stejná kadence jako pipeline)
 [triggers]
-crons = ["*/10 * * * *"]
+# "*/10" = ostrá kontrola oblíbených míst.
+# "*" = jen odbavení odložených ZKUŠEBNÍCH pushů (levné, obvykle prázdný list).
+#       Odklad je nutný: okamžitý test nic nedokáže, protože notifikace
+#       v otevřené appce jedou přes in-page API a fungují i s rozbitým Web Pushem.
+crons = ["*/10 * * * *", "* * * * *"]
 
 # KV namespace pro Web Push subscriptions.
 # JEDNORÁZOVÝ SETUP (viz README.md):

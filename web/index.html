@@ -219,6 +219,9 @@
   <!-- Proč upozornění (ne)chodí — bez tohohle nešlo odlišit "funguje jen
        s otevřenou appkou" od "je opravdu zapnuté na pozadí". -->
   <div id="push-status"></div>
+  <!-- Odložený test: okamžitý by nic nedokázal, protože notifikace v otevřené
+       appce jedou přes jiné (in-page) API než push na pozadí. -->
+  <button id="btn-test-push">Zkušební upozornění za minutu</button>
   <div class="share-row embed-hide">
     <button id="btn-share-2">🔗 Sdílet</button>
     <button id="btn-embed">🖼 Embed</button>

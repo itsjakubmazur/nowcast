@@ -81,6 +81,9 @@ export default {
       if (url.pathname === "/cron-status" && request.method === "GET") {
         return await handleCronStatus(env);
       }
+      if (url.pathname === "/test-push" && request.method === "POST") {
+        return await handleTestPush(request, env);
+      }
       // Zpětná kompatibilita se starým klientem (POST / s {lat,lon,label})
       if (url.pathname === "/" && request.method === "POST") {
         return await handleVerdictLegacyPost(request, env);
@@ -93,6 +96,17 @@ export default {
   },
 
   async scheduled(event, env, ctx) {
+    // Dva různé crony ve wrangler.toml:
+    //   "* * * * *"    minutový — POUZE odložené zkušební pushe (levné:
+    //                  jeden list s prefixem test:, většinou prázdný)
+    //   "*/10 * * * *" desetiminutový — ostrá kontrola oblíbených míst
+    // Rozlišují se přes event.cron, jinak by se plná kontrola pouštěla
+    // každou minutu a zbytečně pálila requesty i limity.
+    if (event.cron === MINUTE_CRON) {
+      ctx.waitUntil(runTestPushes(env));
+      return;
+    }
+    ctx.waitUntil(runTestPushes(env));
     ctx.waitUntil(runPushCheck(env));
   },
 };
@@ -421,11 +435,19 @@ async function handlePushStatus(request, env) {
     rec = await env.SUBSCRIPTIONS.get(key, "json");
   } catch { /* ignore */ }
   if (!rec) return json({ registered: false });
+
+  // Stav zkušebního pushe — čeká na odeslání, nebo už odešel a s jakým kódem.
+  const h = await sha256Hex(endpoint);
+  let pending = null, done = null;
+  try { pending = await env.SUBSCRIPTIONS.get("test:" + h, "json"); } catch { /* ignore */ }
+  try { done = await env.SUBSCRIPTIONS.get("test:" + h + ":done", "json"); } catch { /* ignore */ }
+
   return json({
     registered: true,
     favorites: (rec.favorites || []).length,
     updatedAt: rec.updatedAt || null,
     lastNotified: Object.values(rec.notified || {}).sort().slice(-1)[0] || null,
+    test: { pendingDueAt: pending?.dueAt || null, ...(done || {}) },
   });
 }
 
@@ -519,6 +541,82 @@ async function handleModelScores(url, env) {
   // Krátká edge cache: skóre se mění pomalu, ale nesmí zamrznout na hodiny.
   res.headers.set("Cache-Control", "public, max-age=300");
   return res;
+}
+
+// ── Zkušební push s odkladem ───────────────────────────────────────────────
+//
+// Okamžitý test by nedokázal nic: notifikace v otevřené appce jedou přes
+// in-page Notification API a fungují i tehdy, když je Web Push rozbitý.
+// Ověřit se dá jen doručení, které dorazí, když je appka ZAVŘENÁ — proto
+// odklad a proto minutový cron, který ho odbaví.
+const MINUTE_CRON = "* * * * *";
+const TEST_TTL_S = 60 * 60;
+const TEST_MAX_DELAY_S = 15 * 60;
+
+async function handleTestPush(request, env) {
+  if (!env.SUBSCRIPTIONS) return json({ error: "Push není na serveru nakonfigurovaný" }, 501);
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "Invalid JSON" }, 400);
+  }
+  const endpoint = body?.endpoint;
+  if (!endpoint) return json({ error: "endpoint required" }, 400);
+  const delay = Math.min(TEST_MAX_DELAY_S,
+    Math.max(30, Number(body?.delaySec) || 60));
+
+  const subKey = "sub:" + (await sha256Hex(endpoint));
+  const rec = await env.SUBSCRIPTIONS.get(subKey, "json");
+  if (!rec?.subscription) {
+    return json({ error: "Tohle zařízení není přihlášené k odběru" }, 404);
+  }
+
+  const dueAt = new Date(Date.now() + delay * 1000).toISOString();
+  await env.SUBSCRIPTIONS.put("test:" + (await sha256Hex(endpoint)),
+    JSON.stringify({ subKey, dueAt, createdAt: new Date().toISOString() }),
+    { expirationTtl: TEST_TTL_S });
+  return json({ ok: true, dueAt, delaySec: delay });
+}
+
+async function runTestPushes(env) {
+  if (!env.SUBSCRIPTIONS) return;
+  const now = Date.now();
+  let cursor;
+  do {
+    const page = await env.SUBSCRIPTIONS.list({ prefix: "test:", cursor, limit: 100 });
+    for (const k of page.keys) {
+      let t = null;
+      try { t = await env.SUBSCRIPTIONS.get(k.name, "json"); } catch { /* ignore */ }
+      if (!t?.dueAt) { await env.SUBSCRIPTIONS.delete(k.name); continue; }
+      if (Date.parse(t.dueAt) > now) continue;    // ještě není čas
+
+      const rec = await env.SUBSCRIPTIONS.get(t.subKey, "json");
+      if (!rec?.subscription) { await env.SUBSCRIPTIONS.delete(k.name); continue; }
+
+      const waited = Math.round((now - Date.parse(t.createdAt || t.dueAt)) / 1000);
+      let status = 0;
+      try {
+        const res = await sendPush(rec.subscription, env, {
+          title: "✅ Zkušební upozornění",
+          body: `Doručeno na pozadí ${waited}s po zadání. Web Push funguje — `
+            + `ostrá upozornění dorazí stejnou cestou.`,
+          tag: "nowcast-test",
+        });
+        status = res.status;
+      } catch (e) {
+        status = -1;
+        console.log(`runTestPushes: ${e.message}`);
+      }
+      // Výsledek si necháme krátce k nahlédnutí, ať appka umí říct, jak to
+      // dopadlo, i když uživatel notifikaci nezachytil.
+      await env.SUBSCRIPTIONS.put(k.name + ":done", JSON.stringify({
+        sentAt: new Date().toISOString(), status, waitedSec: waited,
+      }), { expirationTtl: TEST_TTL_S });
+      await env.SUBSCRIPTIONS.delete(k.name);
+    }
+    cursor = page.list_complete ? undefined : page.cursor;
+  } while (cursor);
 }
 
 // ── Cron: zkontroluj oblíbená místa všech subscriberů, pošli push ───────────

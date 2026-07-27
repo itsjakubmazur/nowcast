@@ -254,16 +254,77 @@ export async function pushDiagnosis() {
           msg: "Server o tvém zařízení neví — registrace vypršela.",
           hint: "Vypni a znovu zapni upozornění, tím se obnoví." };
       }
+      // Výsledek zkušebního pushe je nejsilnější důkaz — buď dorazil, nebo ne.
+      const t = st.test || {};
+      let hint = "";
+      if (t.pendingDueAt) {
+        hint = "Zkušební upozornění je naplánované — zavři appku a počkej.";
+      } else if (t.status === 201) {
+        hint = `Zkušební upozornění odesláno ${t.waitedSec}s po zadání a push `
+             + `služba ho přijala. Pokud nedorazilo, blokuje ho systém zařízení.`;
+      } else if (t.status === 410) {
+        hint = "Zkušební upozornění skončilo na 410 — registrace vypršela, "
+             + "vypni a zapni upozornění.";
+      } else if (t.status && t.status !== 201) {
+        hint = `Zkušební upozornění skončilo s kódem ${t.status}.`;
+      } else if (st.lastNotified) {
+        hint = `Poslední odeslané: ${st.lastNotified}`;
+      }
       return { ok: true, code: "ok",
         msg: `Upozornění na pozadí jsou aktivní pro ${st.favorites} ` +
              `${st.favorites === 1 ? "místo" : st.favorites < 5 ? "místa" : "míst"}.`,
-        hint: st.lastNotified ? `Poslední odeslané: ${st.lastNotified}` : "" };
+        hint };
     }
   } catch { /* server nedostupný — nižší jistota, ale ne chyba uživatele */ }
 
   return { ok: true, code: "ok-unverified",
     msg: "Upozornění na pozadí jsou zapnutá.",
     hint: "Stav na serveru se teď nepodařilo ověřit." };
+}
+
+/**
+ * Naplánuje zkušební push za minutu.
+ *
+ * Odklad je celý smysl téhle funkce: notifikace v otevřené appce jedou přes
+ * in-page Notification API a chodí i tehdy, když je Web Push rozbitý. Dokázat
+ * se dá jen doručení, které dorazí se ZAVŘENOU appkou — proto minuta a proto
+ * hláška, ať uživatel appku zavře.
+ */
+export async function scheduleTestPush() {
+  const reg = await navigator.serviceWorker.ready.catch(() => null);
+  const sub = reg ? await reg.pushManager.getSubscription().catch(() => null) : null;
+  if (!sub) {
+    showToast("Nejdřív zapni upozornění tlačítkem 🔕.");
+    return null;
+  }
+  try {
+    const r = await fetch(`${WORKER_BASE}/test-push`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ endpoint: sub.endpoint, delaySec: 60 }),
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j?.error || `HTTP ${r.status}`);
+    showToast("Zkušební upozornění dorazí do minuty — teď appku zavři.",
+      { timeoutMs: 9000 });
+    // Za 75 s se podíváme, jak to dopadlo — i když uživatel notifikaci minul.
+    setTimeout(() => renderPushDiagnosis(), 75000);
+    return j;
+  } catch (e) {
+    showToast("Zkušební upozornění se nepodařilo naplánovat: " + e.message);
+    return null;
+  }
+}
+
+export function initTestPushButton() {
+  const btn = document.getElementById("btn-test-push");
+  if (!btn) return;
+  btn.addEventListener("click", async () => {
+    btn.disabled = true;
+    btn.textContent = "Plánuji…";
+    await scheduleTestPush();
+    btn.textContent = "Zkušební upozornění za minutu";
+    setTimeout(() => { btn.disabled = false; }, 60000);
+  });
 }
 
 export async function renderPushDiagnosis() {

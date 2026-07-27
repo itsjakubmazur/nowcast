@@ -25,7 +25,7 @@ import { renderStormTracks } from "./stormtrack.js";
 import { renderStormImpact, renderOutlookWindows } from "./safety.js";
 import {
   loadFavs, renderFavRow, updateFavBtn, saveLastLocation, loadLastLocation,
-  checkRainNotifications, clearRainSnooze, initPushButton,
+  checkRainNotifications, clearRainSnooze, initPushButton, initTestPushButton,
 } from "./favorites.js";
 import { initSearch, reverseGeocode } from "./search.js";
 import {
@@ -439,6 +439,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     observeRadarBarHeight();
     document.getElementById("btn-global").addEventListener("click", toggleGlobalMode);
     document.getElementById("btn-satellite")?.addEventListener("click", toggleSatellite);
+  initTestPushButton();
     document.getElementById("btn-wind")?.addEventListener("click", toggleWindLayer);
     return;
   }
