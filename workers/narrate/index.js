@@ -106,7 +106,6 @@ export default {
       ctx.waitUntil(runTestPushes(env));
       return;
     }
-    ctx.waitUntil(runTestPushes(env));
     ctx.waitUntil(runPushCheck(env));
   },
 };
@@ -553,6 +552,22 @@ const MINUTE_CRON = "* * * * *";
 const TEST_TTL_S = 60 * 60;
 const TEST_MAX_DELAY_S = 15 * 60;
 
+// POZOR NA ROZPOČET KV. Free tier dává denně řádově 100 000 čtení, ale jen
+// asi 1 000 zápisů, mazání a LISTŮ. Minutový cron proto NESMÍ volat list() —
+// 1 440 listů denně limit sám o sobě překročí (a taky překročil, než se to
+// opravilo). Celá fronta čekajících testů proto žije v JEDNOM klíči, který
+// se čte, a čtení je ta levná operace.
+const TEST_QUEUE = "test:queue";
+
+async function readTestQueue(env) {
+  try {
+    const q = await env.SUBSCRIPTIONS.get(TEST_QUEUE, "json");
+    return Array.isArray(q) ? q : [];
+  } catch {
+    return [];
+  }
+}
+
 async function handleTestPush(request, env) {
   if (!env.SUBSCRIPTIONS) return json({ error: "Push není na serveru nakonfigurovaný" }, 501);
   let body;
@@ -566,15 +581,22 @@ async function handleTestPush(request, env) {
   const delay = Math.min(TEST_MAX_DELAY_S,
     Math.max(30, Number(body?.delaySec) || 60));
 
-  const subKey = "sub:" + (await sha256Hex(endpoint));
+  const h = await sha256Hex(endpoint);
+  const subKey = "sub:" + h;
   const rec = await env.SUBSCRIPTIONS.get(subKey, "json");
   if (!rec?.subscription) {
     return json({ error: "Tohle zařízení není přihlášené k odběru" }, 404);
   }
 
-  const dueAt = new Date(Date.now() + delay * 1000).toISOString();
-  await env.SUBSCRIPTIONS.put("test:" + (await sha256Hex(endpoint)),
-    JSON.stringify({ subKey, dueAt, createdAt: new Date().toISOString() }),
+  const now = Date.now();
+  const dueAt = new Date(now + delay * 1000).toISOString();
+  // Jedno zařízení = jeden čekající test; opakovaný klik ten předchozí nahradí,
+  // ať se fronta nenafukuje.
+  const queue = (await readTestQueue(env))
+    .filter(t => t.h !== h && Date.parse(t.dueAt || 0) > now - TEST_TTL_S * 1000)
+    .slice(-20);
+  queue.push({ h, subKey, dueAt, createdAt: new Date(now).toISOString() });
+  await env.SUBSCRIPTIONS.put(TEST_QUEUE, JSON.stringify(queue),
     { expirationTtl: TEST_TTL_S });
   return json({ ok: true, dueAt, delaySec: delay });
 }
@@ -582,41 +604,37 @@ async function handleTestPush(request, env) {
 async function runTestPushes(env) {
   if (!env.SUBSCRIPTIONS) return;
   const now = Date.now();
-  let cursor;
-  do {
-    const page = await env.SUBSCRIPTIONS.list({ prefix: "test:", cursor, limit: 100 });
-    for (const k of page.keys) {
-      let t = null;
-      try { t = await env.SUBSCRIPTIONS.get(k.name, "json"); } catch { /* ignore */ }
-      if (!t?.dueAt) { await env.SUBSCRIPTIONS.delete(k.name); continue; }
-      if (Date.parse(t.dueAt) > now) continue;    // ještě není čas
+  const queue = await readTestQueue(env);
+  if (!queue.length) return;                 // typický případ: jedno čtení a konec
+  const due = queue.filter(t => Date.parse(t.dueAt || 0) <= now);
+  if (!due.length) return;                   // pořád žádný zápis
 
-      const rec = await env.SUBSCRIPTIONS.get(t.subKey, "json");
-      if (!rec?.subscription) { await env.SUBSCRIPTIONS.delete(k.name); continue; }
-
-      const waited = Math.round((now - Date.parse(t.createdAt || t.dueAt)) / 1000);
-      let status = 0;
-      try {
-        const res = await sendPush(rec.subscription, env, {
-          title: "✅ Zkušební upozornění",
-          body: `Doručeno na pozadí ${waited}s po zadání. Web Push funguje — `
-            + `ostrá upozornění dorazí stejnou cestou.`,
-          tag: "nowcast-test",
-        });
-        status = res.status;
-      } catch (e) {
-        status = -1;
-        console.log(`runTestPushes: ${e.message}`);
-      }
-      // Výsledek si necháme krátce k nahlédnutí, ať appka umí říct, jak to
-      // dopadlo, i když uživatel notifikaci nezachytil.
-      await env.SUBSCRIPTIONS.put(k.name + ":done", JSON.stringify({
-        sentAt: new Date().toISOString(), status, waitedSec: waited,
-      }), { expirationTtl: TEST_TTL_S });
-      await env.SUBSCRIPTIONS.delete(k.name);
+  const rest = queue.filter(t => Date.parse(t.dueAt || 0) > now);
+  for (const t of due) {
+    const rec = await env.SUBSCRIPTIONS.get(t.subKey, "json");
+    if (!rec?.subscription) continue;
+    const waited = Math.round((now - Date.parse(t.createdAt || t.dueAt)) / 1000);
+    let status = 0;
+    try {
+      const res = await sendPush(rec.subscription, env, {
+        title: "✅ Zkušební upozornění",
+        body: `Doručeno na pozadí ${waited}s po zadání. Web Push funguje — `
+          + `ostrá upozornění dorazí stejnou cestou.`,
+        tag: "nowcast-test",
+      });
+      status = res.status;
+    } catch (e) {
+      status = -1;
+      console.log(`runTestPushes: ${e.message}`);
     }
-    cursor = page.list_complete ? undefined : page.cursor;
-  } while (cursor);
+    // Výsledek k nahlédnutí, ať appka umí říct, jak to dopadlo, i když
+    // uživatel notifikaci nezachytil.
+    await env.SUBSCRIPTIONS.put("test:" + t.h + ":done", JSON.stringify({
+      sentAt: new Date().toISOString(), status, waitedSec: waited,
+    }), { expirationTtl: TEST_TTL_S });
+  }
+  await env.SUBSCRIPTIONS.put(TEST_QUEUE, JSON.stringify(rest),
+    { expirationTtl: TEST_TTL_S });
 }
 
 // ── Cron: zkontroluj oblíbená místa všech subscriberů, pošli push ───────────
@@ -625,10 +643,25 @@ async function runTestPushes(env) {
 // nespouští" — a to jsou dvě úplně jiné příčiny. Zapisuje se i při chybě,
 // takže z KV je vidět i to, že běh spadl a proč.
 const CRON_KEY = "meta:cron";
+const BEAT_MIN_INTERVAL_MS = 30 * 60 * 1000;
 
-async function writeCronBeat(env, patch) {
+// Zápis tepu stojí z denního rozpočtu KV (~1 000 zápisů), takže se NEZAPISUJE
+// při každém běhu. Dřív se psalo na začátku i na konci každých 10 minut, což
+// je 288 zápisů denně jen za diagnostiku — skoro třetina rozpočtu.
+//
+// Teď se zapíše, jen když se něco stalo (odeslání, expirace, chyba), nebo
+// když je poslední tep starší než půl hodiny. Na otázku "běží cron vůbec?"
+// to stačí a stojí to ~48 zápisů denně místo 288.
+async function writeCronBeat(env, patch, { force = false } = {}) {
   try {
     const prev = (await env.SUBSCRIPTIONS.get(CRON_KEY, "json")) || {};
+    const last = prev.finishedAt ? Date.parse(prev.finishedAt) : 0;
+    const interesting = force
+      || patch.error
+      || (patch.notified || 0) > 0
+      || (patch.expired || 0) > 0
+      || Date.now() - last > BEAT_MIN_INTERVAL_MS;
+    if (!interesting) return;
     await env.SUBSCRIPTIONS.put(CRON_KEY, JSON.stringify({ ...prev, ...patch }),
       { expirationTtl: 60 * 60 * 24 * 30 });
   } catch { /* diagnostika nesmí shodit cron */ }
@@ -639,16 +672,11 @@ async function handleCronStatus(env) {
   let beat = null;
   try { beat = await env.SUBSCRIPTIONS.get(CRON_KEY, "json"); } catch { /* ignore */ }
 
-  // Kolik je vůbec odběratelů — bez toho nejde poznat, jestli cron nemá koho obeslat.
-  let subs = 0;
-  try {
-    const page = await env.SUBSCRIPTIONS.list({ prefix: "sub:", limit: 1000 });
-    subs = page.keys.length;
-  } catch { /* ignore */ }
-
+  // Počet odběratelů se bere z tepu, ne z list() — je to veřejný endpoint
+  // a list je jedna z mála operací, kterých má free tier jen ~1 000 denně.
   const last = beat?.finishedAt ? Date.parse(beat.finishedAt) : null;
   return json({
-    subscribers: subs,
+    subscribers: beat?.subscribers ?? null,
     vapidConfigured: !!env.VAPID_PUBLIC_KEY,
     lastRunUtc: beat?.finishedAt || null,
     lastRunAgeMin: last ? Math.round((Date.now() - last) / 60000) : null,
@@ -662,7 +690,6 @@ async function handleCronStatus(env) {
 
 async function runPushCheck(env) {
   if (!env.SUBSCRIPTIONS) return;
-  await writeCronBeat(env, { startedAt: new Date().toISOString(), error: null });
   const base = env.PAGES_BASE || "https://itsjakubmazur.github.io/nowcast";
   let grid;
   try {
@@ -674,7 +701,7 @@ async function runPushCheck(env) {
     await writeCronBeat(env, {
       finishedAt: new Date().toISOString(),
       error: `grid fetch: ${e.message}`.slice(0, 200),
-    });
+    }, { force: true });
     return;
   }
 
@@ -706,7 +733,8 @@ async function runPushCheck(env) {
   console.log(`runPushCheck: checked=${checked} notified=${notified} expired=${expired}`);
   await writeCronBeat(env, {
     finishedAt: new Date().toISOString(),
-    checked, notified, expired,
+    checked, notified, expired, subscribers: checked,
+    error: null,
     gridT0: grid.t0_utc || null,
   });
 }
@@ -1023,10 +1051,10 @@ async function sendPush(subscription, env, payload = null, ttlSeconds = 600) {
   if (!body) headers["Content-Length"] = "0";
 
   const res = await fetch(subscription.endpoint, { method: "POST", headers, body });
-  // Poslední stav odeslání do KV: 201 = doručeno push službě, 401/403 = špatný
-  // nebo chybějící VAPID klíč, 410 = odběr vypršel. Bez toho by se rozbitý
-  // podpis projevil jen tichým nedoručováním.
-  if (env?.SUBSCRIPTIONS) {
+  // Stav odeslání se do KV ukládá jen při SELHÁNÍ (401/403 = špatný VAPID,
+  // 410 = vypršelý odběr). Úspěch se nezapisuje: byl by to zápis navíc
+  // z denního rozpočtu za informaci, kterou stejně nese lastNotified.
+  if (env?.SUBSCRIPTIONS && res.status !== 201 && res.status !== 200) {
     try {
       const prev = (await env.SUBSCRIPTIONS.get("meta:cron", "json")) || {};
       await env.SUBSCRIPTIONS.put("meta:cron", JSON.stringify({
