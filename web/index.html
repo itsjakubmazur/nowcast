@@ -159,15 +159,30 @@
        číslu v odpočtu věřit, takže musí být vidět spolu s ním. -->
   <div id="cotrec-card"></div>
 
-  <!-- Minutový graf srážek 0–120 min (radar + model) -->
-  <div id="minutely-panel">
-    <div class="minutely-label"><span>Srážky · 120 minut</span><span id="minutely-src">radar + model</span></div>
-    <div class="minutely-bars" id="minutely-bars"></div>
-    <div class="minutely-axis"><span>teď</span><span>+30</span><span>+60</span><span>+90</span><span>+120</span></div>
+  <!-- Srážky v čase — JEDEN panel se dvěma měřítky.
+       Dřív to byly dvě karty nad sebou: minutový graf 0–120 min a "Kdy
+       vyrazit" 0–12 h. Je to ale totéž ve dvou přiblíženích, takže to jen
+       zabíralo místo a nutilo srovnávat dva různé pruhy. -->
+  <div id="precip-panel">
+    <div class="pp-head">
+      <span class="pp-title">Srážky</span>
+      <div class="pp-tabs" id="pp-tabs">
+        <button type="button" class="pp-tab active" data-scale="2h">2 h</button>
+        <button type="button" class="pp-tab" data-scale="12h">12 h</button>
+      </div>
+      <span class="pp-src" id="minutely-src"></span>
+    </div>
+    <!-- Věta "kdy vyrazit" — to jediné, co z 12h pohledu opravdu potřebuješ -->
+    <div class="pp-msg" id="outlook-msg"></div>
+    <div class="pp-body" data-scale="2h">
+      <div class="minutely-bars" id="minutely-bars"></div>
+      <div class="minutely-axis"><span>teď</span><span>+30</span><span>+60</span><span>+90</span><span>+120</span></div>
+    </div>
+    <div class="pp-body" data-scale="12h" hidden>
+      <div class="ow-bars" id="ow-bars"></div>
+      <div class="ow-axis" id="ow-axis"></div>
+    </div>
   </div>
-
-  <!-- Kdy vyrazit — 12h okna beze srážek -->
-  <div id="outlook-panel"></div>
 
   <div id="forecast-panel">
     <div class="place" id="place">Zvolte místo</div>

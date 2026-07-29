@@ -88,5 +88,5 @@ export function showLoadingSkeletons() {
 
   const minBars = document.getElementById("minutely-bars");
   if (minBars) minBars.innerHTML = `<span class="skel" style="width:100%;height:100%;border-radius:8px"></span>`;
-  document.getElementById("minutely-panel")?.classList.add("show");
+  document.getElementById("precip-panel")?.classList.add("show");
 }

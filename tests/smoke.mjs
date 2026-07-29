@@ -564,11 +564,45 @@ async function main() {
   assertTrue(/za ~\d+ min|právě nad tebou/.test(siText) && /kroup|bouřka/i.test(siText),
     `banner zásahu bouřkou funguje ("${siText.replace(/\s+/g, " ").slice(0, 70)}…")`);
 
-  await page.waitForSelector("#outlook-panel.show", { timeout: 5000 });
-  const owBars = await page.locator("#outlook-panel .ow-bars i").count();
-  const owWet = await page.locator("#outlook-panel .ow-bars i.wet").count();
+  // ── Srážky: jeden panel, dvě měřítka ──────────────────────────────────────
+  // Regrese, kterou to hlídá: dřív to byly DVĚ karty nad sebou (0–120 min
+  // a 0–12 h), tedy dvě časové osy téhož nad hero countdownem.
+  await page.waitForSelector("#precip-panel.show", { timeout: 5000 });
+  const owBars = await page.locator("#precip-panel .ow-bars i").count();
+  const owWet = await page.locator("#precip-panel .ow-bars i.wet").count();
   assertTrue(owBars >= 6 && owWet >= 1,
-    `panel 'Kdy vyrazit' má pás s mokrými i suchými sloty (${owBars} slotů, ${owWet} mokrých)`);
+    `12h pás má mokré i suché sloty (${owBars} slotů, ${owWet} mokrých)`);
+  const owMsg = await page.textContent("#outlook-msg");
+  assertTrue(/prší|sucho|déšť|srážek/i.test(owMsg || ""),
+    `věta 'kdy vyrazit' zůstala ("${(owMsg || "").slice(0, 60)}")`);
+  assertTrue(await page.locator("#outlook-panel").count() === 0,
+    "samostatná karta 'Kdy vyrazit' už neexistuje");
+
+  const scale = await page.evaluate(() => {
+    const panel = document.getElementById("precip-panel");
+    const vis = () => [...panel.querySelectorAll(".pp-body")]
+      .filter(b => !b.hidden).map(b => b.dataset.scale);
+    const before = vis();
+    panel.querySelector('.pp-tab[data-scale="12h"]').click();
+    const after12 = vis();
+    panel.querySelector('.pp-tab[data-scale="2h"]').click();
+    const after2 = vis();
+    return {
+      before, after12, after2,
+      tabs: [...panel.querySelectorAll(".pp-tab")].map(t => t.dataset.scale),
+      // po přepnutí musí být aktivní právě jedna záložka
+      activeCount: panel.querySelectorAll(".pp-tab.active").length,
+      minutelyBars: panel.querySelectorAll("#minutely-bars i").length,
+    };
+  });
+  assertTrue(scale.tabs.join(",") === "2h,12h",
+    `panel má obě měřítka (${scale.tabs.join(",")})`);
+  assertTrue(scale.before.length === 1 && scale.after12.join() === "12h" && scale.after2.join() === "2h",
+    `přepínač měřítka mění viditelné tělo (${JSON.stringify(scale)})`);
+  assertTrue(scale.activeCount === 1,
+    `aktivní je právě jedna záložka (${scale.activeCount})`);
+  assertTrue(scale.minutelyBars >= 6,
+    `2h graf má sloupce (${scale.minutelyBars})`);
 
   await page.waitForSelector("#confidence-chip.show", { timeout: 5000 });
   const cfText = await page.textContent("#confidence-chip");

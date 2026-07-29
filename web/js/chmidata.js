@@ -85,12 +85,16 @@ export function renderCotrec() {
   const gstep = state.GRID?.step_min || 10;
   oursIn = act && act[0] >= 0 ? (act[0] + 1) * gstep : Infinity;
 
+  // Na suchý den nemá druhý názor co říct — "obě metody se shodují, že nic
+  // nepřijde" je řádek navíc nad countdownem, který totéž říká líp. Karta
+  // se proto ukáže jen tehdy, když někdo z dvojice čeká déšť, nebo když se
+  // metody rozcházejí. Tím zmizí z běžného provozu a zůstane pro chvíli,
+  // kdy je opravdu užitečná.
+  if (oursIn === Infinity && chmiIn === Infinity) return;
+
   const fmt = m => (m === Infinity ? "nic" : `za ${m} min`);
   let verdict, cls;
-  if (oursIn === Infinity && chmiIn === Infinity) {
-    verdict = "obě metody se shodují, že nejbližší hodinu nic nepřijde";
-    cls = "agree";
-  } else if (oursIn === Infinity || chmiIn === Infinity) {
+  if (oursIn === Infinity || chmiIn === Infinity) {
     verdict = "metody se neshodují — ber odpočet s rezervou";
     cls = "disagree";
   } else {

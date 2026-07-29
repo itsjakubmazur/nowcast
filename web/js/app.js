@@ -30,7 +30,7 @@ import {
 import { initSearch, reverseGeocode } from "./search.js";
 import {
   renderMinutely, renderActivities, renderDeltaLine, renderAstro, renderWinter,
-  renderDayTimeline, renderStationCheck, renderRainMeasured,
+  renderDayTimeline, renderStationCheck, renderRainMeasured, initPrecipTabs,
 } from "./extras.js";
 import { renderClimateAnomaly, renderDayInHistory } from "./climate.js";
 import { renderChmiExtras } from "./chmidata.js";
@@ -167,7 +167,7 @@ async function showFc24(lat, lon, label) {
     // Skeletony ostatních karet by jinak zůstaly navždy "načítat se" —
     // schovej je stejně, jako by to udělal jejich vlastní render, kdyby
     // pro dané místo neměly co zobrazit.
-    ["meteo-block", "aq-panel", "astro-panel", "activities-panel", "minutely-panel", "history-panel"]
+    ["meteo-block", "aq-panel", "astro-panel", "activities-panel", "precip-panel", "history-panel"]
       .forEach(id => document.getElementById(id)?.classList.remove("show"));
     // Bez tohohle zůstane levá karta navždy zaseknutá na "Načítám předpověď…"
     // ze showForecast, protože se sem nikdy nedostane renderLocationVerdict.
@@ -439,7 +439,6 @@ window.addEventListener("DOMContentLoaded", async () => {
     observeRadarBarHeight();
     document.getElementById("btn-global").addEventListener("click", toggleGlobalMode);
     document.getElementById("btn-satellite")?.addEventListener("click", toggleSatellite);
-  initTestPushButton();
     document.getElementById("btn-wind")?.addEventListener("click", toggleWindLayer);
     return;
   }
@@ -516,6 +515,11 @@ window.addEventListener("DOMContentLoaded", async () => {
   document.getElementById("btn-refresh").addEventListener("click", refreshAll);
   document.getElementById("btn-global").addEventListener("click", toggleGlobalMode);
   document.getElementById("btn-satellite")?.addEventListener("click", toggleSatellite);
+  // Pozor na umístění: tyhle dvě inicializace omylem skončily v chybové větvi
+  // init(), takže při běžném načtení vůbec neproběhly — tlačítka existovala,
+  // ale nedělala nic. Patří na normální cestu.
+  initTestPushButton();
+  initPrecipTabs();
   document.getElementById("btn-wind")?.addEventListener("click", toggleWindLayer);
   document.getElementById("btn-hydro")?.addEventListener("click", toggleHydro);
   initAccumButton();

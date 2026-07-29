@@ -15,8 +15,70 @@ function locMonth() {
 // ── Minutový graf srážek 0–120 min ───────────────────────────────────────────
 // Primárně z naší radarové extrapolace (grid.series per bod, krok 10 min),
 // fallback na Open-Meteo minutely_15 (krok 15 min, přemapovaný na 10min sloty).
+// ── Sdílený panel srážek (2 h / 12 h) ──────────────────────────────────────
+// Dvě těla, dva zdroje dat, jeden panel. Viditelnost proto nemůže řešit každá
+// vykreslovací funkce sama — musely by o sobě vědět. Každá jen označí své tělo
+// příznakem a tenhle koordinátor rozhodne za obě.
+
+export // Výchozí měřítko a poslední volba uživatele. Bez zapamatování by sync po
+// každém překreslení vracel panel na 2 h a přepnutí na 12 h by "nedrželo".
+const PREFERRED_SCALE = "2h";
+let _userScale = null;
+
+export function markPrecipBody(scale, hasData) {
+  const body = document.querySelector(`#precip-panel .pp-body[data-scale="${scale}"]`);
+  if (body) body.dataset.has = hasData ? "1" : "0";
+  syncPrecipPanel();
+}
+
+export function syncPrecipPanel() {
+  const panel = document.getElementById("precip-panel");
+  if (!panel) return;
+  const bodies = [...panel.querySelectorAll(".pp-body")];
+  const withData = bodies.filter(b => b.dataset.has === "1");
+  panel.classList.toggle("show", withData.length > 0);
+  if (!withData.length) return;
+
+  // Záložka bez dat se nedá vybrat — jinak by uživatel klikl a viděl prázdno.
+  panel.querySelectorAll(".pp-tab").forEach(tab => {
+    const body = panel.querySelector(`.pp-body[data-scale="${tab.dataset.scale}"]`);
+    tab.disabled = body?.dataset.has !== "1";
+  });
+
+  // Výběr měřítka NESMÍ záviset na tom, které tělo se vykreslí dřív.
+  // renderOutlookWindows běží před renderMinutely, takže při prvním průchodu
+  // mělo data jen 12h tělo — 2h záložka byla dočasně zakázaná a panel se
+  // "zasekl" na 12 h, i když se 2h data o chvíli později doplnila.
+  // Pořadí je proto dané: volba uživatele → 2 h → cokoli, co má data.
+  const enabled = sc => {
+    const t = panel.querySelector(`.pp-tab[data-scale="${sc}"]`);
+    return t && !t.disabled ? t : null;
+  };
+  const target = (_userScale && enabled(_userScale))
+    || enabled(PREFERRED_SCALE)
+    || panel.querySelector(".pp-tab:not(:disabled)");
+  if (!target) return;
+  panel.querySelectorAll(".pp-tab").forEach(t => t.classList.toggle("active", t === target));
+  bodies.forEach(b => { b.hidden = b.dataset.scale !== target.dataset.scale; });
+}
+
+export function initPrecipTabs() {
+  const tabs = document.getElementById("pp-tabs");
+  if (!tabs || tabs.dataset.wired) return;
+  tabs.dataset.wired = "1";
+  tabs.addEventListener("click", e => {
+    const btn = e.target.closest(".pp-tab");
+    if (!btn || btn.disabled) return;
+    _userScale = btn.dataset.scale;
+    tabs.querySelectorAll(".pp-tab").forEach(t => t.classList.toggle("active", t === btn));
+    document.querySelectorAll("#precip-panel .pp-body").forEach(b => {
+      b.hidden = b.dataset.scale !== btn.dataset.scale;
+    });
+  });
+}
+
 export function renderMinutely(ptId, minutely) {
-  const panel = document.getElementById("minutely-panel");
+  const panel = document.getElementById("precip-panel");
   const barsEl = document.getElementById("minutely-bars");
   const srcEl = document.getElementById("minutely-src");
   if (!panel || !barsEl) return;
@@ -60,7 +122,7 @@ export function renderMinutely(ptId, minutely) {
     src = "model (15min)";
   }
 
-  if (!vals || !vals.some(v => v != null)) { panel.classList.remove("show"); return; }
+  if (!vals || !vals.some(v => v != null)) { markPrecipBody("2h", false); return; }
 
   // P(déšť) z ensemble perturbované advekce (grid.prob, % po 10min krocích)
   const prob = state.GRID?.prob?.[String(ptId)] || null;
@@ -75,7 +137,7 @@ export function renderMinutely(ptId, minutely) {
   // Když je celých 120 minut sucho, graf nic neříká — countdown karta
   // ("Nejbližší 2 h bez srážek") to komunikuje líp. Ukazuj jen když prší,
   // NEBO když ensemble vidí aspoň 30% šanci (deterministicky sucho ≠ jistota).
-  if (Math.max(...known) < 0.05 && maxProb < 30) { panel.classList.remove("show"); return; }
+  if (Math.max(...known) < 0.05 && maxProb < 30) { markPrecipBody("2h", false); return; }
   const maxV = Math.max(...known, 1.5);
   revealSwap(barsEl, vals.map((v, i) => {
     const p = probAt(i);
@@ -96,7 +158,7 @@ export function renderMinutely(ptId, minutely) {
     srcEl.textContent = prob ? `${src} · ens.` : src;
     srcEl.title = prob ? `Průhlednost sloupců = P(déšť) z ensemble ${state.GRID.prob_members || 7} členů perturbované advekce` : "";
   }
-  panel.classList.add("show");
+  markPrecipBody("2h", true);
 }
 
 // ── Aktivitní indexy (0–10) ──────────────────────────────────────────────────

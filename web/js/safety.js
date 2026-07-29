@@ -8,6 +8,7 @@
 import { state } from "./state.js";
 import { haversine, esc, localHM } from "./utils.js";
 import { uiIcon } from "./uiicons.js";
+import { markPrecipBody } from "./extras.js";
 
 // ── 1) Zásah bouřkou ────────────────────────────────────────────────────────
 const HIT_MARGIN_KM = 4;   // okraj jádra + rezerva na nepřesnost dráhy
@@ -93,10 +94,15 @@ function precipTimeline(minutely, fc) {
 }
 
 export function renderOutlookWindows(minutely, fc) {
-  const panel = document.getElementById("outlook-panel");
-  if (!panel) return;
+  // Kreslí se do SPOLEČNÉHO panelu srážek (záložka 12 h) — dřív to byla
+  // samostatná karta pod minutovým grafem, tedy druhá časová osa téhož
+  // nad sebou. Viditelnost řeší koordinátor v extras.js.
+  const msgEl = document.getElementById("outlook-msg");
+  const barsEl = document.getElementById("ow-bars");
+  const axisEl = document.getElementById("ow-axis");
+  if (!msgEl || !barsEl) return;
   const tl = precipTimeline(minutely, fc);
-  if (tl.length < 6) { panel.classList.remove("show"); return; }
+  if (tl.length < 6) { msgEl.textContent = ""; markPrecipBody("12h", false); return; }
 
   const now = Date.now();
   const wetNow = tl[0].rate >= WET_RATE;
@@ -146,10 +152,8 @@ export function renderOutlookWindows(minutely, fc) {
   const ticks = [0, Math.floor(tl.length / 2), tl.length - 1]
     .map(i => `<span>${localHM(new Date(tl[i].ms).toISOString())}</span>`).join("");
 
-  panel.innerHTML = `
-    <div class="ow-title">Kdy vyrazit <span class="ow-sub">okna beze srážek, 12 h</span></div>
-    <div class="ow-msg">${msg}</div>
-    <div class="ow-bars">${bars}</div>
-    <div class="ow-axis">${ticks}</div>`;
-  panel.classList.add("show");
+  msgEl.innerHTML = msg;
+  barsEl.innerHTML = bars;
+  if (axisEl) axisEl.innerHTML = ticks;
+  markPrecipBody("12h", true);
 }
