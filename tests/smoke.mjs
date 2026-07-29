@@ -580,29 +580,62 @@ async function main() {
 
   const scale = await page.evaluate(() => {
     const panel = document.getElementById("precip-panel");
-    const vis = () => [...panel.querySelectorAll(".pp-body")]
-      .filter(b => !b.hidden).map(b => b.dataset.scale);
-    const before = vis();
+    const track = document.getElementById("pp-track");
+    const before = panel.dataset.active;
     panel.querySelector('.pp-tab[data-scale="12h"]').click();
-    const after12 = vis();
+    const after12 = panel.dataset.active;
     panel.querySelector('.pp-tab[data-scale="2h"]').click();
-    const after2 = vis();
+    const after2 = panel.dataset.active;
     return {
       before, after12, after2,
       tabs: [...panel.querySelectorAll(".pp-tab")].map(t => t.dataset.scale),
-      // po přepnutí musí být aktivní právě jedna záložka
       activeCount: panel.querySelectorAll(".pp-tab.active").length,
       minutelyBars: panel.querySelectorAll("#minutely-bars i").length,
+      // dráha musí být opravdu přejížděcí, ne dvě skryté vrstvy
+      snap: getComputedStyle(track).scrollSnapType,
+      bodies: [...track.querySelectorAll(".pp-body:not([hidden])")].length,
+      aria: panel.querySelector('.pp-tab[data-scale="2h"]').getAttribute("aria-selected"),
     };
   });
   assertTrue(scale.tabs.join(",") === "2h,12h",
     `panel má obě měřítka (${scale.tabs.join(",")})`);
-  assertTrue(scale.before.length === 1 && scale.after12.join() === "12h" && scale.after2.join() === "2h",
-    `přepínač měřítka mění viditelné tělo (${JSON.stringify(scale)})`);
+  assertTrue(scale.before === "2h" && scale.after12 === "12h" && scale.after2 === "2h",
+    `přepínač mění aktivní měřítko (${JSON.stringify([scale.before, scale.after12, scale.after2])})`);
   assertTrue(scale.activeCount === 1,
     `aktivní je právě jedna záložka (${scale.activeCount})`);
   assertTrue(scale.minutelyBars >= 6,
     `2h graf má sloupce (${scale.minutelyBars})`);
+  assertTrue(/x/.test(scale.snap || ""),
+    `dráha má vodorovný snap, takže jde přejet prstem ("${scale.snap}")`);
+  assertTrue(scale.bodies === 2,
+    `obě měřítka jsou v dráze, ne skrytá pod sebou (${scale.bodies})`);
+  assertTrue(scale.aria === "true",
+    `aktivní záložka se hlásí čtečkám (aria-selected=${scale.aria})`);
+
+  // Přejetí prstem: posun dráhy musí indikátor dotáhnout sám.
+  const swiped = await page.evaluate(async () => {
+    const panel = document.getElementById("precip-panel");
+    const track = document.getElementById("pp-track");
+    const target = track.querySelector('.pp-body[data-scale="12h"]');
+    track.scrollLeft = target.offsetLeft;
+    track.dispatchEvent(new Event("scroll"));
+    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+    return panel.dataset.active;
+  });
+  assertTrue(swiped === "12h",
+    `přejetí na 12h dráhu přepne indikátor samo (${swiped})`);
+
+  // Klávesnice — gesto nesmí být jediná cesta.
+  const byKey = await page.evaluate(() => {
+    const panel = document.getElementById("precip-panel");
+    // Událost musí vzniknout na ZAOSTŘENÉM tlačítku, ne na panelu — jinak
+    // e.target není uvnitř .pp-tabs a handler ji správně ignoruje.
+    const tab = panel.querySelector('.pp-tab[data-scale="12h"]');
+    tab.focus();
+    tab.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }));
+    return panel.dataset.active;
+  });
+  assertTrue(byKey === "2h", `šipka přepne měřítko i bez gesta (${byKey})`);
 
   await page.waitForSelector("#confidence-chip.show", { timeout: 5000 });
   const cfText = await page.textContent("#confidence-chip");

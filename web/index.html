@@ -174,13 +174,18 @@
     </div>
     <!-- Věta "kdy vyrazit" — to jediné, co z 12h pohledu opravdu potřebuješ -->
     <div class="pp-msg" id="outlook-msg"></div>
-    <div class="pp-body" data-scale="2h">
-      <div class="minutely-bars" id="minutely-bars"></div>
-      <div class="minutely-axis"><span>teď</span><span>+30</span><span>+60</span><span>+90</span><span>+120</span></div>
-    </div>
-    <div class="pp-body" data-scale="12h" hidden>
-      <div class="ow-bars" id="ow-bars"></div>
-      <div class="ow-axis" id="ow-axis"></div>
+    <!-- Vodorovná dráha se snapem: měřítko se mění přejetím prstu, ne klikem.
+         Nativní scroll-snap, ne vlastní drag — má setrvačnost, gumový doraz
+         i chování podle systému zdarma a funguje i trackpadem a klávesnicí. -->
+    <div class="pp-track" id="pp-track">
+      <div class="pp-body" data-scale="2h">
+        <div class="minutely-bars" id="minutely-bars"></div>
+        <div class="minutely-axis"><span>teď</span><span>+30</span><span>+60</span><span>+90</span><span>+120</span></div>
+      </div>
+      <div class="pp-body" data-scale="12h">
+        <div class="ow-bars" id="ow-bars"></div>
+        <div class="ow-axis" id="ow-axis"></div>
+      </div>
     </div>
   </div>
 

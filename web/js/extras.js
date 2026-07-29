@@ -33,21 +33,25 @@ export function markPrecipBody(scale, hasData) {
 
 export function syncPrecipPanel() {
   const panel = document.getElementById("precip-panel");
-  if (!panel) return;
-  const bodies = [...panel.querySelectorAll(".pp-body")];
+  const track = document.getElementById("pp-track");
+  if (!panel || !track) return;
+  const bodies = [...track.querySelectorAll(".pp-body")];
   const withData = bodies.filter(b => b.dataset.has === "1");
   panel.classList.toggle("show", withData.length > 0);
-  if (!withData.length) return;
 
-  // Záložka bez dat se nedá vybrat — jinak by uživatel klikl a viděl prázdno.
+  // Prázdné měřítko z dráhy úplně zmizí — jinak by šlo přejet na prázdno.
+  bodies.forEach(b => { b.hidden = b.dataset.has !== "1"; });
   panel.querySelectorAll(".pp-tab").forEach(tab => {
-    const body = panel.querySelector(`.pp-body[data-scale="${tab.dataset.scale}"]`);
+    const body = track.querySelector(`.pp-body[data-scale="${tab.dataset.scale}"]`);
     tab.disabled = body?.dataset.has !== "1";
   });
+  // Přejíždět jde jen když jsou obě měřítka k dispozici.
+  panel.classList.toggle("pp-single", withData.length < 2);
+  if (!withData.length) return;
 
   // Výběr měřítka NESMÍ záviset na tom, které tělo se vykreslí dřív.
   // renderOutlookWindows běží před renderMinutely, takže při prvním průchodu
-  // mělo data jen 12h tělo — 2h záložka byla dočasně zakázaná a panel se
+  // mělo data jen 12h tělo — 2h dráha byla dočasně prázdná a panel se
   // "zasekl" na 12 h, i když se 2h data o chvíli později doplnila.
   // Pořadí je proto dané: volba uživatele → 2 h → cokoli, co má data.
   const enabled = sc => {
@@ -58,22 +62,84 @@ export function syncPrecipPanel() {
     || enabled(PREFERRED_SCALE)
     || panel.querySelector(".pp-tab:not(:disabled)");
   if (!target) return;
-  panel.querySelectorAll(".pp-tab").forEach(t => t.classList.toggle("active", t === target));
-  bodies.forEach(b => { b.hidden = b.dataset.scale !== target.dataset.scale; });
+  setPrecipScale(target.dataset.scale, { animate: false });
+}
+
+// Nastaví měřítko: posune dráhu a srovná indikátor. `data-active` na panelu
+// je jediný zdroj pravdy o tom, co je vidět — čte ho i test, protože poloha
+// scrollu je v headless prohlížeči nespolehlivá.
+function setPrecipScale(scale, { animate = true, fromScroll = false } = {}) {
+  const panel = document.getElementById("precip-panel");
+  const track = document.getElementById("pp-track");
+  if (!panel || !track) return;
+  const body = track.querySelector(`.pp-body[data-scale="${scale}"]:not([hidden])`);
+  if (!body) return;
+
+  panel.dataset.active = scale;
+  panel.querySelectorAll(".pp-tab").forEach(t => {
+    const on = t.dataset.scale === scale;
+    t.classList.toggle("active", on);
+    t.setAttribute("aria-selected", on ? "true" : "false");
+  });
+
+  if (fromScroll) return;   // uživatel už tam přejel sám, nepřetahuj mu to
+  const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+  try {
+    track.scrollTo({ left: body.offsetLeft, behavior: animate && !reduce ? "smooth" : "auto" });
+  } catch {
+    track.scrollLeft = body.offsetLeft;   // starší prohlížeče bez options
+  }
 }
 
 export function initPrecipTabs() {
+  const panel = document.getElementById("precip-panel");
   const tabs = document.getElementById("pp-tabs");
-  if (!tabs || tabs.dataset.wired) return;
+  const track = document.getElementById("pp-track");
+  if (!panel || !tabs || !track || tabs.dataset.wired) return;
   tabs.dataset.wired = "1";
+
   tabs.addEventListener("click", e => {
     const btn = e.target.closest(".pp-tab");
     if (!btn || btn.disabled) return;
     _userScale = btn.dataset.scale;
-    tabs.querySelectorAll(".pp-tab").forEach(t => t.classList.toggle("active", t === btn));
-    document.querySelectorAll("#precip-panel .pp-body").forEach(b => {
-      b.hidden = b.dataset.scale !== btn.dataset.scale;
+    setPrecipScale(_userScale);
+  });
+
+  // Přejetí prstem: indikátor se dotahuje podle toho, co je opravdu vidět.
+  // Počítá se v rAF, protože scroll umí střílet desítky událostí za vteřinu.
+  let raf = 0;
+  track.addEventListener("scroll", () => {
+    if (raf) return;
+    raf = requestAnimationFrame(() => {
+      raf = 0;
+      const bodies = [...track.querySelectorAll(".pp-body:not([hidden])")];
+      if (bodies.length < 2) return;
+      const mid = track.scrollLeft + track.clientWidth / 2;
+      let best = null, bd = Infinity;
+      for (const b of bodies) {
+        const c = b.offsetLeft + b.offsetWidth / 2;
+        const d = Math.abs(c - mid);
+        if (d < bd) { bd = d; best = b; }
+      }
+      if (!best || panel.dataset.active === best.dataset.scale) return;
+      _userScale = best.dataset.scale;
+      setPrecipScale(_userScale, { fromScroll: true });
     });
+  }, { passive: true });
+
+  // Klávesnice: šipky přepínají měřítko, aby to nešlo jen prstem.
+  panel.addEventListener("keydown", e => {
+    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+    if (!e.target.closest?.(".pp-tabs")) return;
+    const order = ["2h", "12h"];
+    const i = order.indexOf(panel.dataset.active || PREFERRED_SCALE);
+    const next = order[i + (e.key === "ArrowRight" ? 1 : -1)];
+    const btn = next && panel.querySelector(`.pp-tab[data-scale="${next}"]:not(:disabled)`);
+    if (!btn) return;
+    e.preventDefault();
+    _userScale = next;
+    setPrecipScale(next);
+    btn.focus();
   });
 }
 

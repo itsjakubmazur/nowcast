@@ -331,7 +331,44 @@ button.glass-btn svg { width: 17px; height: 17px; display: block; }
 .pp-src { margin-left: auto; font-size: .6rem; color: var(--muted); }
 .pp-msg { font-size: .76rem; line-height: 1.5; margin-bottom: .45rem; }
 .pp-msg:empty { display: none; }
+
+/* Dráha se snapem: měřítko se mění přejetím prstu. Nativní scroll-snap má
+   setrvačnost, doraz i chování podle systému zdarma — vlastní drag fyzika by
+   to jen napodobovala hůř, a na desktopu by rozbila trackpad i kolečko.
+   Scrollbar se schovává, protože pruh vede přes celou šířku karty a byl by
+   vidět pod grafem. */
+.pp-track {
+  display: flex;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  overscroll-behavior-x: contain;   /* přejetí nesmí táhnout celou stránku */
+  -webkit-overflow-scrolling: touch;
+  margin: 0 -.15rem;                /* ať grafy lícují s okraji karty */
+}
+.pp-track::-webkit-scrollbar { display: none; }
+.pp-body {
+  flex: 0 0 100%;
+  min-width: 0;
+  padding: 0 .15rem;
+  scroll-snap-align: center;
+  scroll-snap-stop: always;         /* jedno přejetí = jedno měřítko */
+}
 .pp-body[hidden] { display: none; }
+/* Jediné měřítko s daty → není kam přejíždět, tak ať to ani nevypadá. */
+#precip-panel.pp-single .pp-track { overflow-x: hidden; }
+#precip-panel.pp-single .pp-tabs { display: none; }
+
+/* Náznak, že se dá přejet — jemný odstup po stranách, ne šipky. */
+#precip-panel:not(.pp-single) .pp-track::after {
+  content: ""; flex: 0 0 .05rem;
+}
+.pp-tab:focus-visible {
+  outline: 2px solid var(--blue, #0A84FF);
+  outline-offset: 1px;
+}
 
 .minutely-label {
   font-size: .62rem; font-weight: 700; letter-spacing: .07em;
