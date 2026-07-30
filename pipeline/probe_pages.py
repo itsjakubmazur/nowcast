@@ -92,6 +92,29 @@ def main():
     except Exception as e:
         print(f"  CHYBA: {e}")
 
+    print("\n--- světové stanice (METAR + bóje) ---")
+    # Krok metar v pipeline trvá vteřinu, když zdroj selže, a vypadá to úplně
+    # stejně jako když projde — dlaždice zůstanou staré. Jediné, co to opravdu
+    # rozhodne, je obsah nasazených dlaždic.
+    try:
+        _, body = get(f"{SITE}/data/metar/index.json")
+        idx = json.loads(body)
+        print(f"  index: {idx.get('stations')} stanic, {len(idx.get('tiles') or [])} dlaždic, "
+              f"generováno {idx.get('generated_at_utc')}")
+        # Dlaždice 13_10 = severovýchod USA, kde je bójí nejvíc.
+        _, tb = get(f"{SITE}/data/metar/13_10.json")
+        tile = json.loads(tb)
+        sts = tile.get("stations") or []
+        buoys = [s for s in sts if s.get("source") == "ndbc"]
+        print(f"  dlaždice 13_10: {len(sts)} stanic, z toho bójí {len(buoys)}")
+        if buoys:
+            b = buoys[0]
+            print(f"    vzorek: {b['name']} {b['lat']},{b['lon']} {b['temp']} °C")
+        else:
+            print("    ✗ žádná bóje — krok metar buď neproběhl, nebo zdroj selhal")
+    except Exception as e:
+        print(f"  CHYBA: {str(e)[:160]}")
+
     print("\n--- Cloudflare worker ---")
     # Sonda v prohlížeči zachytila, že /verdict padá na CORS: "No
     # 'Access-Control-Allow-Origin' header". Náš kód CORS hlavičky posílá na
