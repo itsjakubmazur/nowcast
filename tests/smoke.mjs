@@ -951,8 +951,17 @@ async function main() {
     assertTrue(bar.n <= 4, `pruh výstrah ukazuje nanejvýš 3 štítky + přetečení (je jich ${bar.n})`);
     assertTrue(bar.texts.some(t => /^\+\d+$/.test(t)),
       `zbytek výstrah je schovaný pod štítkem "+N" (${bar.texts.join(" | ")})`);
-    assertTrue(bar.texts.some(t => t.includes("3×")),
-      `opakovaný jev se počítá, neopisuje (${bar.texts.join(" | ")})`);
+    // Jeden jev = jeden štítek, i když ho ČHMÚ vydalo na tři dny po sobě.
+    // Ani počet opakování se nepíše — "3×" nic neříká, je to jedno vedro.
+    const events = bar.texts.filter(t => !/^\+\d+$/.test(t));
+    assertTrue(new Set(events).size === events.length,
+      `žádný jev se v pruhu neopakuje (${events.join(" | ")})`);
+    assertTrue(!bar.texts.some(t => t.includes("×")),
+      `štítek nenese počet opakování (${bar.texts.join(" | ")})`);
+    const spans = await page.evaluate(() =>
+      [...document.querySelectorAll("#alert-bar .warn-chip")].map(c => c.title));
+    assertTrue(spans.some(t => /platí .+ – .+/.test(t)),
+      `platnost výstrahy je v nápovědě štítku (${spans.filter(Boolean).join(" | ")})`);
     // Zalomený text = vysoký štítek. Jednořádkový štítek má do ~30 px.
     assertTrue(bar.heights.every(h => h <= 34),
       `žádný štítek se nezalomil do víc řádků (výšky ${bar.heights.join(",")})`);

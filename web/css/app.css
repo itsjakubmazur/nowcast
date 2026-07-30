@@ -286,9 +286,6 @@ button.glass-btn svg { width: 17px; height: 17px; display: block; }
   border-radius: 16px; padding: .55rem .8rem;
   max-height: 40vh; overflow-y: auto;
 }
-.warn-chip-n {
-  margin-left: .3rem; opacity: .72; font-weight: 800; font-size: .92em;
-}
 .warn-chip-more { background: var(--glass2); color: var(--text); }
 
 /* úchyt sheetu — viditelný jen na mobilu */

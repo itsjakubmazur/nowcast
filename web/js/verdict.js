@@ -176,30 +176,60 @@ export function warningsForPt(ptId) {
 // se v pruhu sešlo třináct štítků. Flex je smrskl na minimální šířku, text
 // se zalomil na tři řádky a kulaté rohy z nich udělaly kolečka.
 //
-// Řešení má dvě půlky. Tady se výstrahy shlukují podle jevu (opakování se
-// počítá, ne opisuje) a řadí od nejzávažnější; v CSS se pak štítek nesmí
-// smrsknout. Vidět jsou první tři, zbytek si vyžádá klepnutí.
+// Řešení má dvě půlky. Tady se výstrahy shlukují podle jevu — jeden jev je
+// právě jeden štítek, ať ho ČHMÚ vydalo jednou nebo pětkrát — a řadí se od
+// nejzávažnější; v CSS se pak štítek nesmí smrsknout.
+//
+// Počet opakování se ZÁMĚRNĚ nepíše. Zkoušel jsem "3×", ale nic to neříká:
+// tři výstrahy na tři dny za sebou nejsou třikrát horší vedro, je to jedno
+// vedro do čtvrtka. Do štítku proto jde jen jev a do bublinkové nápovědy
+// celý rozsah platnosti, což je informace, kterou člověk opravdu chce.
 const SEVERITY = { red: 3, orange: 2, yellow: 1 };
 const MAX_VISIBLE_CHIPS = 3;
+
+// Rozsah přes víc dní potřebuje i den, ne jen hodinu — "platí 08:00 – 20:00"
+// by u třídenní výstrahy lhalo. Dnešek zůstává bez data, ať to není upovídané.
+function dayHM(utcIso) {
+  const d = new Date(utcIso);
+  const day = d.toLocaleDateString("cs-CZ", { timeZone: state.tz, weekday: "short", day: "numeric", month: "numeric" });
+  const today = new Date().toLocaleDateString("cs-CZ", { timeZone: state.tz, weekday: "short", day: "numeric", month: "numeric" });
+  const hm = localHM(utcIso);
+  return day === today ? hm : `${day} ${hm}`;
+}
+
+function groupSpan(g) {
+  const from = g.onset ? dayHM(g.onset) : null;
+  const to = g.expires ? dayHM(g.expires) : null;
+  if (from && to) return `platí ${from} – ${to}`;
+  return from ? `platí od ${from}` : "";
+}
 
 export function warningChips(warns) {
   const groups = new Map();
   for (const w of warns) {
-    const g = groups.get(w.event);
     const rank = SEVERITY[w.color] || 0;
-    if (!g) groups.set(w.event, { event: w.event, color: w.color, rank, n: 1 });
-    else {
-      g.n++;
-      // Ve skupině vyhrává nejzávažnější barva — jinak by červená výstraha
-      // zmizela pod žlutou jen proto, že přišla později.
-      if (rank > g.rank) { g.rank = rank; g.color = w.color; }
+    const g = groups.get(w.event);
+    if (!g) {
+      groups.set(w.event, {
+        event: w.event, color: w.color, rank,
+        onset: w.onset_utc, expires: w.expires_utc,
+      });
+      continue;
     }
+    // Ve skupině vyhrává nejzávažnější barva — jinak by červená výstraha
+    // zmizela pod žlutou jen proto, že přišla později.
+    if (rank > g.rank) { g.rank = rank; g.color = w.color; }
+    // Platnost se roztáhne přes všechna opakování: od prvního začátku po
+    // poslední konec. Tři denní výstrahy tak dají jeden souvislý rozsah.
+    if (w.onset_utc && w.onset_utc < g.onset) g.onset = w.onset_utc;
+    if (w.expires_utc && w.expires_utc > g.expires) g.expires = w.expires_utc;
   }
   const list = [...groups.values()].sort((a, b) => b.rank - a.rank);
   const chip = g => {
     const cls = ["yellow", "orange", "red"].includes(g.color) ? g.color : "unknown";
-    const times = g.n > 1 ? `<b class="warn-chip-n">${g.n}×</b>` : "";
-    return `<span class="warn-chip c-${cls}">${esc(g.event)}${times}</span>`;
+    const span = groupSpan(g);
+    const title = span ? ` title="${esc(g.event)} — ${esc(span)}"` : "";
+    return `<span class="warn-chip c-${cls}"${title}>${esc(g.event)}</span>`;
   };
   const shown = list.slice(0, MAX_VISIBLE_CHIPS).map(chip);
   const rest = list.length - shown.length;
