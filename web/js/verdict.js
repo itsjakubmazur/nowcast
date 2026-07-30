@@ -461,7 +461,14 @@ async function fetchAiVerdictAttempt(lat, lon, label, radar) {
   state.verdictCtrl?.abort();
   const ctrl = new AbortController();
   state.verdictCtrl = ctrl;
-  const timer = setTimeout(() => ctrl.abort(), 12000);
+  // 20 s, ne 12. Sonda proti nasazenému webu ukazovala u /verdict "blocked by
+  // CORS policy: No 'Access-Control-Allow-Origin' header" — což vypadalo na
+  // rozbitý worker. Nebyl: dotaz na tentýž endpoint ze serveru vrátil HTTP 200
+  // i s hlavičkou "Access-Control-Allow-Origin: *" a hotovým textem. Prohlížeč
+  // takhle hlásí i request, který jsme sami přerušili — a přerušoval se, protože
+  // generování při prázdné cache trvá přes dvanáct vteřin. Karta mezitím ukazuje
+  // šablonový verdikt, takže čekání navíc nikoho nezdržuje.
+  const timer = setTimeout(() => ctrl.abort(), 20000);
   try {
     const url = `${WORKER_BASE}/verdict?lat=${lat.toFixed(4)}&lon=${lon.toFixed(4)}&label=${encodeURIComponent(label || "")}${radar ? `&radar=${radar}` : ""}`;
     const r = await fetch(url, { signal: ctrl.signal });
