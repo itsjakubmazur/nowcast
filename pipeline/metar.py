@@ -39,6 +39,8 @@ from pathlib import Path
 
 import requests
 
+import buoys
+
 # záměrně bez importu ingest.py — ten tahá h5py, které tenhle skript nepotřebuje
 # (a bez kterého by nešly spustit ani offline testy parsování)
 DATA_DIR = Path(__file__).parent.parent / "data"
@@ -357,8 +359,19 @@ def build_world_tiles(now):
             named += 1
     print(f"  pojmenováno městem: {named}/{len(best)}", file=sys.stderr)
 
+    # Bóje NDBC do stejných dlaždic. Letiště jsou na souši a ve městech,
+    # takže nad mořem, na ostrovech a na pobřeží byla mapa prázdná — a to je
+    # dost velký kus světa na to, aby si toho člověk nevšiml. Jeden request,
+    # ~530 měřených teplot. Když to selže, dlaždice se postaví bez nich.
+    world = list(best.values())
+    try:
+        world += buoys.fetch(now, SESSION)
+    except Exception as e:
+        print(f"  bóje selhaly: {type(e).__name__}: {e} — jedu bez nich",
+              file=sys.stderr)
+
     tiles = defaultdict(list)
-    for rec in best.values():
+    for rec in world:
         for tx, ty in tiles_for_station(rec["lat"], rec["lon"]):
             tiles[(ty, tx)].append(rec)
 
@@ -375,7 +388,7 @@ def build_world_tiles(now):
             "generated_at_utc": now.isoformat(),
             "tile": f"{ty}_{tx}",
             "count": len(recs),
-            "source": "NOAA Aviation Weather (METAR bulk)",
+            "source": "NOAA Aviation Weather (METAR) + NDBC (bóje)",
             "stations": recs,
         }
         p = out_dir / f"{ty}_{tx}.json"
@@ -388,12 +401,12 @@ def build_world_tiles(now):
         "generated_at_utc": now.isoformat(),
         "tile_deg": TILE_DEG,
         "margin_deg": TILE_MARGIN_DEG,
-        "stations": len(best),
+        "stations": len(world),
         "tiles": index,
     }, ensure_ascii=False, separators=(",", ":")))
 
     counts = sorted((t["count"] for t in index), reverse=True)
-    print(f"  ✓ {written} dlaždic, {len(best)} stanic, celkem {total_b // 1024} kB "
+    print(f"  ✓ {written} dlaždic, {len(world)} stanic, celkem {total_b // 1024} kB "
           f"(největší {counts[0]} stanic, medián {counts[len(counts) // 2]})",
           file=sys.stderr)
 

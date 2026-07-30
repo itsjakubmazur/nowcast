@@ -28,6 +28,9 @@ jobs:
       - name: Unit testy pipeline (metar — dlaždice světových stanic)
         run: python tests/test_metar.py
 
+      - name: Unit testy pipeline (buoys — sloupcový text NDBC)
+        run: python tests/test_buoys.py
+
       - name: Unit testy pipeline (chmi_fct + echotop — geometrie a jednotky)
         run: python tests/test_chmi_fct.py
 

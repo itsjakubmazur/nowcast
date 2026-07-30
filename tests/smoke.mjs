@@ -1601,6 +1601,7 @@ async function main() {
     return {
       tile: metarTileId(40.7128, -74.0060),
       count: (state.METAR_WORLD?.stations || []).length,
+      buoys: (state.METAR_WORLD?.stations || []).filter(s => s.source === "ndbc").length,
       near: near && { name: near.name, dist: Math.round(near.distKm), temp: near.tempAdj },
     };
   });
@@ -1608,6 +1609,13 @@ async function main() {
   assertTrue(worldSt.count >= 2, `světová dlaždice se načetla (${worldSt.count} stanic)`);
   assertTrue(!!worldSt.near && /KJFK|KEWR/.test(worldSt.near.name),
     `nejbližší měřená stanice v New Yorku (${worldSt.near?.name} ${worldSt.near?.dist} km, ${worldSt.near?.temp} °C)`);
+  // Ve fixture je bóje BLÍŽ než obě letiště. Na mapě být musí — kvůli ní se
+  // NDBC tahá — ale referenční stanicí se stát nesmí: měří nad vodou a ten
+  // rozdíl by se v hodnocení modelů projevil jako jejich chyba.
+  assertTrue(!/bóje/.test(worldSt.near?.name || ""),
+    `bóje se nestala referenční stanicí, i když je nejblíž (${worldSt.near?.name})`);
+  assertTrue(worldSt.buoys >= 1,
+    `bóje se načetla do světové dlaždice (${worldSt.buoys})`);
 
   // odpočet srážek jede z RainViewer vzorků (sucho) + minutely modelu
   await pageG.waitForFunction(() => {

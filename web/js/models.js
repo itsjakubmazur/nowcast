@@ -91,6 +91,11 @@ export function nearestFreshStation(lat, lon) {
   let best = null, bd = Infinity, bestScore = Infinity;
   for (const s of all) {
     if (s.temp == null || s.lat == null) continue;
+    // Bóje měří nad vodou. Jako tečka na mapě je to poctivé měření, ale jako
+    // reference pro souš by lhala — moře je v létě chladnější a v zimě teplejší
+    // než pevnina pár kilometrů odtud, a tenhle rozdíl by se propsal do
+    // hodnocení modelů i do kontroly biasu jako jejich chyba.
+    if (s.source === "ndbc") continue;
     const age = ageMinutes(s.time_utc);
     if (age == null || age > 120) continue;  // ČHMÚ jede po hodinách — 90 min bylo těsné
     const d = haversine(lat, lon, s.lat, s.lon);
