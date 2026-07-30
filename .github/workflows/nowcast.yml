@@ -301,8 +301,17 @@ jobs:
             exit 0
           fi
           git commit -m "chore: publikační značka $(date -u +%H:%M) [skip ci]"
+          # -X theirs a úklid po nezdařeném rebase: značka se mění KAŽDÝ běh a
+          # běhy se překrývají (full běh trvá ~6 min, spouští se po 5), takže
+          # dva runnery si přepisují tytéž soubory a prostý rebase skončí
+          # konfliktem. Bez tohohle push třikrát selhal a značka vůbec
+          # nepřistála — což je přesně ten stav, kvůli kterému značka vznikla.
+          # Konflikt tu není informace: soubor je z definice "poslední vyhrává".
           for i in 1 2 3; do
-            git pull --rebase origin "${GITHUB_REF_NAME}" && git push origin "HEAD:${GITHUB_REF_NAME}" && break
+            git rebase --abort 2>/dev/null || true
+            git fetch origin "${GITHUB_REF_NAME}" \
+              && git rebase -X theirs "origin/${GITHUB_REF_NAME}" \
+              && git push origin "HEAD:${GITHUB_REF_NAME}" && break
             echo "Push pokus $i selhal, zkouším znovu za $((i*3))s"
             sleep $((i * 3))
           done
