@@ -115,6 +115,22 @@ def main():
     except Exception as e:
         print(f"  CHYBA: {str(e)[:160]}")
 
+    try:
+        _, eb = get(f"{SITE}/data/euro_stations.json")
+        eu = json.loads(eb)
+        sts = eu.get("stations") or []
+        by = {}
+        for st in sts:
+            by[st.get("country")] = by.get(st.get("country"), 0) + 1
+        print(f"  euro_stations.json: {len(sts)} stanic — "
+              + ", ".join(f"{k} {v}" for k, v in sorted(by.items())))
+        pl = [s for s in sts if s.get("country") == "PL"]
+        if pl:
+            b = pl[0]
+            print(f"    vzorek PL: {b['name']} {b['lat']},{b['lon']} {b['temp']} °C")
+    except Exception as e:
+        print(f"  euro_stations.json: {str(e)[:120]}")
+
     print("\n--- Cloudflare worker ---")
     # Sonda v prohlížeči zachytila, že /verdict padá na CORS: "No
     # 'Access-Control-Allow-Origin' header". Náš kód CORS hlavičky posílá na
