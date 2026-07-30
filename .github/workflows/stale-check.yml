@@ -48,10 +48,23 @@ jobs:
               owner: context.repo.owner, repo: context.repo.repo,
               state: "open", labels: "stale-data",
             });
-            const body = `Pipeline zjevně přestala publikovat čerstvá data.\n\n${reason}\n\n` +
-              "Zkontroluj poslední běh workflow `nowcast.yml` — GitHub Actions vypíná " +
-              "naplánované workflow po ~60 dnech neaktivity repa a cron na free tieru " +
-              "se může opozdit nebo přestat spouštět úplně.";
+            const body = `Publikovaná data jsou zastaralá.\n\n${reason}\n\n` +
+              "Pořadí, ve kterém to hledat — první bod není ten nejpravděpodobnější, " +
+              "ale ten nejrychleji vyloučitelný:\n\n" +
+              "1. **Běhy `nowcast.yml`.** Jedou vůbec? Cron na free tieru se umí " +
+              "opozdit a GitHub vypíná naplánované workflow po ~60 dnech neaktivity.\n" +
+              "2. **Deploy, který nedoručil.** Pokud běhy jedou a hlásí úspěch, " +
+              "podezřelý je Pages: `actions/deploy-pages` posílá jako verzi commit " +
+              "SHA, a když se repo nemění, jde do Pages pořád ta samá verze. " +
+              "Deployment se pak založí, ohlásí success a vrátí URL, ale obsah " +
+              "webu zůstane starý. Přesně tohle se stalo 30. 7. 2026 (6 hodin, " +
+              "~70 úspěšných deployů). Proti tomu je v pipeline commit publikační " +
+              "značky do `pipeline/state/last_publish.txt` — ověř, že poslední " +
+              "commity na main opravdu přibývají.\n" +
+              "3. **Zdroj dat ČHMÚ.** Radarové soubory nemusí být k dispozici.\n\n" +
+              "Sonda: workflow `probe-live.yml` ukáže, co web opravdu servíruje, " +
+              "v jakém stavu jsou Pages deploymenty a jestli appka v prohlížeči " +
+              "nehlásí chyby.";
             if (issues.length === 0) {
               await github.rest.issues.create({
                 owner: context.repo.owner, repo: context.repo.repo,

@@ -692,7 +692,12 @@ function locateMe(loud, { retry = false } = {}) {
         acc_m: Math.round(pos.coords.accuracy || 0) };
       // Automatický pokus nesmí přepsat místo, které si uživatel mezitím vybral.
       if (!loud && state.currentLat !== before) return;
+      // Když už na tom místě stojíš, nezmění se na obrazovce nic a tlačítko
+      // vypadá rozbitě. Krátká hláška říká, že se opravdu něco stalo.
+      const same = loud && Math.abs((state.currentLat ?? 999) - pos.coords.latitude) < 0.01
+        && Math.abs((state.currentLon ?? 999) - pos.coords.longitude) < 0.01;
       applyPosition(pos);
+      if (same) showToast("Jsi tam, kde už appka ukazuje počasí.", { timeoutMs: 2500 });
     },
     err => {
       window.__nowcastGeoLast = { ok: false, at: new Date().toISOString(),

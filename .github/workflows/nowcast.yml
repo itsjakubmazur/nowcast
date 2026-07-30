@@ -271,16 +271,36 @@ jobs:
           mkdir -p web/data
           cp -r data/* web/data/ 2>/dev/null || true
 
-      - name: Commit accuracy state (pokud se změnil)
+      # Značka publikace + stav verifikace. Značka NENÍ kosmetika, drží web živý:
+      #
+      # actions/deploy-pages posílá do Pages "pages_build_version", a ten se bere
+      # z commit SHA běhu. Když se repo nemění, jde do Pages pořád ta samá verze
+      # a GitHub ji v jednu chvíli přestane přebírat — deployment se založí,
+      # ohlásí "success", vrátí i URL prostředí, ale obsah webu se nezmění.
+      #
+      # 30. 7. 2026 se to stalo naostro: od 07:52 do 13:45 UTC běžela pipeline po
+      # pěti minutách, ~70 deployů skončilo úspěchem, a web přitom celou dobu
+      # servíroval data z 07:51 (origin, ne cache — x-cache: MISS, last-modified
+      # 07:56). Jakmile na main přistál nový commit, další běh se nasadil pod
+      # novým SHA a web byl čerstvý do dvou minut.
+      #
+      # Dřív se tenhle commit dělal jen "když se změnil state", což byla shodou
+      # okolností dost častá událost na to, aby SHA bylo pořád nové. Jak verify
+      # přešel na full běhy, commity ustaly — a s nimi i publikace.
+      #
+      # Značka jde do pipeline/state/, tedy do cesty, kterou nehlídá žádný
+      # workflow, a nese [skip ci], aby z ní nevznikaly další běhy.
+      - name: Commit publikační značku (drží Pages deploy živý) + stav verifikace
         run: |
-          if git diff --quiet -- pipeline/state/; then
-            echo "Bez změny ve state — přeskakuji commit."
-            exit 0
-          fi
+          date -u +"%Y-%m-%dT%H:%M:%SZ run=${GITHUB_RUN_ID}" > pipeline/state/last_publish.txt
           git config user.name "nowcast-bot"
           git config user.email "actions@users.noreply.github.com"
           git add pipeline/state/
-          git commit -m "chore: aktualizace stavu verifikace [skip ci]"
+          if git diff --cached --quiet; then
+            echo "Není co commitnout — neobvyklé, značka se mění každý běh."
+            exit 0
+          fi
+          git commit -m "chore: publikační značka $(date -u +%H:%M) [skip ci]"
           for i in 1 2 3; do
             git pull --rebase origin "${GITHUB_REF_NAME}" && git push origin "HEAD:${GITHUB_REF_NAME}" && break
             echo "Push pokus $i selhal, zkouším znovu za $((i*3))s"

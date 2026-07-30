@@ -92,6 +92,35 @@ def main():
     except Exception as e:
         print(f"  CHYBA: {e}")
 
+    print("\n--- Cloudflare worker ---")
+    # Sonda v prohlížeči zachytila, že /verdict padá na CORS: "No
+    # 'Access-Control-Allow-Origin' header". Náš kód CORS hlavičky posílá na
+    # všech cestách včetně chybových, takže odpověď bez nich nepřišla z našeho
+    # kódu, ale od Cloudflare (vyčerpaný limit, spadlý worker, 1101). Rozdíl
+    # pozná jen syrová odpověď i s hlavičkami.
+    for path in ("/cron-status",
+                 "/verdict?lat=49.86&lon=18.36&label=Rychvald&radar=dry"):
+        u = f"https://nowcast-narrate.kubajzek.workers.dev{path}"
+        try:
+            req = urllib.request.Request(u, headers={
+                "User-Agent": "nowcast-probe",
+                "Origin": "https://itsjakubmazur.github.io",
+            })
+            with urllib.request.urlopen(req, timeout=45) as r:
+                body = r.read(400).decode("utf-8", "replace")
+                print(f"  {path.split('?')[0]}: HTTP {r.status}")
+                print(f"    ACAO: {r.headers.get('access-control-allow-origin')}")
+                print(f"    cf-ray: {r.headers.get('cf-ray')}  "
+                      f"content-type: {r.headers.get('content-type')}")
+                print(f"    tělo: {body[:300]}")
+        except urllib.error.HTTPError as e:
+            body = e.read(400).decode("utf-8", "replace")
+            print(f"  {path.split('?')[0]}: HTTP {e.code}")
+            print(f"    ACAO: {e.headers.get('access-control-allow-origin')}")
+            print(f"    tělo: {body[:300]}")
+        except Exception as e:
+            print(f"  {path.split('?')[0]}: CHYBA {e}")
+
     print("\n--- pages/builds (starší API, ukáže i chybu buildu) ---")
     try:
         b = api("/pages/builds?per_page=5")
