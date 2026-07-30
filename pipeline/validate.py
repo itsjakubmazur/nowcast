@@ -122,6 +122,44 @@ def main():
         sys.exit(1)
 
     print(f"✓ validate.py OK ({len(warnings)} nekritických varování)")
+    summarize()
+
+
+def summarize():
+    """
+    Jednořádkový soupis toho, co se právě publikuje.
+
+    Vzniklo z praktické potřeby: kroky pipeline píšou své počty rozeseté po
+    celém logu a některé selžou tiše (nechají starý soubor a tváří se jako
+    úspěch). Tenhle řádek je poslední před uploadem, takže stačí kouknout na
+    konec logu a je vidět, co je opravdu v datech.
+    """
+    parts = []
+    for name, key in (("chmi_stations.json", "stations"),
+                      ("metar_stations.json", "stations"),
+                      ("euro_stations.json", "stations"),
+                      ("chmi_rain.json", "stations"),
+                      ("wu_stations.json", "stations")):
+        try:
+            d = json.loads((DATA_DIR / name).read_text())
+            parts.append(f"{name.replace('_stations.json', '').replace('.json', '')}={len(d.get(key) or [])}")
+        except Exception:
+            parts.append(f"{name.split('.')[0]}=—")
+    try:
+        idx = json.loads((DATA_DIR / "metar" / "index.json").read_text())
+        parts.append(f"svět={idx.get('stations')}")
+    except Exception:
+        parts.append("svět=—")
+    try:
+        eu = json.loads((DATA_DIR / "euro_stations.json").read_text()).get("stations") or []
+        by = {}
+        for st in eu:
+            by[st.get("country")] = by.get(st.get("country"), 0) + 1
+        if by:
+            parts.append("sousedé[" + " ".join(f"{k}:{v}" for k, v in sorted(by.items())) + "]")
+    except Exception:
+        pass
+    print("  publikuje se: " + ", ".join(parts))
 
 
 if __name__ == "__main__":
