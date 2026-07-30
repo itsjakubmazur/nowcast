@@ -475,8 +475,12 @@ async function main() {
 
   // ── Výstražné chipy (z GRID.warnings + wmatch) ───────────────────────────
   await page.waitForSelector(".warn-chip", { timeout: 5000 });
-  const chipText = await page.textContent(".warn-chip");
-  assertTrue(chipText.includes("Bouřky"), `výstražný chip "Bouřky" se zobrazil (obsah: "${chipText}")`);
+  // Ne první v pořadí — pruh řadí od nejzávažnější, takže bouřky mezi jinými
+  // oranžovými výstrahami klidně skončí až za nimi. Stačí, že tam jsou.
+  const chipTexts = await page.evaluate(() =>
+    [...document.querySelectorAll("#alert-bar .warn-chip")].map(c => c.textContent.trim()));
+  assertTrue(chipTexts.some(t => t.includes("Bouřky")),
+    `výstražný chip "Bouřky" se zobrazil (${chipTexts.join(" | ")})`);
   // Fixture má tutéž výstrahu 2× (ČHMÚ ji publikuje per oblast) — UI ji smí
   // ukázat jen jednou (regrese "Riziko požárů" 3× vedle sebe). Pozor na rozdíl
   // proti seskupování: TOHLE jsou dvě identické výstrahy, ne tentýž jev na dva
@@ -962,6 +966,26 @@ async function main() {
       [...document.querySelectorAll("#alert-bar .warn-chip")].map(c => c.title));
     assertTrue(spans.some(t => /platí .+ – .+/.test(t)),
       `platnost výstrahy je v nápovědě štítku (${spans.filter(Boolean).join(" | ")})`);
+
+    // Stupně téhož jevu: "Silná zátěž teplem" vedle "Velmi silné" je jen ta
+    // samá věc slabším písmem. Zůstat smí nejsilnější stupeň — a to i v
+    // rozbaleném stavu, kde by se slabší jinak vrátila zadními vrátky.
+    const all = await page.evaluate(() => {
+      const b = document.getElementById("alert-bar");
+      if (!b.classList.contains("expanded")) b.click();
+      return [...b.querySelectorAll(".warn-chip")].map(c => c.textContent.trim());
+    });
+    await page.evaluate(() => document.getElementById("alert-bar").click());
+    assertTrue(all.includes("Velmi silná zátěž teplem"),
+      `nejsilnější stupeň zůstal (${all.join(" | ")})`);
+    assertTrue(!all.includes("Silná zátěž teplem"),
+      `slabší stupeň téhož jevu zmizel (${all.join(" | ")})`);
+    assertTrue(all.includes("Velmi vysoké teploty") && !all.includes("Vysoké teploty"),
+      `sloučení funguje i u teplot (${all.join(" | ")})`);
+    // Pojistka proti přehnanému slučování: "Nízké teploty" nejsou slabší
+    // verze "Vysokých teplot", je to opačný jev a musí přežít samostatně.
+    assertTrue(all.includes("Nízké teploty"),
+      `opačný jev se neslije do jedné rodiny (${all.join(" | ")})`);
     // Zalomený text = vysoký štítek. Jednořádkový štítek má do ~30 px.
     assertTrue(bar.heights.every(h => h <= 34),
       `žádný štítek se nezalomil do víc řádků (výšky ${bar.heights.join(",")})`);

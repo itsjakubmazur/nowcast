@@ -184,8 +184,43 @@ export function warningsForPt(ptId) {
 // tři výstrahy na tři dny za sebou nejsou třikrát horší vedro, je to jedno
 // vedro do čtvrtka. Do štítku proto jde jen jev a do bublinkové nápovědy
 // celý rozsah platnosti, což je informace, kterou člověk opravdu chce.
+// A ještě o patro výš: "Silná zátěž teplem" vedle "Velmi silné zátěže teplem"
+// není druhá informace, je to tatáž věc o stupeň slabší. ČHMÚ takhle vydává
+// celé rodiny jevů ve stupních (silný / velmi silný / extrémní vítr, zátěž
+// teplem, bouřky…) a v pruhu z toho vzniká šum. Ze skupiny se proto ukáže jen
+// nejsilnější stupeň.
+//
+// Sloučení se dělá podle názvu, což je křehké, takže je schválně opatrné:
+// zahazují se JEN zesilující přívlastky, nikdy slova určující směr jevu.
+// Proto "vysoké"/"nízké" v seznamu nejsou — jinak by se "Vysoké teploty" a
+// "Nízké teploty" slily do jedné rodiny "teploty", což jsou opačné jevy.
+//   Silná / Velmi silná / Extrémní zátěž teplem → "zátěž teplem"   (slije se)
+//   Vysoké teploty vs. Velmi vysoké teploty     → "vysoké teploty" (slije se)
+//   Vysoké teploty vs. Nízké teploty            → různé rodiny      (nesleje)
 const SEVERITY = { red: 3, orange: 2, yellow: 1 };
 const MAX_VISIBLE_CHIPS = 3;
+const AMPLIFIERS = new Set([
+  "velmi", "extrémně", "extrémní", "mimořádně", "mimořádná", "mimořádné",
+  "silná", "silný", "silné", "vydatný", "vydatná", "vydatné",
+]);
+
+// Rodina jevu = název bez zesilujících přívlastků na začátku.
+function familyKey(event) {
+  const words = String(event || "").toLowerCase().trim().split(/\s+/);
+  let i = 0;
+  while (i < words.length && AMPLIFIERS.has(words[i])) i++;
+  // Kdyby byl název složený jen z přívlastků, radši ho nech být celý —
+  // prázdný klíč by slil všechno se vším.
+  return (i < words.length ? words.slice(i) : words).join(" ");
+}
+
+// Stupeň zapsaný v názvu. Slouží jen jako rozhodčí při shodě barev.
+function nameRank(event) {
+  const e = String(event || "").toLowerCase();
+  if (e.includes("extrém") || e.includes("mimořádn")) return 3;
+  if (e.includes("velmi")) return 2;
+  return 1;
+}
 
 // Rozsah přes víc dní potřebuje i den, ne jen hodinu — "platí 08:00 – 20:00"
 // by u třídenní výstrahy lhalo. Dnešek zůstává bez data, ať to není upovídané.
@@ -207,24 +242,35 @@ function groupSpan(g) {
 export function warningChips(warns) {
   const groups = new Map();
   for (const w of warns) {
+    const key = familyKey(w.event);
     const rank = SEVERITY[w.color] || 0;
-    const g = groups.get(w.event);
+    const nrank = nameRank(w.event);
+    const g = groups.get(key);
     if (!g) {
-      groups.set(w.event, {
-        event: w.event, color: w.color, rank,
+      groups.set(key, {
+        event: w.event, color: w.color, rank, nrank,
         onset: w.onset_utc, expires: w.expires_utc,
       });
       continue;
     }
-    // Ve skupině vyhrává nejzávažnější barva — jinak by červená výstraha
-    // zmizela pod žlutou jen proto, že přišla později.
-    if (rank > g.rank) { g.rank = rank; g.color = w.color; }
-    // Platnost se roztáhne přes všechna opakování: od prvního začátku po
-    // poslední konec. Tři denní výstrahy tak dají jeden souvislý rozsah.
+    // O vítězi rozhoduje barva, teprve při shodě stupeň v názvu. Barva je to
+    // jediné, co ČHMÚ garantuje napříč jevy; název je jen text.
+    const stronger = rank > g.rank || (rank === g.rank && nrank > g.nrank);
+    if (stronger) {
+      // Slabší stupeň se zahodí celý včetně své platnosti. Roztáhnout rozsah
+      // přes celou rodinu by lhalo: kdyby "silná" trvala do neděle a "velmi
+      // silná" jen v sobotu, štítek by tvrdil, že do neděle platí ta silnější.
+      g.event = w.event; g.color = w.color; g.rank = rank; g.nrank = nrank;
+      g.onset = w.onset_utc; g.expires = w.expires_utc;
+      continue;
+    }
+    if (rank < g.rank || nrank < g.nrank) continue;   // slabší stupeň → pryč
+    // Stejně silná výstraha vydaná znovu (typicky na další den): platnost se
+    // roztáhne od prvního začátku po poslední konec.
     if (w.onset_utc && w.onset_utc < g.onset) g.onset = w.onset_utc;
     if (w.expires_utc && w.expires_utc > g.expires) g.expires = w.expires_utc;
   }
-  const list = [...groups.values()].sort((a, b) => b.rank - a.rank);
+  const list = [...groups.values()].sort((a, b) => b.rank - a.rank || b.nrank - a.nrank);
   const chip = g => {
     const cls = ["yellow", "orange", "red"].includes(g.color) ? g.color : "unknown";
     const span = groupSpan(g);
@@ -243,7 +289,12 @@ export function templateVerdict(ptId) {
   const chips = warns.length ? warningChips(warns) : null;
 
   if (warns.length) {
-    const w = warns[0];
+    // Ne první v pořadí, ale nejzávažnější — jinak by karta mluvila o žluté
+    // výstraze, zatímco pruh nad ní svítí oranžovou. Pořadí, v jakém výstrahy
+    // chodí z ČHMÚ, není žebříček.
+    const w = [...warns].sort((a, b) =>
+      (SEVERITY[b.color] || 0) - (SEVERITY[a.color] || 0)
+      || nameRank(b.event) - nameRank(a.event))[0];
     const barva = COLOR_CZ[w.color] || w.color;
     sentences.push(`ČHMÚ vydalo ${barva} výstrahu (${w.event}), platnou od ${localHM(w.onset_utc)} do ${localHM(w.expires_utc)}.`);
   }
