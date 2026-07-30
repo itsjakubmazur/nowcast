@@ -1,0 +1,114 @@
+"""
+Sonda: proč se nasazený web nemění, i když každý běh hlásí úspěšný deploy.
+
+Pozorovaný stav: pipeline jede po pěti minutách, krok "Deploy to GitHub Pages"
+hlásí "Reported success!", ale https://itsjakubmazur.github.io/nowcast/ dál
+servíruje data z jednoho konkrétního okamžiku. Kontrolní workflow stale-check
+to potvrdil z druhé strany (338 minut staré při zcela zdravé pipeline), takže
+to není chyba appky ani prohlížeče.
+
+Tenhle skript se ptá GitHubu na jeho vlastní pohled: co je zač poslední
+deployment prostředí github-pages, jaké má stavy a co říká Pages API o stavu
+webu. Běží z runneru, protože ze sandboxu není api.github.com ani github.io
+dosažitelné.
+"""
+
+import json
+import os
+import sys
+import urllib.request
+from datetime import datetime, timezone
+
+REPO = os.environ.get("GITHUB_REPOSITORY", "itsjakubmazur/nowcast")
+TOKEN = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+SITE = "https://itsjakubmazur.github.io/nowcast"
+
+
+def api(path):
+    req = urllib.request.Request(
+        f"https://api.github.com/repos/{REPO}{path}",
+        headers={
+            "Authorization": f"Bearer {TOKEN}",
+            "Accept": "application/vnd.github+json",
+            "User-Agent": "nowcast-probe",
+        },
+    )
+    with urllib.request.urlopen(req, timeout=30) as r:
+        return json.load(r)
+
+
+def get(url):
+    req = urllib.request.Request(url, headers={"User-Agent": "nowcast-probe"})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        return r.headers, r.read()
+
+
+def main():
+    now = datetime.now(timezone.utc)
+    print(f"=== Sonda GitHub Pages — {now.isoformat()} ===\n")
+
+    print("--- co web opravdu servíruje ---")
+    try:
+        headers, body = get(f"{SITE}/data/radar_manifest.json")
+        m = json.loads(body)
+        gen = m.get("generated_at_utc")
+        t = datetime.fromisoformat(str(gen).replace("Z", "+00:00"))
+        print(f"  generated_at_utc: {gen}")
+        print(f"  stáří:            {int((now - t).total_seconds() // 60)} min")
+        for h in ("age", "cache-control", "etag", "last-modified", "x-served-by",
+                  "x-cache", "x-cache-hits", "x-timer", "server", "date"):
+            if headers.get(h):
+                print(f"  {h}: {headers[h]}")
+    except Exception as e:
+        print(f"  CHYBA: {e}")
+
+    print("\n--- nastavení Pages ---")
+    try:
+        p = api("/pages")
+        for k in ("status", "build_type", "source", "html_url", "public",
+                  "protected_domain_state", "pending_domain_unverified_at"):
+            if k in p:
+                print(f"  {k}: {p[k]}")
+    except Exception as e:
+        print(f"  CHYBA: {e}")
+
+    print("\n--- posledních 10 deploymentů prostředí github-pages ---")
+    # Tady je jádro otázky: deployment se identifikuje verzí, kterou
+    # actions/deploy-pages odvozuje z commit SHA. Když se repo nemění,
+    # posílá každý běh tu samou verzi. Chceme vidět, jestli GitHub takové
+    # deploymenty vůbec zakládá, nebo je zahazuje jako duplicitní.
+    try:
+        deps = api("/deployments?environment=github-pages&per_page=10")
+        for d in deps:
+            print(f"  id={d['id']}  {d['created_at']}  sha={d['sha'][:8]}  "
+                  f"{d.get('description') or ''}")
+        if deps:
+            print("\n--- stavy nejnovějšího deploymentu ---")
+            for s in api(f"/deployments/{deps[0]['id']}/statuses?per_page=10"):
+                print(f"  {s['created_at']}  {s['state']}  "
+                      f"{(s.get('description') or '')[:140]}")
+                if s.get("environment_url"):
+                    print(f"      {s['environment_url']}")
+    except Exception as e:
+        print(f"  CHYBA: {e}")
+
+    print("\n--- pages/builds (starší API, ukáže i chybu buildu) ---")
+    try:
+        b = api("/pages/builds?per_page=5")
+        if isinstance(b, dict):
+            print(f"  {b}")
+        else:
+            for x in b:
+                err = (x.get("error") or {}).get("message")
+                print(f"  {x['created_at']}  {x['status']}  {err or ''}")
+    except Exception as e:
+        print(f"  CHYBA: {e}")
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception:
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
