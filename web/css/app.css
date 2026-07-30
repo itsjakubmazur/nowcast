@@ -242,6 +242,19 @@ button.glass-btn:active { transform: scale(.94); }
 button.glass-btn.icon-only { padding: 0; width: 36px; }
 button.glass-btn svg { width: 17px; height: 17px; display: block; }
 #btn-refresh.spinning { opacity: .5; pointer-events: none; }
+
+/* Zjišťování polohy. Dřív se stav psal do textContent tlačítka, což smazalo
+   jeho SVG zaměřovač a nahradilo ho textem (a při chybě emoji 📍, které tam
+   pak zůstalo natrvalo). Stav proto nese třída, ikona zůstává ikonou. */
+#geo.locating { opacity: .6; pointer-events: none; }
+#geo.locating svg { animation: geo-pulse 1s ease-in-out infinite; transform-origin: 50% 50%; }
+@keyframes geo-pulse {
+  0%, 100% { opacity: .45; transform: scale(.86); }
+  50%      { opacity: 1;   transform: scale(1.06); }
+}
+@media (prefers-reduced-motion: reduce) {
+  #geo.locating svg { animation: none; }
+}
 #refresh-time {
   color: var(--muted); font-size: .72rem; font-weight: 600; white-space: nowrap;
   border-radius: 999px; padding: .42rem .85rem;

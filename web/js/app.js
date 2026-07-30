@@ -375,6 +375,46 @@ function initOfflineBadge() {
   update();
 }
 
+// ── Obnova po probuzení ──────────────────────────────────────────────────────
+// setInterval sám nestačí a je to pro nowcast dost zásadní.
+//
+// Prohlížeče časovače na kartě v pozadí brzdí (Chrome je stlačí na jeden tik za
+// minutu) a zmrazené nebo odložené karty je nespustí vůbec. Mobil je horší: PWA
+// v pozadí systém uspí celou a při návratu pokračuje přesně tam, kde skončila —
+// bez nového načtení stránky. Uživatel se tedy vrátí k appce a kouká na data
+// hodiny stará, protože jediný spouštěč obnovy (tik časovače) se nikdy nekonal.
+//
+// Proto: při každém návratu do popředí se podívej, jak stará data držíme, a když
+// jsou starší než FOREGROUND_MAX_AGE_MS, natáhni nová. Podmínka tam je, aby
+// přepínání karet netlouklo na server zbytečně.
+const FOREGROUND_MAX_AGE_MS = 2 * 60 * 1000;
+
+function dataAgeMs() {
+  const gen = state.MANIFEST?.generated_at_utc;
+  if (!gen) return Infinity;
+  const t = new Date(gen).getTime();
+  return Number.isFinite(t) ? Date.now() - t : Infinity;
+}
+
+function initWakeRefresh() {
+  let last = 0;
+  const wake = why => {
+    if (document.visibilityState === "hidden") return;
+    if (Date.now() - last < 15000) return;      // ochrana proti sérii událostí
+    if (dataAgeMs() < FOREGROUND_MAX_AGE_MS) return;
+    last = Date.now();
+    refreshAll();
+    checkRainNotifications();
+    if (window.__nowcastDebug) console.log("obnova po probuzení:", why);
+  };
+  document.addEventListener("visibilitychange", () => wake("visibilitychange"));
+  window.addEventListener("focus", () => wake("focus"));
+  // pageshow s persisted=true = návrat z back/forward cache, kde stránka běží
+  // dál z paměti a DOMContentLoaded se už nekoná.
+  window.addEventListener("pageshow", e => { if (e.persisted) wake("pageshow"); });
+  window.addEventListener("online", () => wake("online"));
+}
+
 // ── Refresh ───────────────────────────────────────────────────────────────────
 async function refreshAll() {
   const btn = document.getElementById("btn-refresh");
@@ -422,6 +462,23 @@ function initMorePanels() {
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
+// Izolace kroků inicializace. Bez ní platí, že první výjimka v init() zabije
+// VŠECHNO, co se registruje za ní — a protože zapojení tlačítek a nastavení
+// automatického obnovování jsou až na konci, projeví se to jako "appka se
+// vykreslila, ale nejde geolokace a data se neobnovují". Tuhle chybu jsme tu
+// už měli (tlačítka omylem v chybové větvi), takže radši strukturálně.
+// Chyba se NESKRÝVÁ — vypíše se do konzole a uloží do window.__nowcastInitFail,
+// kde ji najde sonda tests/probe_live.mjs.
+function step(name, fn) {
+  try {
+    return fn();
+  } catch (e) {
+    console.error(`init krok "${name}" spadl:`, e);
+    (window.__nowcastInitFail ||= []).push(`${name}: ${e.message}`);
+    return null;
+  }
+}
+
 window.addEventListener("DOMContentLoaded", async () => {
   initTheme();
   initToastClose();
@@ -447,20 +504,23 @@ window.addEventListener("DOMContentLoaded", async () => {
   initMap((lat, lon) => showForecast(lat, lon, "Bod na mapě"));
   document.getElementById("radar-bar").style.display = "block";
   observeRadarBarHeight();
-  applyManifestUI();
-  renderFavRow(showForecast);
-  renderWuOwnPanel(); renderWuMarkers(); renderChmiMarkers(); renderWarningsLayer();
-  renderStormTracks();
-  checkRainNotifications();
-  initPushButton();
-  initSearch(showForecast);
-  initAiAsk();
-  initLightning();
-  initOfflineBadge();
-  initSheetDrag();
-  applySettingsOnLoad();   // výchozí vrstva + rychlost animace z Nastavení
-  initSettingsPanel();
-  initCompare();
+  step("applyManifestUI", applyManifestUI);
+  step("favRow", () => renderFavRow(showForecast));
+  step("wuOwnPanel", renderWuOwnPanel);
+  step("wuMarkers", renderWuMarkers);
+  step("chmiMarkers", renderChmiMarkers);
+  step("warningsLayer", renderWarningsLayer);
+  step("stormTracks", renderStormTracks);
+  step("rainNotifications", checkRainNotifications);
+  step("pushButton", initPushButton);
+  step("search", () => initSearch(showForecast));
+  step("aiAsk", initAiAsk);
+  step("lightning", initLightning);
+  step("offlineBadge", initOfflineBadge);
+  step("sheetDrag", initSheetDrag);
+  step("settings", applySettingsOnLoad);   // výchozí vrstva + rychlost animace
+  step("settingsPanel", initSettingsPanel);
+  step("compare", initCompare);
   window.addEventListener("nowcast:layer-changed", () => renderChmiMarkers());
 
   // ── Radar ovládání ────────────────────────────────────────────────────────
@@ -491,25 +551,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   document.getElementById("opacity-slider").addEventListener("input", e => setOpacity(+e.target.value));
 
   // ── Geolokace ─────────────────────────────────────────────────────────────
-  document.getElementById("geo").addEventListener("click", () => {
-    if (!navigator.geolocation) { showToast("Geolokace není podporována."); return; }
-    const btn = document.getElementById("geo");
-    btn.textContent = "📍 Zjišťuji…"; btn.disabled = true;
-    navigator.geolocation.getCurrentPosition(
-      async p => {
-        const { latitude, longitude } = p.coords;
-        let label = "Moje poloha";
-        try {
-          const name = await reverseGeocode(latitude, longitude);
-          if (name) label = name;
-        } catch { /* fallback na "Moje poloha" */ }
-        btn.textContent = "📍"; btn.disabled = false;
-        showForecast(latitude, longitude, label);
-      },
-      () => { btn.textContent = "📍"; btn.disabled = false; showToast("Polohu se nepodařilo zjistit."); },
-      { timeout: 10000 }
-    );
-  });
+  document.getElementById("geo").addEventListener("click", () => locateMe(true));
 
   // ── Refresh / vrstvy / globální radar ────────────────────────────────────
   document.getElementById("btn-refresh").addEventListener("click", refreshAll);
@@ -525,6 +567,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   initAccumButton();
   initWorldTemps();   // teploty ze stanic — zapnuté nativně, tlačítko je skrývá
   setInterval(() => { refreshAll(); checkRainNotifications(); }, AUTO_REFRESH_MS);
+  initWakeRefresh();  // po probuzení karty/appky se data dotáhnou hned
 
   document.getElementById("chmi-detail-close").addEventListener("click", closeChmiDetail);
 
@@ -576,7 +619,95 @@ window.addEventListener("DOMContentLoaded", async () => {
     else if (favs.length) showForecast(favs[0].lat, favs[0].lon, favs[0].label);
     autoLocateOnStart();
   }
+
+  // Značka pro diagnostiku (tests/probe_live.mjs): init doběhl až sem, takže
+  // všechna tlačítka i automatická obnova jsou zapojené.
+  window.__nowcastInitDone = true;
 });
+
+// ── Geolokace ────────────────────────────────────────────────────────────────
+// Jedna cesta pro tlačítko i pro automatické zjištění při startu. Dřív to byly
+// dvě samostatné implementace s různými limity a různým (ne)hlášením chyb, což
+// je přesně ten důvod, proč "polohu se nepodařilo zjistit" nešlo diagnostikovat:
+// hláška neřekla PROČ.
+//
+// Co se změnilo proti původní verzi a proč:
+//   · timeout 10 s → 20 s. Deset sekund je málo. Na mobilu bez čerstvého fixu
+//     trvá GPS klidně 15 s a Chrome na desktopu se ptá síťové služby Googlu,
+//     což za horších podmínek taky přesáhne 10 s. Vypršení limitu se přitom
+//     tváří stejně jako "poloha nedostupná".
+//   · po vypršení limitu jeden opakovaný pokus, který přijme i starší fix
+//     (maximumAge: Infinity). Poloha z posledních minut je pro počasí naprosto
+//     dostačující — lepší než nic.
+//   · hlášky podle e.code, ne jedna univerzální. Uživatel (a já) potřebuje
+//     vědět, jestli jde o zamítnuté oprávnění, nedostupnou službu, nebo limit.
+const GEO_REASON = {
+  1: "Přístup k poloze je zamítnutý. Povol ho v nastavení prohlížeče (ikona vlevo v adresním řádku).",
+  2: "Prohlížeč polohu nezjistil — služba určování polohy je nedostupná. Na desktopu ji hlídá systém (Windows: Nastavení → Soukromí → Poloha).",
+  3: "Určování polohy trvalo moc dlouho a vypršelo. Zkus to prosím znovu.",
+};
+
+function geoOptions(retry) {
+  return retry
+    ? { timeout: 25000, maximumAge: Infinity, enableHighAccuracy: false }
+    : { timeout: 20000, maximumAge: 5 * 60 * 1000, enableHighAccuracy: false };
+}
+
+async function applyPosition(pos) {
+  const { latitude, longitude } = pos.coords;
+  let label = "Moje poloha";
+  try {
+    const name = await reverseGeocode(latitude, longitude);
+    if (name) label = name;
+  } catch { /* fallback na "Moje poloha" */ }
+  showForecast(latitude, longitude, label);
+}
+
+/**
+ * Zjisti polohu a zobraz pro ni počasí.
+ * @param {boolean} loud  true = uživatel klikl (ukaž průběh i chybu),
+ *                        false = automaticky při startu (tiše)
+ */
+function locateMe(loud, { retry = false } = {}) {
+  const btn = document.getElementById("geo");
+  if (!navigator.geolocation) {
+    if (loud) showToast("Tvůj prohlížeč geolokaci nepodporuje.");
+    return;
+  }
+  // Bez HTTPS geolokaci prohlížeče blokují úplně a chyba přijde až v callbacku
+  // jako "nedostupná" — což mate. Řekneme to rovnou.
+  if (!window.isSecureContext) {
+    if (loud) showToast("Poloha jde zjistit jen přes HTTPS.");
+    return;
+  }
+  if (loud && btn) { btn.classList.add("locating"); btn.disabled = true; }
+
+  const done = () => { if (btn) { btn.classList.remove("locating"); btn.disabled = false; } };
+  const before = state.currentLat;
+
+  navigator.geolocation.getCurrentPosition(
+    pos => {
+      done();
+      window.__nowcastGeoLast = { ok: true, at: new Date().toISOString(),
+        acc_m: Math.round(pos.coords.accuracy || 0) };
+      // Automatický pokus nesmí přepsat místo, které si uživatel mezitím vybral.
+      if (!loud && state.currentLat !== before) return;
+      applyPosition(pos);
+    },
+    err => {
+      window.__nowcastGeoLast = { ok: false, at: new Date().toISOString(),
+        code: err.code, message: err.message };
+      // Vypršelo? Zkus podruhé a ber i starší fix — na to obvykle stačí.
+      if (err.code === 3 && !retry) {
+        locateMe(loud, { retry: true });
+        return;
+      }
+      done();
+      if (loud) showToast(GEO_REASON[err.code] || `Polohu se nepodařilo zjistit (${err.message}).`);
+    },
+    geoOptions(retry),
+  );
+}
 
 // Při startu zkus zobrazit počasí podle aktuální polohy uživatele. Placeholder
 // (poslední/oblíbené místo) je už vykreslený, takže tohle jen dobehne a nahradí
@@ -586,23 +717,15 @@ async function autoLocateOnStart() {
   if (!navigator.geolocation) return;
   try {
     const st = await navigator.permissions?.query({ name: "geolocation" });
-    if (st && st.state === "denied") return; // dřív zamítnuto → neptej se znovu
+    if (st && st.state === "denied") {
+      // Tichý start se neptá, ale uživatel má vědět, proč se poloha neurčila —
+      // jinak to vypadá jako rozbitá appka. Tlačítko dostane nápovědu.
+      const btn = document.getElementById("geo");
+      if (btn) btn.title = "Přístup k poloze je zamítnutý — povol ho v nastavení prohlížeče";
+      return;
+    }
   } catch { /* Permissions API nemusí být — pokračuj, getCurrentPosition si prompt vyřeší */ }
-
-  const before = state.currentLat; // co je teď zobrazeno (placeholder nebo null)
-  navigator.geolocation.getCurrentPosition(
-    async pos => {
-      // Uživatel mezitím sám vybral místo? Nepřepisuj mu ho.
-      if (state.currentLat !== before) return;
-      const { latitude, longitude } = pos.coords;
-      let label = "Moje poloha";
-      try { const name = await reverseGeocode(latitude, longitude); if (name) label = name; }
-      catch { /* fallback na "Moje poloha" */ }
-      showForecast(latitude, longitude, label);
-    },
-    () => { /* zamítnuto / nedostupné — placeholder zůstává */ },
-    { timeout: 10000, maximumAge: 10 * 60 * 1000 }
-  );
+  locateMe(false);
 }
 
 // ── Service Worker ────────────────────────────────────────────────────────────

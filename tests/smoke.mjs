@@ -919,6 +919,85 @@ async function main() {
   assertTrue(errG0.length === 0, `žádné JS chyby při auto-poloze (nalezeno ${errG0.length})`);
   await geoCtx.close();
 
+  // ── init() musí doběhnout celý ─────────────────────────────────────────────
+  // Motivace je konkrétní: init registruje geolokaci, automatickou obnovu a
+  // většinu tlačítek až na konci. Když cokoli před tím spadne, appka se
+  // vykreslí, ale tyhle věci nefungují — což se navenek tváří jako "web jde,
+  // jen neurčí polohu a data se neobnovují". Značka __nowcastInitDone tuhle
+  // třídu chyb odhalí v testu, ne až u uživatele.
+  {
+    const okDone = await waitForAsync(page, () => window.__nowcastInitDone === true, 8000);
+    assertTrue(okDone, "init() doběhl celý (window.__nowcastInitDone)");
+    const fails = await page.evaluate(() => window.__nowcastInitFail || []);
+    assertTrue(fails.length === 0, `žádný krok init() nespadl (${fails.join("; ") || "0"})`);
+  }
+
+  // ── Obnova po probuzení karty ─────────────────────────────────────────────
+  // Prohlížeč na kartě v pozadí brzdí nebo úplně zastaví setInterval a uspaná
+  // PWA po návratu pokračuje bez nového načtení. Bez reakce na návrat do
+  // popředí zůstane na obrazovce, co se stáhlo naposled — třeba pět hodin staré.
+  const wakeCtx = async (ageMin) => {
+    const c = await browser.newContext({ serviceWorkers: "block" });
+    const p = await c.newPage();
+    let manifestHits = 0;
+    await p.route("**/data/radar_manifest.json*", async route => {
+      manifestHits++;
+      const j = JSON.parse(fs.readFileSync(path.join(SERVE, "data", "radar_manifest.json"), "utf8"));
+      j.generated_at_utc = new Date(Date.now() - ageMin * 60000).toISOString();
+      await route.fulfill({ body: JSON.stringify(j), contentType: "application/json" });
+    });
+    await p.route("https://unpkg.com/leaflet@1.9.4/dist/leaflet.js", route => route.fulfill({ path: path.join(FIXTURES, "leaflet-stub.js"), contentType: "text/javascript" }));
+    await p.route("https://unpkg.com/leaflet@1.9.4/dist/leaflet.css", route => route.fulfill({ body: "", contentType: "text/css" }));
+    await p.route("https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js", route => route.fulfill({ path: path.join(FIXTURES, "chart-stub.js"), contentType: "text/javascript" }));
+    await p.route("https://fonts.googleapis.com/**", route => route.fulfill({ body: "", contentType: "text/css" }));
+    await p.route("https://api.open-meteo.com/v1/forecast**", route => route.fulfill({ body: JSON.stringify(omFixture), contentType: "application/json" }));
+    await p.route("https://air-quality-api.open-meteo.com/**", route => route.fulfill({ body: "{}", contentType: "application/json" }));
+    await p.route("https://archive-api.open-meteo.com/**", route => route.fulfill({ body: JSON.stringify(buildArchiveFixture()), contentType: "application/json" }));
+    await p.route("https://ensemble-api.open-meteo.com/**", route => route.fulfill({ body: "{}", contentType: "application/json" }));
+    await p.route("https://*.workers.dev/**", route => route.fulfill({ body: "{}", contentType: "application/json" }));
+    await p.goto(`${base}/?lat=50.09&lon=14.40&q=TestObec`, { waitUntil: "load" });
+    await waitForAsync(p, () => window.__nowcastInitDone === true, 8000);
+    const before = manifestHits;
+    await p.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+    await p.waitForTimeout(1200);
+    const after = manifestHits;
+    await c.close();
+    return after - before;
+  };
+  assertTrue(await wakeCtx(45) > 0,
+    "návrat do popředí s 45 min starými daty spustí obnovu");
+  assertTrue(await wakeCtx(0) === 0,
+    "návrat do popředí s čerstvými daty na server nesahá (žádné zbytečné dotazy)");
+
+  // ── Geolokace: chyba musí říct DŮVOD ──────────────────────────────────────
+  // Původní hláška byla vždycky "Polohu se nepodařilo zjistit." — z toho se
+  // nedá poznat, jestli je zamítnuté oprávnění, nebo jen vypršel limit, takže
+  // to nešlo ani opravit, ani poradit uživateli.
+  {
+    const denyCtx = await browser.newContext({ serviceWorkers: "block" }); // bez permission = zamítnuto
+    const pd = await denyCtx.newPage();
+    await pd.route("https://unpkg.com/leaflet@1.9.4/dist/leaflet.js", route => route.fulfill({ path: path.join(FIXTURES, "leaflet-stub.js"), contentType: "text/javascript" }));
+    await pd.route("https://unpkg.com/leaflet@1.9.4/dist/leaflet.css", route => route.fulfill({ body: "", contentType: "text/css" }));
+    await pd.route("https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js", route => route.fulfill({ path: path.join(FIXTURES, "chart-stub.js"), contentType: "text/javascript" }));
+    await pd.route("https://fonts.googleapis.com/**", route => route.fulfill({ body: "", contentType: "text/css" }));
+    await pd.route("https://api.open-meteo.com/v1/forecast**", route => route.fulfill({ body: JSON.stringify(omFixture), contentType: "application/json" }));
+    await pd.route("https://air-quality-api.open-meteo.com/**", route => route.fulfill({ body: "{}", contentType: "application/json" }));
+    await pd.route("https://archive-api.open-meteo.com/**", route => route.fulfill({ body: JSON.stringify(buildArchiveFixture()), contentType: "application/json" }));
+    await pd.route("https://*.workers.dev/**", route => route.fulfill({ body: "{}", contentType: "application/json" }));
+    await pd.goto(`${base}/?lat=50.09&lon=14.40&q=TestObec`, { waitUntil: "load" });
+    await waitForAsync(pd, () => window.__nowcastInitDone === true, 8000);
+    await pd.click("#geo");
+    const shown = await waitForAsync(pd, () =>
+      document.getElementById("notif-text")?.textContent?.includes("zamítnut"), 8000);
+    assertTrue(shown, "zamítnuté oprávnění k poloze hlásí konkrétní důvod, ne obecnou chybu");
+    const last = await pd.evaluate(() => window.__nowcastGeoLast);
+    assertTrue(last && last.ok === false && last.code === 1,
+      `výsledek geolokace je k dispozici pro diagnostiku (${JSON.stringify(last)})`);
+    const iconOk = await pd.evaluate(() => !!document.querySelector("#geo svg"));
+    assertTrue(iconOk, "tlačítko polohy si po chybě nechalo svou ikonu (dřív ji přepsal text)");
+    await denyCtx.close();
+  }
+
   // ── Mobilní šířka ─────────────────────────────────────────────────────────
   const mobile = await browser.newContext({ viewport: { width: 390, height: 844 }, serviceWorkers: "block" });
   const pageM = await mobile.newPage();

@@ -1,0 +1,82 @@
+name: Probe live site
+
+# Ruční diagnostika nasazeného webu. Ze sandboxu, ze kterého vyvíjím, není
+# github.io dosažitelné (proxy vrací 403), takže jediný způsob, jak se podívat
+# na to, co uživatel opravdu vidí, je runner.
+#
+# Řeší dvě konkrétní stížnosti: "data jsou stará 5 hodin" a "neurčí polohu".
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pages: read
+      deployments: read
+    steps:
+      - uses: actions/checkout@v4
+
+      # ── Servíruje Pages to, co jsme nahráli? ──────────────────────────────
+      - name: HTTP hlavičky a stáří publikovaných dat
+        run: |
+          set -x
+          curl -sSI "https://itsjakubmazur.github.io/nowcast/data/radar_manifest.json"
+          curl -sS "https://itsjakubmazur.github.io/nowcast/data/radar_manifest.json" \
+            | python3 -c "
+import json,sys
+from datetime import datetime, timezone
+m=json.load(sys.stdin)
+g=m.get('generated_at_utc')
+t=datetime.fromisoformat(g.replace('Z','+00:00'))
+print('generated_at_utc:', g)
+print('stari_min:', int((datetime.now(timezone.utc)-t).total_seconds()//60))
+"
+          set +x
+
+      # ── Co si o svých deploymentech myslí Pages ───────────────────────────
+      # Klíčová otázka: každý běh hlásí "Reported success!", ale obsah se
+      # nemění. Tohle ukáže, jestli deployment vůbec vznikl a v jakém je stavu.
+      - name: Stav Pages a posledních 10 deploymentů
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          api() { curl -sS -H "Authorization: Bearer $GH_TOKEN" \
+                      -H "Accept: application/vnd.github+json" "$@"; }
+          echo "=== /pages ==="
+          api "https://api.github.com/repos/${{ github.repository }}/pages" | python3 -m json.tool || true
+          echo "=== poslední deploymenty prostředí github-pages ==="
+          api "https://api.github.com/repos/${{ github.repository }}/deployments?environment=github-pages&per_page=10" \
+            | python3 -c "
+import json,sys
+for d in json.load(sys.stdin):
+    print(d['id'], d['created_at'], d['sha'][:8], d.get('description'))
+" || true
+          echo "=== stavy nejnovějšího deploymentu ==="
+          DEP=$(api "https://api.github.com/repos/${{ github.repository }}/deployments?environment=github-pages&per_page=1" \
+                | python3 -c "import json,sys; print(json.load(sys.stdin)[0]['id'])")
+          api "https://api.github.com/repos/${{ github.repository }}/deployments/$DEP/statuses?per_page=10" \
+            | python3 -c "
+import json,sys
+for s in json.load(sys.stdin):
+    print(s['created_at'], s['state'], (s.get('description') or '')[:120])
+" || true
+          echo "=== builds (starší API, ukazuje i chyby buildu) ==="
+          api "https://api.github.com/repos/${{ github.repository }}/pages/builds?per_page=5" \
+            | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+if isinstance(d,dict): print(d)
+else:
+    for b in d: print(b['created_at'], b['status'], (b.get('error') or {}).get('message'))
+" || true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm install
+      - run: npx playwright install --with-deps chromium
+      - name: Sonda v prohlížeči (stáří dat + geolokace)
+        run: node tests/probe_live.mjs
