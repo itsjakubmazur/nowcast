@@ -81,7 +81,8 @@ const LAPSE_MAX_DZ = 800;   // větší převýšení = stanice není reprezenta
 
 export function nearestFreshStation(lat, lon) {
   const all = [...(state.CHMI?.stations || []), ...(state.WU?.stations || []),
-    ...(state.METAR?.stations || []), ...(state.METAR_WORLD?.stations || [])];
+    ...(state.METAR?.stations || []), ...(state.METAR_WORLD?.stations || []),
+    ...(state.EURO?.stations || [])];
   // Nevybíráme čistě nejbližší, ale nejbližší ROZUMNOU. Stanice na hřebeni
   // 6 km daleko a o 550 m výš je pro teplotu v údolí horší referencí než
   // stanice 12 km daleko ve stejné výšce — a čím míň se musí přepočítávat,

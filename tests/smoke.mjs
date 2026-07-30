@@ -165,7 +165,8 @@ function prepareServeDir() {
   }
 
   // Stanice potřebují čerstvý time_utc (kontrola biasu ignoruje měření > 90 min)
-  for (const name of ["chmi_stations.json", "wu_stations.json", "metar_stations.json"]) {
+  for (const name of ["chmi_stations.json", "wu_stations.json", "metar_stations.json",
+    "euro_stations.json"]) {
     const p = path.join(SERVE, "data", name);
     if (!fs.existsSync(p)) continue;
     const j = JSON.parse(fs.readFileSync(p, "utf8"));
@@ -1012,6 +1013,27 @@ async function main() {
     const collapsed = await page.evaluate(() =>
       document.querySelectorAll("#alert-bar .warn-chip").length);
     assertTrue(collapsed === bar.n, `druhé klepnutí zase sbalí (${collapsed})`);
+  }
+
+  // ── Sousedské sítě ────────────────────────────────────────────────────────
+  // U hranic bývá zahraniční stanice blíž než česká — v Rychvaldu je polská
+  // hranice pět kilometrů daleko. Fixture proto dává polskou stanici 1 km od
+  // testovacího místa a ta musí vyhrát.
+  {
+    const euro = await page.evaluate(async () => {
+      const { nearestFreshStation } = await import("./js/models.js");
+      const { state } = await import("./js/state.js");
+      // Bod pár kilometrů od polské stanice z fixture — musí vyhrát ona.
+      const near = nearestFreshStation(50.59, 14.42);
+      return {
+        loaded: (state.EURO?.stations || []).length,
+        name: near?.name, country: near?.country,
+        dist: near ? Math.round(near.distKm) : null,
+      };
+    });
+    assertTrue(euro.loaded >= 2, `euro_stations.json se načetl (${euro.loaded} stanic)`);
+    assertTrue(euro.name === "Testowo" && euro.country === "PL",
+      `zahraniční stanice může být referencí, když je blíž (${euro.name} ${euro.dist} km)`);
   }
 
   // ── Podkladová mapa v Nastavení ───────────────────────────────────────────

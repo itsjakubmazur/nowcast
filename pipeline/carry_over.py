@@ -50,6 +50,8 @@ CARRY = {
     "accuracy_precip.json": 24 * 7,
     "chmi_stats.json": 24 * 14,
     "chmi_normals.json": 24 * 365,     # statické normály 1991–2020
+    "euro_stations.json": 6,
+    "imgw_coords.json": 24 * 365,   # číselník souřadnic, mění se výjimečně
     "chmi_air.json": 6,
     "chmi_aero.json": 24,
     "chmi_forecast.json": 24,

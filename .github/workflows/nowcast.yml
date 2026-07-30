@@ -71,6 +71,8 @@ jobs:
             data/chmi_aero.json
             data/chmi_air_map.json
             data/accuracy_precip.json
+            data/euro_stations.json
+            data/imgw_coords.json
           key: station-data-${{ github.run_id }}
           restore-keys: |
             station-data-
@@ -163,6 +165,12 @@ jobs:
         timeout-minutes: 4
         continue-on-error: true
         run: python pipeline/chmi_rain.py || echo "chmi_rain.py selhalo, pokračuji"
+
+      - name: Run euro (sousedské sítě bez klíče — SE/CH/AT/PL)
+        if: steps.mode.outputs.mode == 'full'
+        timeout-minutes: 3
+        continue-on-error: true
+        run: python pipeline/euro.py || echo "euro.py selhalo, pokračuji"
 
       - name: Run metar (letištní stanice — doma + světové dlaždice)
         if: steps.mode.outputs.mode == 'full'

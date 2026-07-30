@@ -82,9 +82,10 @@ async function loadData() {
     fetchJson("chmi_normals.json"),
     fetchJson("chmi_forecast.json"),
     fetchJson("chmi_regional.json"),
+    fetchJson("euro_stations.json"),
   ]);
   const [wu, chmi, accuracy, metar, chmiRain,
-    cotrec, echotop, chmiAir, chmiAero, chmiNormals, chmiText, chmiRegional] =
+    cotrec, echotop, chmiAir, chmiAero, chmiNormals, chmiText, chmiRegional, euro] =
     optional.map(r => (r.status === "fulfilled" ? r.value : null));
   state.WU = wu;
   state.CHMI = chmi;
@@ -98,6 +99,9 @@ async function loadData() {
   state.CHMI_NORMALS = chmiNormals;
   state.CHMI_TEXT = chmiText;
   state.CHMI_REGIONAL = chmiRegional;
+  // Sousedské sítě (SE/CH/AT/PL) — u hranic bývá zahraniční stanice
+  // blíž než česká. Rychvald má polskou hranici pět kilometrů daleko.
+  state.EURO = euro;
 }
 
 // ── Forecast pro vybrané místo (24h strip + meteogram + AQ + AI verdikt) ────

@@ -370,6 +370,18 @@ def build_world_tiles(now):
         print(f"  bóje selhaly: {type(e).__name__}: {e} — jedu bez nich",
               file=sys.stderr)
 
+    # Evropské národní sítě (euro.py běží těsně před tímhle krokem). Do dlaždic
+    # patří proto, že teplotní vrstva na mapě čte právě je — bez toho by se
+    # stanice stáhly, ale nikde by nebyly vidět.
+    try:
+        ep = DATA_DIR / "euro_stations.json"
+        if ep.exists():
+            eu = json.loads(ep.read_text()).get("stations") or []
+            world += eu
+            print(f"  evropské národní sítě: {len(eu)} stanic", file=sys.stderr)
+    except Exception as e:
+        print(f"  euro_stations.json nešlo přečíst: {e}", file=sys.stderr)
+
     tiles = defaultdict(list)
     for rec in world:
         for tx, ty in tiles_for_station(rec["lat"], rec["lon"]):
