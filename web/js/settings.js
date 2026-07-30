@@ -2,6 +2,7 @@
 // server. Prahy a volby čtou ostatní moduly přes getSettings().
 
 import { state, PLAY } from "./state.js";
+import { BASEMAPS, getBasemap, setBasemap } from "./map.js";
 
 const SETTINGS_KEY = "nowcast_settings_v1";
 const LOG_KEY = "nowcast_notif_log_v1";
@@ -76,6 +77,18 @@ export function initSettingsPanel() {
   const layerSel = document.getElementById("set-layer");
   const animSel = document.getElementById("set-anim");
   const threshSel = document.getElementById("set-thresh");
+
+  // Podkladová mapa. Výběr v HTML existoval, ale nikdo ho neposlouchal —
+  // přepnutí tedy nic nedělalo. Volby se navíc plní z BASEMAPS, aby se
+  // seznam v <select> nemohl rozejít s tím, co mapa umí vykreslit.
+  const baseSel = document.getElementById("set-basemap");
+  if (baseSel) {
+    baseSel.innerHTML = Object.entries(BASEMAPS)
+      .map(([k, b]) => `<option value="${k}">${b.label}</option>`).join("");
+    baseSel.value = getBasemap();
+    baseSel.addEventListener("change", () => setBasemap(baseSel.value));
+  }
+
   if (layerSel) layerSel.value = s.layer;
   if (animSel) animSel.value = String(s.animMs);
   if (threshSel) threshSel.value = String(s.rainThresh);

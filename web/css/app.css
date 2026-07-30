@@ -274,7 +274,22 @@ button.glass-btn svg { width: 17px; height: 17px; display: block; }
   font-size: .82rem; cursor: pointer;
 }
 #alert-bar.show { display: flex; }
-#alert-bar .warn-chip { margin: 0; }
+/* Štítek se ve flexu NESMÍ smrsknout. Bez tohohle si flex vzal minimální
+   šířku obsahu, text se zalomil na tři řádky a poloměr 999px z každé výstrahy
+   udělal kolečko — s třinácti výstrahami vypadal pruh jako řetěz bublin. */
+#alert-bar .warn-chip { margin: 0; flex: 0 0 auto; white-space: nowrap; }
+#alert-bar { overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+#alert-bar::-webkit-scrollbar { display: none; }
+/* Rozbalený stav: pruh přeteče do víc řádků a přestane být pilulka. */
+#alert-bar.expanded {
+  flex-wrap: wrap; row-gap: .4rem;
+  border-radius: 16px; padding: .55rem .8rem;
+  max-height: 40vh; overflow-y: auto;
+}
+.warn-chip-n {
+  margin-left: .3rem; opacity: .72; font-weight: 800; font-size: .92em;
+}
+.warn-chip-more { background: var(--glass2); color: var(--text); }
 
 /* úchyt sheetu — viditelný jen na mobilu */
 #sheet-grabber { display: none; }

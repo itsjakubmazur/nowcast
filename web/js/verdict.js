@@ -171,14 +171,46 @@ export function warningsForPt(ptId) {
   });
 }
 
-export function templateVerdict(ptId) {
-  const sentences = [], chips = [];
-  const warns = warningsForPt(ptId);
+// Pruh výstrah pod topbarem. Sazba jednoho štítku na jednu výstrahu se
+// neosvědčila: ČHMÚ vydává tentýž jev zvlášť na každý den platnosti, takže
+// se v pruhu sešlo třináct štítků. Flex je smrskl na minimální šířku, text
+// se zalomil na tři řádky a kulaté rohy z nich udělaly kolečka.
+//
+// Řešení má dvě půlky. Tady se výstrahy shlukují podle jevu (opakování se
+// počítá, ne opisuje) a řadí od nejzávažnější; v CSS se pak štítek nesmí
+// smrsknout. Vidět jsou první tři, zbytek si vyžádá klepnutí.
+const SEVERITY = { red: 3, orange: 2, yellow: 1 };
+const MAX_VISIBLE_CHIPS = 3;
 
+export function warningChips(warns) {
+  const groups = new Map();
   for (const w of warns) {
-    const cls = ["yellow", "orange", "red"].includes(w.color) ? w.color : "unknown";
-    chips.push(`<span class="warn-chip c-${cls}">${esc(w.event)}</span>`);
+    const g = groups.get(w.event);
+    const rank = SEVERITY[w.color] || 0;
+    if (!g) groups.set(w.event, { event: w.event, color: w.color, rank, n: 1 });
+    else {
+      g.n++;
+      // Ve skupině vyhrává nejzávažnější barva — jinak by červená výstraha
+      // zmizela pod žlutou jen proto, že přišla později.
+      if (rank > g.rank) { g.rank = rank; g.color = w.color; }
+    }
   }
+  const list = [...groups.values()].sort((a, b) => b.rank - a.rank);
+  const chip = g => {
+    const cls = ["yellow", "orange", "red"].includes(g.color) ? g.color : "unknown";
+    const times = g.n > 1 ? `<b class="warn-chip-n">${g.n}×</b>` : "";
+    return `<span class="warn-chip c-${cls}">${esc(g.event)}${times}</span>`;
+  };
+  const shown = list.slice(0, MAX_VISIBLE_CHIPS).map(chip);
+  const rest = list.length - shown.length;
+  if (rest > 0) shown.push(`<span class="warn-chip warn-chip-more">+${rest}</span>`);
+  return { html: shown.join(""), allHtml: list.map(chip).join(""), count: list.length };
+}
+
+export function templateVerdict(ptId) {
+  const sentences = [];
+  const warns = warningsForPt(ptId);
+  const chips = warns.length ? warningChips(warns) : null;
 
   if (warns.length) {
     const w = warns[0];
@@ -210,7 +242,7 @@ export function templateVerdict(ptId) {
     sentences.push(`Vítr může v nárazech dosahovat kolem ${gustsKmh(nwp[3])} km/h.`);
   }
 
-  return { text: sentences.join(" "), chips: chips.join("") };
+  return { text: sentences.join(" "), chips };
 }
 
 // ── Rain status badge ─────────────────────────────────────────────────────────
@@ -516,11 +548,39 @@ export function renderVerdictText(chips, templateText, aiText) {
   el.innerHTML = body;
 
   // Výstrahy patří na první pohled — do glass pruhu pod topbarem, ne dovnitř karty
+  renderAlertBar(chips);
+}
+
+// Pruh výstrah. `chips` je výstup warningChips(), nebo cokoli prázdného.
+let _alertWired = false;
+function renderAlertBar(chips) {
   const bar = document.getElementById("alert-bar");
-  if (bar) {
-    if (chips) { bar.innerHTML = chips; bar.classList.add("show"); }
-    else { bar.innerHTML = ""; bar.classList.remove("show"); }
+  if (!bar) return;
+  if (!chips || !chips.count) {
+    bar.innerHTML = "";
+    bar.classList.remove("show", "expanded");
+    bar.removeAttribute("title");
+    return;
   }
+
+  bar._chips = chips;
+  const expanded = bar.classList.contains("expanded");
+  bar.innerHTML = expanded ? chips.allHtml : chips.html;
+  bar.classList.add("show");
+  bar.title = expanded ? "Klepnutím sbalit" : `Aktivní výstrahy: ${chips.count} — klepnutím rozbalit`;
+
+  if (_alertWired) return;
+  _alertWired = true;
+  const toggle = () => {
+    const b = document.getElementById("alert-bar");
+    if (!b?._chips) return;
+    b.classList.toggle("expanded");
+    renderAlertBar(b._chips);
+  };
+  bar.addEventListener("click", toggle);
+  bar.addEventListener("keydown", e => {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); }
+  });
 }
 
 // ── „Zeptej se na počasí" — chat nad daty přes worker /ask ──────────────────

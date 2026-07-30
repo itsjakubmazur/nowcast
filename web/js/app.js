@@ -171,7 +171,7 @@ async function showFc24(lat, lon, label) {
       .forEach(id => document.getElementById(id)?.classList.remove("show"));
     // Bez tohohle zůstane levá karta navždy zaseknutá na "Načítám předpověď…"
     // ze showForecast, protože se sem nikdy nedostane renderLocationVerdict.
-    renderVerdictText("", `<span style="color:var(--muted)">Předpověď se nepodařilo načíst. Zkus obnovit stránku.</span>`, null);
+    renderVerdictText(null, `<span style="color:var(--muted)">Předpověď se nepodařilo načíst. Zkus obnovit stránku.</span>`, null);
   }
 }
 
@@ -212,7 +212,7 @@ function renderLocationVerdict(fc, lat, lon, label) {
 
   const templateText = esc(sentences.join(" ") + (p2.length ? "\n\n" + p2.join(" ") : "")).replace(/\n\n/g, "<br><br>");
 
-  let chips = "";
+  let chips = null;
   try {
     const ptId = state.inCZ && state.GRID
       ? nearestPt(state.currentLat ?? lat, state.currentLon ?? lon).id : null;
@@ -489,7 +489,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   try {
     await loadData();
   } catch (err) {
-    renderVerdictText("", `<span class="hint">Data se nepodařilo načíst (${esc(err.message)}). Pipeline možná ještě neproběhla.</span>`, null);
+    renderVerdictText(null, `<span class="hint">Data se nepodařilo načíst (${esc(err.message)}). Pipeline možná ještě neproběhla.</span>`, null);
     state.map = L.map("map").setView([49.8, 15.5], 7);
     createBaseTileLayer().addTo(state.map);
     document.getElementById("radar-bar").style.display = "block";

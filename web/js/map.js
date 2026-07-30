@@ -75,8 +75,12 @@ function basemapBodyClass() {
 let _layer = null;
 
 function applyBasemap() {
-  const b = BASEMAPS[getBasemap()] || BASEMAPS[DEFAULT_BASEMAP];
+  const key = getBasemap();
+  const b = BASEMAPS[key] || BASEMAPS[DEFAULT_BASEMAP];
   document.body.classList.toggle("basemap-busy", !!basemapBodyClass());
+  // Zvolená mapa na <body>: čte to CSS i smoke test. Bez toho se nedá zvenčí
+  // poznat, jestli se přepnutí opravdu propsalo, nebo jen uložilo.
+  document.body.dataset.basemap = key;
   if (!_layer) return;
   _layer.setUrl(baseTileUrl());
   // Atribuce se musí přepsat taky — jinak by u Esri dlaždic svítilo CARTO.
@@ -99,6 +103,7 @@ export function createBaseTileLayer() {
   const layer = L.tileLayer(baseTileUrl(), opts);
   _layer = layer;
   document.body.classList.toggle("basemap-busy", !!basemapBodyClass());
+  document.body.dataset.basemap = getBasemap();
   window.addEventListener("nowcast:theme-changed", () => layer.setUrl(baseTileUrl()));
   return layer;
 }

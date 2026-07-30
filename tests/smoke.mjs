@@ -478,9 +478,14 @@ async function main() {
   const chipText = await page.textContent(".warn-chip");
   assertTrue(chipText.includes("Bouřky"), `výstražný chip "Bouřky" se zobrazil (obsah: "${chipText}")`);
   // Fixture má tutéž výstrahu 2× (ČHMÚ ji publikuje per oblast) — UI ji smí
-  // ukázat jen jednou (regrese "Riziko požárů" 3× vedle sebe)
-  const chipCount = await page.locator(".warn-chip").count();
-  assertTrue(chipCount === 1, `duplicitní výstraha se zobrazí jen jednou (chipů: ${chipCount})`);
+  // ukázat jen jednou (regrese "Riziko požárů" 3× vedle sebe). Pozor na rozdíl
+  // proti seskupování: TOHLE jsou dvě identické výstrahy, ne tentýž jev na dva
+  // dny, takže se nesmí objevit ani jako "2×".
+  const bourky = await page.evaluate(() =>
+    [...document.querySelectorAll("#alert-bar .warn-chip")]
+      .map(c => c.textContent.trim()).filter(t => t.startsWith("Bouřky")));
+  assertTrue(bourky.length === 1 && bourky[0] === "Bouřky",
+    `duplicitní výstraha se zobrazí jen jednou a bez počtu (${bourky.join(" | ") || "žádná"})`);
 
   // ── AI verdikt (progressive enhancement přes worker) ─────────────────────
   await page.waitForSelector(".verdict-ai-badge", { timeout: 8000 }).catch(() => {});
@@ -918,6 +923,90 @@ async function main() {
   assertTrue(true, "start bez URL: geolokace nahradila placeholder aktuální polohou (Ostrava)");
   assertTrue(errG0.length === 0, `žádné JS chyby při auto-poloze (nalezeno ${errG0.length})`);
   await geoCtx.close();
+
+  // Předchozí blok nechal stránku v embed módu, kde je půlka ovládání schovaná.
+  // Vrátíme ji do normálního stavu, jinak by následující testy klikaly na to,
+  // co není vidět.
+  await page.goto(`${base}/?lat=50.09&lon=14.40&q=TestObec`, { waitUntil: "load" });
+
+  // ── Pruh výstrah ──────────────────────────────────────────────────────────
+  // Fixture má schválně devět výstrah, z toho tentýž jev na víc dní — přesně
+  // jako ČHMÚ v horkém týdnu. Dřív z toho bylo devět štítků vedle sebe, flex
+  // je smrskl na minimální šířku, text se zalomil a kulaté rohy z nich udělaly
+  // kolečka přetékající z pruhu.
+  {
+    await page.waitForSelector("#alert-bar.show", { timeout: 8000 });
+    const bar = await page.evaluate(() => {
+      const b = document.getElementById("alert-bar");
+      const chips = [...b.querySelectorAll(".warn-chip")];
+      return {
+        n: chips.length,
+        texts: chips.map(c => c.textContent.trim()),
+        heights: chips.map(c => Math.round(c.getBoundingClientRect().height)),
+        widths: chips.map(c => Math.round(c.getBoundingClientRect().width)),
+        barW: Math.round(b.getBoundingClientRect().width),
+        barH: Math.round(b.getBoundingClientRect().height),
+      };
+    });
+    assertTrue(bar.n <= 4, `pruh výstrah ukazuje nanejvýš 3 štítky + přetečení (je jich ${bar.n})`);
+    assertTrue(bar.texts.some(t => /^\+\d+$/.test(t)),
+      `zbytek výstrah je schovaný pod štítkem "+N" (${bar.texts.join(" | ")})`);
+    assertTrue(bar.texts.some(t => t.includes("3×")),
+      `opakovaný jev se počítá, neopisuje (${bar.texts.join(" | ")})`);
+    // Zalomený text = vysoký štítek. Jednořádkový štítek má do ~30 px.
+    assertTrue(bar.heights.every(h => h <= 34),
+      `žádný štítek se nezalomil do víc řádků (výšky ${bar.heights.join(",")})`);
+    // Kolečko = šířka srovnatelná s výškou. Textový štítek je vždycky širší.
+    assertTrue(bar.widths.every((w, i) => w > bar.heights[i]),
+      `štítky jsou pilulky, ne kolečka (š×v ${bar.widths.map((w, i) => `${w}×${bar.heights[i]}`).join(" ")})`);
+    const overflow = await page.evaluate(() => {
+      const b = document.getElementById("alert-bar");
+      const r = b.getBoundingClientRect();
+      return [...b.querySelectorAll(".warn-chip")]
+        .some(c => c.getBoundingClientRect().right > r.right + 1);
+    });
+    assertTrue(!overflow, "žádný štítek nepřetéká z pruhu ven");
+
+    // Klepnutí rozbalí zbytek — role="button" tam byla, ale nic nedělala.
+    await page.click("#alert-bar");
+    const expanded = await page.evaluate(() => ({
+      cls: document.getElementById("alert-bar").classList.contains("expanded"),
+      n: document.querySelectorAll("#alert-bar .warn-chip").length,
+    }));
+    assertTrue(expanded.cls && expanded.n > bar.n,
+      `klepnutí na pruh ukáže všechny výstrahy (${expanded.n} > ${bar.n})`);
+    await page.click("#alert-bar");
+    const collapsed = await page.evaluate(() =>
+      document.querySelectorAll("#alert-bar .warn-chip").length);
+    assertTrue(collapsed === bar.n, `druhé klepnutí zase sbalí (${collapsed})`);
+  }
+
+  // ── Podkladová mapa v Nastavení ───────────────────────────────────────────
+  // Výběr v HTML existoval, ale nikdo ho neposlouchal — přepnutí nic nedělalo.
+  {
+    await page.click("#btn-settings");
+    const opts = await page.evaluate(() =>
+      [...document.querySelectorAll("#set-basemap option")].map(o => o.value));
+    assertTrue(opts.includes("satellite") && opts.length >= 3,
+      `výběr mapy nabízí varianty z BASEMAPS (${opts.join(",")})`);
+    const before = await page.evaluate(() => document.body.dataset.basemap);
+    await page.selectOption("#set-basemap", "satellite");
+    await page.waitForTimeout(300);
+    const after = await page.evaluate(() => ({
+      body: document.body.dataset.basemap,
+      stored: localStorage.getItem("nowcast_basemap"),
+      busy: document.body.classList.contains("basemap-busy"),
+    }));
+    assertTrue(after.body === "satellite" && before !== "satellite",
+      `přepnutí mapy se propsalo (${before} → ${after.body})`);
+    assertTrue(after.stored === "satellite", `volba mapy přežije reload (${after.stored})`);
+    assertTrue(after.busy, "nad satelitem se zapne vyšší kontrast radaru (basemap-busy)");
+    await page.selectOption("#set-basemap", "voyager");
+    await page.waitForTimeout(200);
+    const back = await page.evaluate(() => document.body.dataset.basemap);
+    assertTrue(back === "voyager", `návrat na barevnou mapu funguje (${back})`);
+    await page.click("#settings-close");
+  }
 
   // ── init() musí doběhnout celý ─────────────────────────────────────────────
   // Motivace je konkrétní: init registruje geolokaci, automatickou obnovu a
