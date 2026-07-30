@@ -111,26 +111,30 @@ async function main() {
 
   // A teď přes tlačítko, jak to dělá uživatel.
   const before = await page.evaluate(() => document.getElementById("place")?.textContent);
+  await page.evaluate(() => { window.__nowcastGeoLast = null; });
   await page.click("#geo").catch(e => console.log("  klik na #geo selhal: " + e.message));
   await page.waitForTimeout(8000);
   const after = await page.evaluate(() => ({
     place: document.getElementById("place")?.textContent?.trim(),
     dist: document.getElementById("dist")?.textContent?.trim(),
-    geoText: document.getElementById("geo")?.textContent?.trim(),
-    toast: document.getElementById("toast")?.textContent?.trim(),
-    toastShown: document.getElementById("toast")?.classList.contains("show"),
+    geoIcon: !!document.querySelector("#geo svg"),
+    toast: document.getElementById("notif-text")?.textContent?.trim(),
+    toastShown: document.getElementById("notif-bar")?.classList.contains("show"),
+    geo: window.__nowcastGeoLast,
   }));
   console.log("\n--- po kliknutí na 📍 ---");
   console.log(`  #place před: ${before?.trim()}`);
   console.log(`  #place po:   ${after.place}`);
   console.log(`  #dist:       ${after.dist}`);
-  console.log(`  tlačítko:    ${after.geoText}`);
-  console.log(`  toast:       ${after.toastShown ? after.toast : "(žádný)"}`);
-  if (after.place === before?.trim()) {
-    console.log("  ✗ poloha se NEPROJEVILA — tady je ta chyba");
-  } else {
-    console.log("  ✓ poloha se projevila");
-  }
+  console.log(`  ikona v tlačítku zůstala: ${after.geoIcon}`);
+  console.log(`  hláška:      ${after.toastShown ? after.toast : "(žádná)"}`);
+  console.log(`  výsledek:    ${JSON.stringify(after.geo)}`);
+  // Nesoudit podle názvu místa: když sonda stojí tam, kde appka už počasí
+  // ukazuje, název se nezmění a přitom je všechno v pořádku. Rozhoduje to,
+  // co vrátilo Geolocation API.
+  if (after.geo?.ok) console.log("  ✓ geolokace proběhla");
+  else if (after.geo) console.log(`  ✗ geolokace selhala: code=${after.geo.code} ${after.geo.message}`);
+  else console.log("  ✗ tlačítko neudělalo NIC — listener není zapojený");
 
   // ── 3. Chyby a 404 ───────────────────────────────────────────────────────
   console.log("\n--- chyby v konzoli ---");

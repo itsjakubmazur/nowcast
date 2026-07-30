@@ -23,11 +23,6 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Stav Pages, deploymentů a toho, co web servíruje
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: python pipeline/probe_pages.py
-
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
@@ -38,3 +33,10 @@ jobs:
 
       - name: Sonda v prohlížeči (stáří dat + geolokace)
         run: node tests/probe_live.mjs
+
+      # Záměrně až na konci: instalace Chromia vysype do logu stovky řádků,
+      # a log se čte od konce. Podstatný výstup patří pod ně, ne nad ně.
+      - name: Stav Pages, deploymentů a workeru
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python pipeline/probe_pages.py
