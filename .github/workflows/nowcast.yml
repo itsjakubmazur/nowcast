@@ -50,6 +50,7 @@ jobs:
             data/chmi_stations.json
             data/chmi_series_index.json
             data/chmi_series
+            data/chmi_history
             data/chmi_stats.json
             data/wu_stations.json
             data/wu_history.json

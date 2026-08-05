@@ -170,6 +170,12 @@ def summarize():
     except Exception:
         parts.append("řady=—")
     try:
+        h = list((DATA_DIR / "chmi_history").glob("*.json"))
+        kb = sum(p.stat().st_size for p in h) // 1024
+        parts.append(f"historie={max(0, len(h) - 1)} stanic/{kb} kB")
+    except Exception:
+        parts.append("historie=—")
+    try:
         st = json.loads((DATA_DIR / "chmi_stats.json").read_text()).get("stations") or {}
         s_rec = sum(1 for v in st.values() if v.get("records"))
         parts.append(f"rekordy={s_rec}/{len(st)}")

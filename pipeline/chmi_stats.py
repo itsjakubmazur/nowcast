@@ -164,6 +164,55 @@ def compute_monthly_normals(rows):
     return normals
 
 
+def monthly_series(rows):
+    """
+    Měsíční řada za celé období měření — "jak vypadal srpen v roce 1961".
+
+    Tohle je ta část historie, která tu chyběla. Modul si stahoval kompletní
+    měsíční soubory (mly-*.json od začátku měření), spočítal z nich rekordy
+    a 30leté normály — a SAMOTNOU ŘADU zahodil. Přitom právě ta ukazuje vývoj:
+    normál řekne, jaký je srpen průměrně, ale ne že posledních deset srpnů
+    bylo nad ním.
+
+    Ukládá se jako paralelní pole, ne pole objektů: pro stanici se 60 lety
+    měření je to 720 měsíců a zápis {"m":"1961-01","t_avg":-2.1,...} by na
+    každý údaj opakoval jméno klíče. Takhle je soubor zhruba třetinový.
+    """
+    # Jen teploty a srážky. Svit a sníh se do dlouhé řady schválně neukládají:
+    # jejich extrémy jsou v records a měsíční průměry v monthly_normals, takže
+    # by šest polí místo čtyř znamenalo o polovinu větší soubor za data, která
+    # nic nekreslí. Přes 292 stanic je to rozdíl v jednotkách megabajtů na
+    # každý deploy — a ten se dělá co pět minut.
+    WANT = {("temp_avg", "AVG"): "t_avg", ("temp_max", "AVG"): "t_max",
+            ("temp_min", "AVG"): "t_min", ("precip", "SUM"): "precip"}
+    by_month = defaultdict(dict)
+    for k, c, dt, v in rows:
+        # Jen měsíční záznamy (YYYY-MM); denní řádky aktuálního měsíce sem
+        # nepatří, ty by řadu rozsypaly na dny.
+        if len(dt) < 7 or not dt[:4].isdigit():
+            continue
+        ym = dt[:7]
+        out = WANT.get((k, c or ""))
+        if out is None and not c:
+            out = {"temp_avg": "t_avg", "precip": "precip"}.get(k)
+        if out:
+            by_month[ym][out] = round(v, 1)
+
+    months = sorted(by_month)
+    if not months:
+        return None
+    # Strop na 80 let. Nejstarší české řady sahají do 19. století, ale pro
+    # otázku "je tenhle měsíc nezvyklý?" nemá smysl tahat data, u kterých se
+    # měnila metodika i umístění stanice — a soubor by rostl bez užitku.
+    months = months[-MAX_MONTHS:]
+    series = {"months": months}
+    for field in ("t_avg", "t_max", "t_min", "precip"):
+        col = [by_month[m].get(field) for m in months]
+        if any(v is not None for v in col):
+            series[field] = col
+    return series
+
+
 def yearly_trend_from_yrs(rows):
     """yrs soubor: roční charakteristiky — AVG(TPM), MAX(TMA), MIN(TMI), SUM(SRA)."""
     WANT = {("temp_avg", "AVG"): "temp_avg", ("temp_max", "MAX"): "temp_max",
@@ -191,7 +240,9 @@ def load_station_ids():
 
 
 CACHE_MAX_AGE_H = 6  # přegenerovat jen když je soubor starší (drží ho CI cache)
-PARSER_V = 2         # bump = zahodit uložené stanice (změna parsování hodnot)
+PARSER_V = 3         # bump = zahodit uložené stanice (změna parsování hodnot)
+                     # v3: k rekordům přibyla dlouhá měsíční řada (chmi_history/)
+MAX_MONTHS = 80 * 12  # strop délky dlouhé řady — viz monthly_series()
 
 
 def main():
@@ -272,6 +323,19 @@ def main():
             all_stats[wsi] = {"records": {}, "monthly_normals": {}, "yearly_trend": {}}
             continue
 
+        # Dlouhá měsíční řada jde do vlastního souboru — v hlavním by 292× 720
+        # měsíců udělalo soubor, který se stahuje při každém otevření detailu.
+        # Takhle se stáhne jen ta jedna stanice, kterou uživatel otevřel.
+        hist = monthly_series(merged)
+        if hist:
+            hist_dir = DATA_DIR / "chmi_history"
+            hist_dir.mkdir(parents=True, exist_ok=True)
+            (hist_dir / f"{wsi.replace('/', '_')}.json").write_text(json.dumps({
+                "generated_at_utc": now_utc.isoformat(),
+                "wsi": wsi,
+                **hist,
+            }, ensure_ascii=False, separators=(",", ":")))
+
         all_stats[wsi] = {
             "records":         compute_records(merged),
             "monthly_normals": {str(k): v for k, v in compute_monthly_normals(merged).items() if v},
@@ -288,6 +352,19 @@ def main():
         "parser_v": PARSER_V,
         "stations": all_stats,
     }, ensure_ascii=False, separators=(",", ":")))
+
+    # Rejstřík dlouhých řad — bez něj by je carry_over neuměl přenést a při
+    # výpadku cache by historie z webu zmizela.
+    hist_dir = DATA_DIR / "chmi_history"
+    if hist_dir.exists():
+        have = sorted(p.stem for p in hist_dir.glob("*.json") if p.stem != "index")
+        (hist_dir / "index.json").write_text(json.dumps({
+            "generated_at_utc": now_utc.isoformat(),
+            "stations": have,
+        }, ensure_ascii=False, separators=(",", ":")))
+        kb = sum(p.stat().st_size for p in hist_dir.glob("*.json")) // 1024
+        print(f"  ✓ chmi_history/ — {len(have)} stanic, {kb} kB", file=sys.stderr)
+
     print(f"\n  ✓ chmi_stats.json — {ok}/{len(wsis)} stanic s historickými daty", file=sys.stderr)
 
 

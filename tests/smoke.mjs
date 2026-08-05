@@ -1077,6 +1077,72 @@ async function main() {
     }
   }
 
+  // ── Historie měsíce v detailu stanice ────────────────────────────────────
+  // Modul chmi_stats.py si měsíční soubory ČHMÚ za celé období měření stahoval
+  // odjakživa, ale dělal z nich jen rekordy a 30letý normál — samotnou řadu
+  // zahodil. Normál řekne, jaký je srpen průměrně; neřekne, že posledních
+  // deset srpnů bylo nad ním. Tenhle blok hlídá, že se řada opravdu dostane
+  // až na obrazovku a že věta nad grafem odpovídá datům.
+  {
+    const st = await page.evaluate(async id => {
+      const { openChmiDetail } = await import("./js/stations.js");
+      await openChmiDetail(id);
+      // přepni na záložku Historie
+      const btn = [...document.querySelectorAll(".chmi-tab-btn")]
+        .find(b => b.dataset.tab === "historie");
+      btn?.click();
+      await new Promise(r => setTimeout(r, 600));
+      const body = document.getElementById("chmi-tab-content");
+      const sel = document.getElementById("hist-month");
+      return {
+        tabIsThere: !!btn,
+        mesicu: sel ? sel.options.length : 0,
+        vybrano: sel ? Number(sel.value) : null,
+        rozsah: body.querySelector(".hist-range")?.textContent?.trim() || "",
+        veta: body.querySelector(".hist-verdict")?.textContent?.replace(/\s+/g, " ").trim() || "",
+        grafu: body.querySelectorAll("canvas").length,
+      };
+    }, "0-20000-0-11518");
+
+    assertTrue(st.tabIsThere, "detail stanice má záložku Historie měsíce");
+    assertTrue(st.mesicu === 12, `dá se vybrat kterýkoli měsíc (${st.mesicu})`);
+    assertTrue(st.vybrano === new Date().getMonth() + 1,
+      `nativně je vybraný aktuální měsíc (${st.vybrano})`);
+    assertTrue(/1961–2025 · 65 let/.test(st.rozsah),
+      `ukazuje rozsah řady (${st.rozsah})`);
+    assertTrue(st.grafu >= 2, `vykreslily se grafy teploty i srážek (${st.grafu})`);
+    // Věta je to jediné, co z grafu udělá odpověď — musí říct o kolik a kam.
+    assertTrue(/°C (nad|pod)/.test(st.veta) && /průměrem let/.test(st.veta),
+      `věta říká odchylku od dlouhodobého průměru ("${st.veta.slice(0, 90)}")`);
+    assertTrue(!/\d+\.\d+/.test(st.veta), `čísla ve větě jsou s čárkou ("${st.veta.slice(0, 60)}")`);
+
+    // Přepnutí měsíce musí řadu opravdu přepočítat, ne jen přebarvit popisek.
+    const jiny = await page.evaluate(async () => {
+      const sel = document.getElementById("hist-month");
+      const pred = document.querySelector(".hist-verdict")?.textContent;
+      sel.value = String(((Number(sel.value) + 5) % 12) + 1);
+      sel.dispatchEvent(new Event("change"));
+      await new Promise(r => setTimeout(r, 500));
+      return { pred, po: document.querySelector(".hist-verdict")?.textContent };
+    });
+    assertTrue(jiny.pred && jiny.po && jiny.pred !== jiny.po,
+      "přepnutí měsíce přepočítá řadu i větu");
+
+    if (process.env.SHOT) {
+      await page.evaluate(async () => {
+        const sel = document.getElementById("hist-month");
+        sel.value = "8"; sel.dispatchEvent(new Event("change"));
+        await new Promise(r => setTimeout(r, 600));
+      });
+      await page.locator("#chmi-detail").screenshot({ path: `${process.env.SHOT}/historie.png` });
+    }
+
+    await page.evaluate(async () => {
+      const { closeChmiDetail } = await import("./js/stations.js");
+      closeChmiDetail();
+    });
+  }
+
   // ── Sousedské sítě ────────────────────────────────────────────────────────
   // U hranic bývá zahraniční stanice blíž než česká — v Rychvaldu je polská
   // hranice pět kilometrů daleko. Fixture proto dává polskou stanici 1 km od

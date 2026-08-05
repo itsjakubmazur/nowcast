@@ -71,7 +71,7 @@ def main():
     if m:
         cached = [l.strip()[len("data/"):] for l in m.group(1).split("\n") if l.strip()]
         # Adresáře řeší carry_dir/carry_series, ne slovník CARRY.
-        dirs = {"metar", "chmi_series"}
+        dirs = {"metar", "chmi_series", "chmi_history"}
         chybi = [c for c in cached if c not in dirs and c not in co.CARRY]
         check(f"každý cachovaný soubor má i carry ({', '.join(chybi) or 'ok'})",
               not chybi)
@@ -90,6 +90,8 @@ def main():
           't.get("tile") if isinstance(t, dict)' in src)
     check("carry_series přenáší i řady stanic (historie)",
           "def carry_series" in src and "chmi_series_index.json" in src)
+    check("dlouhá měsíční historie se taky přenáší",
+          'carry_dir("chmi_history"' in src)
     check("nulový přenos se hlásí do stderr, ne mlčky",
           "NEPŘENESLA SE ANI JEDNA" in src)
 

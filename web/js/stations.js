@@ -477,25 +477,36 @@ function sdCard(key, label, icon, color, unit, fmtFn, series) {
 }
 
 let _chmiSeriesCache = {}; // stationId → payload (lazy, per-station)
+let _histMonth = null;     // vybraný měsíc v záložce Historie (drží se mezi překresleními)
 let _chmiCharts = [];
 let _chmiActiveTab = "dnes";
 
-function _makeChart(canvas, type, labels, vals, color, fill, unit) {
+function _makeChart(canvas, type, labels, vals, color, fill, unit, opts = null) {
   const isDark = document.documentElement.getAttribute("data-theme") !== "light";
   const gridColor = isDark ? "rgba(255,255,255,.08)" : "rgba(0,0,0,.07)";
   const textColor = isDark ? "#8b909a" : "#6b7280";
   const isBar = type === "bar";
+  // Referenční linka (průměr celé řady). Bez ní graf ukazuje čáru, ale ne to
+  // podstatné — jestli posledních pár let leží nad, nebo pod dlouhodobým
+  // průměrem. Kreslí se jako druhý dataset s konstantní hodnotou, aby se
+  // nemusela tahat žádná knihovna navíc.
+  const datasets = [{
+    data: vals, borderColor: color,
+    backgroundColor: isBar ? color + "cc" : fill ? color + "22" : "transparent",
+    borderWidth: isBar ? 0 : 1.5, pointRadius: 0, fill: fill && !isBar,
+    tension: 0.3, spanGaps: true,
+  }];
+  if (opts?.refLine != null) {
+    datasets.push({
+      label: opts.refLabel || "průměr",
+      data: labels.map(() => opts.refLine),
+      borderColor: textColor, borderWidth: 1, borderDash: [4, 4],
+      pointRadius: 0, fill: false, tension: 0,
+    });
+  }
   const chart = new Chart(canvas, {
     type,
-    data: {
-      labels,
-      datasets: [{
-        data: vals, borderColor: color,
-        backgroundColor: isBar ? color + "cc" : fill ? color + "22" : "transparent",
-        borderWidth: isBar ? 0 : 1.5, pointRadius: 0, fill: fill && !isBar,
-        tension: 0.3, spanGaps: true,
-      }],
-    },
+    data: { labels, datasets },
     options: {
       animation: false, responsive: true, maintainAspectRatio: false,
       interaction: { mode: "index", intersect: false },
@@ -706,6 +717,106 @@ function _renderTabKlima(body, stationId) {
   }
 }
 
+// Dlouhá měsíční historie — jeden soubor na stanici, stahuje se až když si
+// ji uživatel doopravdy otevře. Pro stanici se 60 lety měření je to ~10 kB;
+// v jednom společném souboru by to za všech 292 stanic byly megabajty
+// stažené pokaždé, i když si nikdo historii neotevře.
+const _histCache = {};
+
+async function loadHistory(stationId) {
+  if (stationId in _histCache) return _histCache[stationId];
+  try {
+    const v = state.CHMI?.generated_at_utc || Date.now();
+    const r = await fetch(`data/chmi_history/${encodeURIComponent(stationId)}.json?v=${encodeURIComponent(v)}`);
+    _histCache[stationId] = r.ok ? await r.json() : null;
+  } catch {
+    _histCache[stationId] = null;
+  }
+  return _histCache[stationId];
+}
+
+const MON_CS = ["leden", "únor", "březen", "duben", "květen", "červen",
+                "červenec", "srpen", "září", "říjen", "listopad", "prosinec"];
+
+/**
+ * Vývoj JEDNOHO měsíce napříč roky — "jak vypadal srpen od roku 1961".
+ *
+ * Tohle je ta část historie, která v appce chyběla. Klimatologie ukazuje
+ * 30letý normál (jaký je srpen průměrně) a roční trend celoroční průměr.
+ * Ani jedno neodpoví na otázku, kterou člověk u stanice položí jako první:
+ * je tenhle měsíc nezvyklý, nebo běžný? Na to je potřeba vidět ten SAMÝ
+ * měsíc ve všech letech vedle sebe.
+ */
+function _renderTabHistorie(body, stationId) {
+  body.innerHTML = `<div class="hist-loading">Načítám historii…</div>`;
+
+  loadHistory(stationId).then(hist => {
+    if (!hist?.months?.length) {
+      body.innerHTML = `<div class="hist-empty">Dlouhá historie pro tuhle stanici zatím není
+        k dispozici. Stahuje se postupně, po několika stanicích na běh.</div>`;
+      return;
+    }
+
+    const now = new Date();
+    const sel = _histMonth ?? (now.getMonth() + 1);
+    const idxOf = m => hist.months.map((ym, i) => [ym, i])
+      .filter(([ym]) => Number(ym.slice(5, 7)) === m);
+
+    const picked = idxOf(sel);
+    const years = picked.map(([ym]) => ym.slice(0, 4));
+    const pick = field => picked.map(([, i]) => hist[field]?.[i] ?? null);
+    const tAvg = pick("t_avg");
+    const prec = pick("precip");
+
+    const roky = years.length;
+    const od = years[0], doR = years[years.length - 1];
+
+    // Průměr celé řady jako referenční linka: bez něj graf ukazuje čáru,
+    // ale ne to podstatné — jestli je poslední hodnota nad, nebo pod.
+    const platne = tAvg.filter(v => v != null);
+    const prumer = platne.length
+      ? platne.reduce((a, b) => a + b, 0) / platne.length : null;
+    const posledni = [...tAvg].reverse().find(v => v != null);
+    const odchylka = prumer != null && posledni != null ? posledni - prumer : null;
+
+    let head = `<div class="hist-head">
+      <label class="hist-pick"><span>Měsíc</span>
+        <select id="hist-month">${MON_CS.map((n, i) =>
+          `<option value="${i + 1}"${i + 1 === sel ? " selected" : ""}>${n}</option>`).join("")}</select>
+      </label>
+      <span class="hist-range">${esc(od)}–${esc(doR)} · ${roky} let</span>
+    </div>`;
+
+    if (odchylka != null) {
+      const tepl = odchylka > 0;
+      head += `<div class="hist-verdict ${tepl ? "warm" : "cold"}">
+        Poslední ${esc(MON_CS[sel - 1])} byl <b>${num(Math.abs(odchylka))} °C
+        ${tepl ? "nad" : "pod"}</b> průměrem let ${esc(od)}–${esc(doR)}
+        (${num(prumer)} °C).</div>`;
+    }
+
+    body.innerHTML = head
+      + `<div class="chmi-chart-block"><h4>Průměrná teplota v ${esc(MON_CS[sel - 1])}u (°C)</h4>
+           <div class="chmi-chart-block-inner"><canvas id="hist-t"></canvas></div></div>`
+      + (prec.some(v => v != null)
+        ? `<div class="chmi-chart-block"><h4>Úhrn srážek v ${esc(MON_CS[sel - 1])}u (mm)</h4>
+             <div class="chmi-chart-block-inner"><canvas id="hist-p"></canvas></div></div>` : "")
+      + `<div class="ct-note">Měsíční data ČHMÚ za celé období měření stanice.
+           Ročním průměrem a 30letým normálem se zabývají vedlejší záložky.</div>`;
+
+    body.querySelector("#hist-month")?.addEventListener("change", e => {
+      _histMonth = Number(e.target.value);
+      _renderTabHistorie(body, stationId);
+    });
+
+    _makeChart(body.querySelector("#hist-t"), "line", years, tAvg, "#f59e0b", true, "°C",
+               prumer != null ? { refLine: prumer, refLabel: "průměr" } : null);
+    if (prec.some(v => v != null)) {
+      _makeChart(body.querySelector("#hist-p"), "bar", years, prec, "#06b6d4", false, "mm");
+    }
+  });
+}
+
 function _renderTabRocni(body, stationId) {
   const stats = state.CHMI_STATS?.stations?.[stationId];
   const trend = stats?.yearly_trend;
@@ -806,17 +917,19 @@ function _renderChmiTabs(body, stationId, activeTab) {
     { id: "rekordy", label: "Rekordy" },
     { id: "klima", label: "Klimatologie" },
     { id: "rocni", label: "Roční trend" },
+    { id: "historie", label: "Historie měsíce" },
   ];
 
-  let tabsHtml = `<div style="display:flex;gap:.3rem;padding:.5rem 0 .75rem;border-bottom:1px solid var(--border);flex-wrap:wrap">`;
+  // Stejná gramatika jako ostatní segmentované přepínače v appce (.meteo-tabs
+  // / .mtab): dráha je pilulka, vybraný segment vyplněný akcentem. Dřív tu
+  // byly inline styly s vlastní zelenou a poloměrem 5 px — jediný přepínač,
+  // který se držel po svém.
+  let tabsHtml = `<div class="meteo-tabs chmi-tabs">`;
   for (const t of tabs) {
-    const active = t.id === activeTab ? "background:#10b981;color:#fff;border-color:#10b981" : "";
-    tabsHtml += `<button class="chmi-tab-btn" data-tab="${t.id}"
-      style="padding:.35rem .65rem;border-radius:5px;border:1px solid var(--border);min-height:32px;
-             background:transparent;color:var(--text);cursor:pointer;font-size:var(--fs-sm);${active}">
-      ${esc(t.label)}</button>`;
+    tabsHtml += `<button class="mtab chmi-tab-btn${t.id === activeTab ? " active" : ""}"
+      data-tab="${t.id}">${esc(t.label)}</button>`;
   }
-  tabsHtml += `</div><div id="chmi-tab-content" style="flex:1;overflow-y:auto;padding:.5rem 0"></div>`;
+  tabsHtml += `</div><div id="chmi-tab-content" class="chmi-tab-content"></div>`;
   body.innerHTML = tabsHtml;
 
   body.querySelectorAll(".chmi-tab-btn").forEach(btn => {
@@ -828,6 +941,7 @@ function _renderChmiTabs(body, stationId, activeTab) {
   if (activeTab === "rekordy") _renderTabRekordy(content, stationId);
   if (activeTab === "klima") _renderTabKlima(content, stationId);
   if (activeTab === "rocni") _renderTabRocni(content, stationId);
+  if (activeTab === "historie") _renderTabHistorie(content, stationId);
 }
 
 export function closeChmiDetail() {

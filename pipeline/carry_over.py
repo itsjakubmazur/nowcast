@@ -196,8 +196,12 @@ def carry_series():
 
 
 def carry_tiles(now):
-    """Adresáře, které fast běh nevyrábí: světové dlaždice a řady stanic."""
-    return carry_dir("metar") + carry_series()
+    """Adresáře, které fast běh nevyrábí: dlaždice, řady a dlouhá historie."""
+    return (carry_dir("metar")
+            + carry_series()
+            # Dlouhá měsíční historie stanic. Rejstřík má pole ID pod
+            # "stations", ne "tiles".
+            + carry_dir("chmi_history", ids_from=lambda i: i.get("stations")))
 
 
 def main():
