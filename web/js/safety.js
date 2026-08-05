@@ -9,6 +9,7 @@ import { state } from "./state.js";
 import { haversine, esc, localHM } from "./utils.js";
 import { uiIcon } from "./uiicons.js";
 import { markPrecipBody } from "./extras.js";
+import { assessRain, nearestPt } from "./verdict.js";
 
 // ── 1) Zásah bouřkou ────────────────────────────────────────────────────────
 const HIT_MARGIN_KM = 4;   // okraj jádra + rezerva na nepřesnost dráhy
@@ -105,7 +106,19 @@ export function renderOutlookWindows(minutely, fc) {
   if (tl.length < 6) { msgEl.textContent = ""; markPrecipBody("12h", false); return; }
 
   const now = Date.now();
-  const wetNow = tl[0].rate >= WET_RATE;
+  // Zdroj pravdy o "prší TEĎ" je assessRain (radar + model dohromady), ne
+  // sama modelová řada. Bez toho si appka odporovala v sousedních kartách:
+  // odpočet hlásil "Právě lije, jen radar, model zatím nic nevidí" a hned
+  // pod ním tenhle panel začínal větou "Sucho ještě ~2 h". Obojí byla pravda
+  // ve svém zdroji a dohromady nesmysl — radar vidí, co se děje, model to
+  // dožene až za hodinu.
+  let radarWet = false;
+  try {
+    const ptId = state.inCZ && state.GRID
+      ? nearestPt(state.currentLat, state.currentLon).id : null;
+    radarWet = assessRain(ptId)?.status === "raining";
+  } catch { /* mimo mřížku nebo bez dat — spolehni se na model */ }
+  const wetNow = radarWet || tl[0].rate >= WET_RATE;
 
   // najdi souvislá suchá okna
   const windows = [];
@@ -122,10 +135,18 @@ export function renderOutlookWindows(minutely, fc) {
   const nextGood = good.find(([a]) => a >= now - 5 * 60000);
   if (wetNow) {
     const stops = tl.find(p => p.rate < WET_RATE);
-    msg = stops
-      ? `Teď prší. Ustane kolem <b>${localHM(new Date(stops.ms).toISOString())}</b>` +
-        (nextGood ? `, pak sucho aspoň do ${localHM(new Date(nextGood[1]).toISOString())}.` : ".")
-      : `Prší souvisle příštích 12 h — bez suchého okna.`;
+    // Když prší jen podle radaru, model konec neumí říct — a tvářit se, že
+    // ano, by bylo horší než přiznat to.
+    if (radarWet && tl[0].rate < WET_RATE) {
+      msg = nextGood
+        ? `Teď prší (radar). Model čeká sucho do ${localHM(new Date(nextGood[1]).toISOString())}.`
+        : `Teď prší (radar) — model tuhle srážku zatím nezachytil.`;
+    } else {
+      msg = stops
+        ? `Teď prší. Ustane kolem <b>${localHM(new Date(stops.ms).toISOString())}</b>` +
+          (nextGood ? `, pak sucho aspoň do ${localHM(new Date(nextGood[1]).toISOString())}.` : ".")
+        : `Prší souvisle příštích 12 h — bez suchého okna.`;
+    }
   } else {
     const rainStarts = tl.find(p => p.rate >= WET_RATE);
     if (!rainStarts) {

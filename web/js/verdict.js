@@ -414,6 +414,13 @@ export function setPrecipTypeHint(fc) {
   };
 }
 
+// Radar nad ~100 mm/h už intenzitu nekvantifikuje — odrazivost tam saturuje
+// a bývá to spíš kroupy nebo pás tání než déšť. Vypsat "150 mm/h" (což je náš
+// vlastní strop, ne měření) je proto poplašná zpráva vydávaná za údaj.
+function peakStr(mm) {
+  return mm >= 100 ? "přes 100 mm/h" : `${mm} mm/h`;
+}
+
 export function renderRainCountdown(ptId, minutely) {
   const el = document.getElementById("rain-countdown");
   if (!el) return;
@@ -531,7 +538,7 @@ function _tickCountdown() {
       ? `${descr.now} <span class="rc-timer">(ještě ~${Math.max(minsLeft, 1)} min)</span>`
       : descr.now;
     document.getElementById("rc-sub").textContent =
-      `${peak != null ? `Špička ${peak} mm/h` : "Podle aktuálních dat"}${total != null ? ` · úhrn ~${total} mm` : ""}${srcStr}${nearStr}${staleStr}`;
+      `${peak != null ? `Špička ${peakStr(peak)}` : "Podle aktuálních dat"}${total != null ? ` · úhrn ~${total} mm` : ""}${srcStr}${nearStr}${staleStr}`;
   } else {
     document.getElementById("rc-title").textContent = "Přeháňka odezněla";
     document.getElementById("rc-sub").textContent = `${total != null ? `Úhrn ~${total} mm · ` : ""}další výhled v modelu`;

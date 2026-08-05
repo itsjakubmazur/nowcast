@@ -1712,9 +1712,18 @@ body.embed #left-card { bottom: 1rem; }
     filter: none; z-index: 0;
   }
   .leaflet-bottom.leaflet-right { bottom: calc(6vh + 8px); }
+  /* Sheet se při rolování posouvá POD topbar — to je záměr. Jenže obojí je
+     sklo, takže se to přes sebe propisovalo a vypadalo to jako rozbité
+     rozvržení (na screenshotu prosvítal čas radaru zpod řady ikon).
+     Clona pod topbarem to ukončí: co jede pod ním, není vidět. */
   #topbar {
     position: fixed; top: 0; left: 0; right: 0;
-    padding: 8px 8px 0; gap: .4rem;
+    padding: 8px 8px 6px; gap: .4rem;
+  }
+  #topbar::before {
+    content: ""; position: absolute; inset: -1px 0 0;
+    background: linear-gradient(180deg, var(--bg) 62%, transparent);
+    z-index: -1; pointer-events: none;
   }
   .logo { padding: .32rem .45rem; }
   .logo-text { display: none; }
@@ -1791,20 +1800,32 @@ body.embed #left-card { bottom: 1rem; }
   #radar-bar .radar-row:first-child { margin-bottom: .55rem; }
   #frame-time { margin-left: auto; text-align: right; }
   #btn-global { min-width: auto; }
+  /* Vrstvy ovládají MAPU, takže patří na mapu — ne do hlavy sheetu.
+     Dokud byly v toku dokumentu, měl sheet čtyři řady chromu (ikony, dok
+     radaru, vrstvy, blesky) dřív, než začal jakýkoli obsah. Teď je to jedna
+     vodorovná dráha přilepená nad hranu sheetu; kdo ji nepotřebuje, přejede
+     přes ni prstem a nikdy si jí nevšimne. */
   #layer-selector {
-    order: 4;
-    position: relative; bottom: auto; left: auto;
-    padding: .5rem .75rem; flex-wrap: wrap; max-width: 100%;
-    background: var(--bg); z-index: 10;
+    order: 10;
+    position: fixed; left: 6px; right: 6px;
+    top: calc(var(--sheet-top) - 50px); bottom: auto;
+    z-index: 30;
+    display: flex; flex-wrap: nowrap; overflow-x: auto;
+    gap: .3rem; padding: 0 2px 2px; max-width: none;
+    background: none; scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
   }
+  #layer-selector::-webkit-scrollbar { display: none; }
+  .layer-btn { flex: 0 0 auto; }
+  /* Bouřkový proužek a blesky jsou taky stav mapy — nad vrstvami, ne v obsahu. */
+  #storm-bar, #lightning-chip {
+    position: fixed; left: 6px; right: 6px; bottom: auto;
+    top: calc(var(--sheet-top) - 92px); z-index: 30;
+    margin: 0; width: auto; max-width: none;
+  }
+  #lightning-chip { top: calc(var(--sheet-top) - 134px); }
   #radar-legend { order: 5; position: relative; bottom: auto; left: auto; margin: .4rem .75rem; z-index: 10; }
-  #storm-bar {
-    order: 6;
-    position: relative; bottom: auto; right: auto;
-    margin: .4rem .75rem; z-index: 10;
-  }
   #offline-badge { bottom: auto; top: 100px; }
-  #lightning-chip { bottom: auto; top: 140px; }
   #notif-bar {
     position: fixed; top: 58px; left: 8px; right: 8px; transform: none;
     max-width: 100%;
