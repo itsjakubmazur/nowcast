@@ -212,13 +212,25 @@ def main():
     all_stats = {}
     file_age_h = None
     if stats_path.exists():
-        file_age_h = (now_utc.timestamp() - stats_path.stat().st_mtime) / 3600
         try:
             prev = json.loads(stats_path.read_text())
             if prev.get("parser_v") == PARSER_V:
                 all_stats = prev.get("stations", {})
             else:
                 print("  Starší verze parseru — uložené stanice zahazuji", file=sys.stderr)
+            # Stáří se čte Z OBSAHU, ne z mtime souboru.
+            #
+            # mtime tady nic neříká: soubor buď rozbalí cache Actions, nebo ho
+            # stáhne carry_over z Pages — v obou případech je mtime "teď",
+            # i když jsou data z minulého týdne. Podmínka na plný refresh se
+            # tak nikdy nesplnila a denní data aktuálního měsíce se u hotových
+            # stanic přestala aktualizovat.
+            gen = prev.get("generated_at_utc")
+            if gen:
+                t = datetime.fromisoformat(str(gen).replace("Z", "+00:00"))
+                if t.tzinfo is None:
+                    t = t.replace(tzinfo=timezone.utc)
+                file_age_h = (now_utc - t).total_seconds() / 3600
         except Exception:
             all_stats = {}
     pending = [w for w in wsis if w not in all_stats]

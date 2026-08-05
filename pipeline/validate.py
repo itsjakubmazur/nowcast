@@ -159,6 +159,30 @@ def summarize():
             parts.append("sousedé[" + " ".join(f"{k}:{v}" for k, v in sorted(by.items())) + "]")
     except Exception:
         pass
+
+    # Historie a rekordy — tyhle se plní postupně (crawler má rozpočet na běh
+    # a mezi běhy pokračuje), takže bez čísla v logu není poznat, jestli
+    # postupují, nebo se každý běh restartují od nuly.
+    try:
+        idx = json.loads((DATA_DIR / "chmi_series_index.json").read_text())
+        n_dir = len(list((DATA_DIR / "chmi_series").glob("*.json")))
+        parts.append(f"řady={len(idx.get('stations') or {})}/{n_dir} souborů")
+    except Exception:
+        parts.append("řady=—")
+    try:
+        st = json.loads((DATA_DIR / "chmi_stats.json").read_text()).get("stations") or {}
+        s_rec = sum(1 for v in st.values() if v.get("records"))
+        parts.append(f"rekordy={s_rec}/{len(st)}")
+    except Exception:
+        parts.append("rekordy=—")
+    try:
+        wh = json.loads((DATA_DIR / "wu_history.json").read_text()).get("stations") or {}
+        tot = sum(len(v.get("series") or []) for v in wh.values())
+        own = sum(len(v.get("series") or []) for v in wh.values() if v.get("own"))
+        parts.append(f"wu_historie={tot} zázn. (vlastní {own})")
+    except Exception:
+        parts.append("wu_historie=—")
+
     print("  publikuje se: " + ", ".join(parts))
 
 
