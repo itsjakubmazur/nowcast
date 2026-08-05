@@ -9,7 +9,7 @@
 // poblíž se hodnocení neučí (žádná náhradní "pravda" se nevymýšlí).
 
 import { state, WORKER_BASE } from "./state.js";
-import { esc, haversine, ageMinutes, nowLocStr, locDateStr } from "./utils.js";
+import { esc, num, haversine, ageMinutes, nowLocStr, locDateStr } from "./utils.js";
 
 export const MODELS = [
   ["icon_d2",              "ICON-D2", "DWD · 2 km, ČR"],   // nejvyšší rozlišení pro Česko
@@ -410,7 +410,7 @@ function renderConfidence(rows) {
   else { level = "nižší"; cls = "low"; txt = rainSplit ? "modely se neshodují na srážkách" : `rozptyl teplot ±${Math.round(spread)} °C`; }
 
   el.className = `confidence-chip show ${cls}`;
-  el.title = `Rozptyl denních maxim mezi ${rows.length} modely: ${spread.toFixed(1)} °C; `
+  el.title = `Rozptyl denních maxim mezi ${rows.length} modely: ${num(spread)} °C; `
     + `srážky předpovídá ${Math.round(wetFrac * 100)} % modelů.`;
   el.innerHTML = `<span class="cf-dot"></span>Jistota výhledu: <b>${level}</b> · ${esc(txt)}`;
 }
@@ -489,7 +489,7 @@ export async function renderModelsPanel(lat, lon, signal) {
         <span class="mdl-medal">${ranked && r.mae != null && i < 3 ? `<span class="mdl-rank r${i + 1}">${i + 1}</span>` : ""}</span>
         <span class="mdl-name" title="${esc(r.src)}">${esc(r.label)}</span>
         <span class="mdl-tmax">${Math.round(r.tmax)}°</span>
-        <span class="mdl-rain">${r.rain >= 0.2 ? `${Math.round(r.rain * 10) / 10} mm` : "—"}</span>
+        <span class="mdl-rain">${r.rain >= 0.2 ? `${num(r.rain)} mm` : "—"}</span>
         <span class="mdl-mae" title="${r.bias != null
           ? `systematická odchylka ${r.bias > 0 ? "+" : ""}${String(r.bias).replace(".", ",")} °C`
           : ""}">${r.mae != null

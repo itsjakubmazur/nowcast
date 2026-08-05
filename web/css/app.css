@@ -178,9 +178,15 @@ img.wicon { filter: var(--wicon-shadow); vertical-align: middle; }
 /* .layer-btn tady schválně NENÍ: sklo nese jeho kontejner #layer-selector,
    protože je to výběr jedné veličiny (rádio), ne sada nezávislých vypínačů.
    Volné skleněné pilulky jsou vyhrazené přepínačům vrstev v doku radaru. */
+/* #accum-legend, #daytl-panel a #more-toggle si sklo dřív skládaly samy:
+   blur(18px) místo 26 a `1px solid var(--glass-border)` — jenže --glass-border
+   nikdy neexistovala (prstenec se jmenuje --gring). Neplatná var() bez
+   fallbacku shodí celou deklaraci, takže ty panely neměly ani ohraničení,
+   ani stejné sklo jako sousedi. Teď dědí ze společného mixinu. */
 #left-card, #right-panel, #radar-bar-inner, #storm-bar, #radar-legend,
 button.glass-btn, .search-wrap, #suggestions, .logo,
 #chmi-detail, #wu-detail-box, #notif-bar, button.ctrl, #alert-bar,
+#accum-legend, #daytl-panel, #more-toggle,
 #refresh-time {
   background: var(--glass);
   -webkit-backdrop-filter: blur(26px) saturate(1.7);
@@ -279,7 +285,12 @@ button.glass-btn:hover { background: color-mix(in srgb, var(--text) 10%, var(--g
 button.glass-btn:active { transform: scale(.94); }
 button.glass-btn.icon-only { padding: 0; width: 36px; }
 button.glass-btn svg { width: 17px; height: 17px; display: block; }
-#btn-refresh.spinning { opacity: .5; pointer-events: none; }
+/* Stav obnovy nese třída, ne obsah tlačítka — viz refreshAll() v app.js
+   a stejná poznámka o #geo hned pod tímhle. */
+#btn-refresh.spinning { opacity: .55; pointer-events: none; }
+#btn-refresh.spinning { animation: rf-spin .9s linear infinite; }
+@keyframes rf-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { #btn-refresh.spinning { animation: none; } }
 
 /* Zjišťování polohy. Dřív se stav psal do textContent tlačítka, což smazalo
    jeho SVG zaměřovač a nahradilo ho textem (a při chybě emoji 📍, které tam
@@ -388,10 +399,8 @@ button.glass-btn svg { width: 17px; height: 17px; display: block; }
 .pp-head {
   display: flex; align-items: center; gap: .5rem; margin-bottom: .35rem;
 }
-.pp-title {
-  font-size: var(--fs-tiny); font-weight: 700; letter-spacing: .07em;
-  text-transform: uppercase; color: var(--muted);
-}
+/* .pp-title, .settings-log-title, .legend-title a .dtl-title dědí
+   z hlavičkového bloku výš — vlastní kopie tady měly jen šanci se rozejít. */
 /* ══ SEGMENTOVANÝ PŘEPÍNAČ — jedna gramatika pro všechna "vyber jedno" ═════
    Appka jich má čtyři: sekce (Teď/Dnes/Týden/Data), veličina u stanic,
    měřítko srážek (2 h / 12 h) a záložky meteogramu. Každý vypadal jinak —
@@ -614,39 +623,41 @@ button.glass-btn svg { width: 17px; height: 17px; display: block; }
   min-width: 24px; min-height: 24px; display: inline-flex; align-items: center; justify-content: center;
 }
 .fav-chip .fav-remove:hover { color: var(--red); }
-#btn-fav {
-  margin: .5rem .75rem .6rem;
-  padding: .5rem .8rem; border-radius: 999px; cursor: pointer;
-  border: none; background: var(--glass2);
-  box-shadow: inset 0 1px 0 var(--spec), inset 0 0 0 1px var(--gring);
-  font-size: var(--fs-body); color: var(--muted); font-family: inherit;
-  text-align: left; transition: background .12s;
-  min-height: 38px;
-}
-#btn-fav:hover { background: color-mix(in srgb, var(--text) 8%, var(--glass2)); }
-#btn-fav.saved { color: var(--orange); box-shadow: inset 0 1px 0 var(--spec), inset 0 0 0 1.5px var(--orange); }
+/* ══ AKCE V KARTĚ — jedna gramatika ═══════════════════════════════════════
+   Pět tlačítek dělá totéž (vedlejší akce v levé kartě: Porovnat, Uložit,
+   Zapnout upozornění, Zkušební upozornění, Sdílet/Embed) a každé mělo vlastní
+   pravidla: jiné odsazení, jiný poloměr (999 px proti 12), jinou velikost
+   písma, jinou barvu textu a jinou minimální výšku. Rozdíly nic neznamenaly,
+   jen se nasčítaly do dojmu, že spodek karty je slepenec.
 
-#btn-push {
-  margin: 0 .75rem .55rem;
-  padding: .45rem .8rem; border-radius: 999px; cursor: pointer;
-  border: none; background: var(--glass2);
+   Stav (uloženo / zapnuto) nese prstenec v barvě, ne jiný tvar — stejně jako
+   u zapnutých vrstev mapy. */
+/* Ikona a popisek vedle sebe — data-icon vkládá SVG před .lbl. */
+#btn-compare, #btn-fav, #btn-push, #btn-test-push, .share-row button {
+  display: flex; align-items: center; gap: .45rem;
+  padding: .5rem .8rem; border-radius: var(--r-pill); cursor: pointer;
+  border: none; background: var(--glass2); color: var(--text);
   box-shadow: inset 0 1px 0 var(--spec), inset 0 0 0 1px var(--gring);
-  font-size: var(--fs-sm); color: var(--muted); font-family: inherit;
-  text-align: left; transition: background .12s; display: none;
-  min-height: 36px;
+  font: inherit; font-size: var(--fs-sm); font-weight: 600;
+  text-align: left; min-height: 38px;
+  transition: background .12s;
 }
-#btn-push.available { display: block; }
-#btn-push:hover { background: color-mix(in srgb, var(--text) 8%, var(--glass2)); }
+#btn-compare:hover, #btn-fav:hover, #btn-push:hover, #btn-test-push:hover,
+.share-row button:hover { background: color-mix(in srgb, var(--text) 8%, var(--glass2)); }
+#btn-compare:active, #btn-fav:active, #btn-push:active,
+#btn-test-push:active:not(:disabled), .share-row button:active { transform: scale(.98); }
+#btn-test-push:disabled { opacity: .5; cursor: default; }
+/* Zapnuto/uloženo = barevný prstenec, ne jiný tvar. */
+#btn-fav.saved { color: var(--orange); box-shadow: inset 0 1px 0 var(--spec), inset 0 0 0 1.5px var(--orange); }
 #btn-push.on { color: var(--accent); box-shadow: inset 0 1px 0 var(--spec), inset 0 0 0 1.5px var(--accent); }
 
+/* Jen rozvržení — vzhled nesou pravidla výš. */
+#btn-fav { display: none; width: calc(100% - 1.5rem); margin: .5rem .75rem .6rem; }
+#btn-fav.show { display: flex; }
+#btn-push { display: none; width: calc(100% - 1.5rem); margin: 0 .75rem .55rem; }
+#btn-push.available { display: flex; }
 .share-row { display: flex; gap: .45rem; margin: 0 .75rem .7rem; }
-.share-row button {
-  flex: 1; padding: .45rem .5rem; border-radius: 999px; cursor: pointer;
-  border: none; background: var(--glass2);
-  box-shadow: inset 0 1px 0 var(--spec), inset 0 0 0 1px var(--gring);
-  font-size: var(--fs-sm); color: var(--muted); font-family: inherit; min-height: 36px;
-}
-.share-row button:hover { background: color-mix(in srgb, var(--text) 8%, var(--glass2)); }
+.share-row button { flex: 1; justify-content: center; }
 
 /* wu-own-panel inside left card */
 /* Vlastní/sledované WU stanice — nenápadný proužek nahoře v levé kartě */
@@ -764,14 +775,31 @@ button.glass-btn svg { width: 17px; height: 17px; display: block; }
   padding: .8rem .9rem .7rem;
   display: none;
 }
+/* ══ HLAVIČKA PANELU — jeden tvar pro všechny ═════════════════════════════
+   Tenhle zápis (verzálky, prostrkání, šedá, malé) měl skoro každý panel, ale
+   ne všechny: "Průběh dne" a "Trefili jsme se?" se sázely jako věta tučně
+   a bíle, tedy o dva stupně hlasitěji než sousedé. Ve svitku to nevypadá
+   jako důraz, ale jako že tam ty dva panely nepatří.
+
+   Zároveň byl ten samý zápis rozepsaný ve čtyřech blocích CSS (tady,
+   .pp-title, .settings-log-title, .legend-title). Čtyři kopie znamenají, že
+   se při příští úpravě rozejdou — tak jako se rozešly tyhle dvě výjimky.
+   ═══════════════════════════════════════════════════════════════════════ */
 .fc24-title, .fc7-title, .aq-title, .meteo-title, .astro-title,
-.mdl-title {
+.mdl-title, .pp-title, .settings-log-title, #radar-legend .legend-title,
+#daytl-panel .dtl-title, #verif-panel .vf-title {
   font-size: var(--fs-tiny); font-weight: 700; color: var(--muted);
   text-transform: uppercase; letter-spacing: .07em;
   margin-bottom: .55rem; overflow: hidden;
   display: flex; align-items: center; gap: .35rem; white-space: nowrap;
 }
 .fc24-title span, .fc7-title span { overflow: hidden; text-overflow: ellipsis; }
+/* Doplňková věta v hlavičce nekřičí s ní — nese ji malá písmena a normální
+   řez, jinak by z hlavičky byly dva soupeřící bloky verzálek. */
+.vf-sub, .aq-title-days {
+  font-weight: 400; text-transform: none; letter-spacing: 0;
+  color: var(--muted); font-size: var(--fs-tiny);
+}
 
 /* Meteogram */
 .meteo-block {
@@ -1072,8 +1100,7 @@ button.glass-btn svg { width: 17px; height: 17px; display: block; }
 /* osa dnů PER sparkline (ne přes celý 2sloupcový grid — tam neseděla) */
 .aq-item-axis { display:flex; justify-content:space-between; font-size: var(--fs-micro);
   color:var(--muted); margin-top:.15rem; padding:0 .05rem; }
-.aq-title-days { margin-left:auto; font-weight:400; text-transform:none;
-  letter-spacing:0; font-size: var(--fs-tiny); color:var(--muted); }
+.aq-title-days { margin-left: auto; }
 .aq-good { background:var(--green); } .aq-fair { background:#84cc16; } .aq-moderate { background:var(--orange); }
 .aq-poor { background:#f97316; } .aq-verypoor { background:var(--red); } .aq-extreme { background:var(--purple); }
 
@@ -1157,8 +1184,7 @@ button.glass-btn svg { width: 17px; height: 17px; display: block; }
   box-shadow: inset 0 1px 0 var(--spec), inset 0 0 0 1px var(--gring);
   max-width: 55%;
 }
-.settings-log-title { font-size: var(--fs-tiny); font-weight: 700; color: var(--muted);
-  text-transform: uppercase; letter-spacing: .07em; margin: .9rem 0 .4rem; }
+.settings-log-title { margin: .9rem 0 .4rem; }
 #settings-log { max-height: 200px; overflow-y: auto; }
 .set-log-row { display: flex; gap: .6rem; padding: .35rem 0; font-size: var(--fs-sm);
   border-top: 1px solid var(--rowline); }
@@ -1167,15 +1193,8 @@ button.glass-btn svg { width: 17px; height: 17px; display: block; }
 .set-log-empty { font-size: var(--fs-sm); color: var(--muted); padding: .4rem 0; }
 
 /* porovnání míst */
-#btn-compare {
-  display: none; width: 100%; padding: .55rem; border-radius: var(--r-chip); cursor: pointer;
-  border: none; background: var(--glass2); color: var(--text);
-  font: inherit; font-size: var(--fs-body); font-weight: 600;
-  box-shadow: inset 0 1px 0 var(--spec), inset 0 0 0 1px var(--gring);
-  margin-bottom: .5rem;
-}
-#btn-compare.show { display: block; }
-#btn-compare:hover { background: color-mix(in srgb, var(--text) 8%, var(--glass2)); }
+#btn-compare { display: none; width: 100%; margin-bottom: .5rem; justify-content: center; }
+#btn-compare.show { display: flex; }
 #compare-input {
   width: 100%; font: inherit; font-size: var(--fs-body); color: var(--text);
   border: none; border-radius: var(--r-chip); padding: .55rem .7rem;
@@ -1223,8 +1242,6 @@ button.glass-btn svg { width: 17px; height: 17px; display: block; }
   left: 316px; z-index: 110; border-radius: var(--r-card);
   padding: .4rem .7rem .5rem; display: none;
   font-size: var(--fs-tiny); color: var(--muted);
-  background: var(--glass); border: 1px solid var(--glass-border);
-  backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
 }
 #accum-legend.show { display: block; }
 #accum-legend .accum-scale { display: flex; margin-top: .3rem; }
@@ -1508,8 +1525,7 @@ button.ctrl.active {
 /* ── "Trefili jsme se?" — verifikace po dnech ───────────────────────────── */
 #verif-panel { display: none; margin: .35rem 0 .2rem; }
 #verif-panel.show { display: block; }
-#verif-panel .vf-title { font-size: var(--fs-body); font-weight: 700; margin-bottom: .3rem; }
-#verif-panel .vf-sub { font-weight: 500; color: var(--muted); font-size: var(--fs-tiny); }
+#verif-panel .vf-title { margin-bottom: .3rem; flex-wrap: wrap; white-space: normal; }
 #verif-panel .vf-row { display: flex; gap: .45rem; align-items: flex-end; }
 #verif-panel .vf-col { flex: 1; text-align: center; min-width: 0; }
 #verif-panel .vf-bar-wrap { height: 42px; display: flex; align-items: flex-end; justify-content: center; }
@@ -1558,15 +1574,8 @@ button.ctrl.active {
 }
 #storm-summary.show { display: block; }
 #storm-summary b { font-variant-numeric: tabular-nums; }
-#btn-test-push {
-  display: block; width: 100%; margin: .35rem 0 .2rem;
-  padding: .45rem .7rem; border-radius: var(--r-chip); border: none;
-  font-size: var(--fs-sm); font-weight: 600; cursor: pointer;
-  color: var(--fg); background: var(--glass2);
-  box-shadow: inset 0 1px 0 var(--spec), inset 0 0 0 1px var(--gring);
-}
-#btn-test-push:disabled { opacity: .5; cursor: default; }
-#btn-test-push:active:not(:disabled) { transform: scale(.98); }
+#btn-test-push { display: none; width: 100%; margin: .35rem 0 .2rem; justify-content: center; }
+#btn-test-push { display: flex; }
 
 #push-status {
   display: none; margin: .3rem 0 .1rem; font-size: var(--fs-sm);
@@ -1632,12 +1641,10 @@ button.ctrl.active {
 
 /* ── Průběh dne — fáze dne jako pás ─────────────────────────────────────── */
 #daytl-panel {
-  display: none; background: var(--glass); border: 1px solid var(--glass-border);
-  border-radius: var(--radius, 16px); padding: .7rem .9rem; backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
+  display: none; border-radius: var(--r-card); padding: .7rem .9rem;
 }
 #daytl-panel.show { display: block; }
-#daytl-panel .dtl-title { font-size: var(--fs-body); font-weight: 700; margin-bottom: .45rem; }
+#daytl-panel .dtl-title { margin-bottom: .45rem; }
 #daytl-panel .dtl-strip { display: flex; gap: .3rem; }
 #daytl-panel .dtl-seg {
   flex: 1; min-width: 0; text-align: center; padding: .35rem .15rem;
@@ -1698,10 +1705,9 @@ button.ctrl.active {
 #more-panels { display: block; }
 #more-toggle {
   width: 100%; display: flex; align-items: center; justify-content: space-between;
-  background: var(--glass); border: 1px solid var(--glass-border); color: var(--text);
+  color: var(--text);
   border-radius: var(--r-card); padding: .62rem .9rem; font: inherit;
   font-size: var(--fs-body); font-weight: 700; cursor: pointer;
-  backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
   transition: background .15s;
 }
 #more-toggle:hover { background: color-mix(in srgb, var(--text) 6%, var(--glass)); }
@@ -1777,7 +1783,7 @@ button.ctrl.active {
   /* vzhled karty řeší sdílené pravidlo výš — tady zbývá jen rozvržení */
 }
 #models-panel.show { display: block; }
-#models-panel .mdl-title { font-size: var(--fs-body); font-weight: 700; margin-bottom: .35rem; }
+#models-panel .mdl-title { margin-bottom: .35rem; }   /* zápis dědí z hlavičkového bloku */
 #models-panel .mdl-sub { font-weight: 500; color: var(--muted); font-size: var(--fs-tiny); }
 #models-panel .mdl-head, #models-panel .mdl-row {
   display: grid; grid-template-columns: 1.4rem 1fr 2.4rem 3.2rem 3.2rem;
@@ -1896,9 +1902,18 @@ body.embed #left-card { top: 100px; bottom: 1rem; }
     background: linear-gradient(180deg, var(--bg) 62%, transparent);
     z-index: -1; pointer-events: none;
   }
-  .logo { padding: .32rem .45rem; }
-  .logo-text { display: none; }
-  .search-wrap { max-width: none; min-width: 0; }
+  /* Topbar na mobilu: hledání je hlavní prvek řádku, ne poslední zbytek.
+     Na 390px displeji je 374 px použitelné šířky. Logo (46) + pět tlačítek
+     (5×36) + mezery (~42) je 268, takže na vyhledávací pole zbylo 79 px —
+     ukázalo z placeholderu "Hle" a nedalo se do něj rozumně psát.
+
+     Pryč jdou dvě věci, které o sobě nic neříkají: logo (víš, kterou appku
+     jsi otevřel — v launcheru je ikona) a sdílení, které je jako plnohodnotné
+     tlačítko "Sdílet" i dole v kartě. Zůstává poloha, nastavení, motiv
+     a obnova. Hledání tím vyroste zhruba na dvojnásobek. */
+  .logo { display: none; }
+  #topbar #btn-share { display: none; }
+  .search-wrap { max-width: none; min-width: 0; flex: 1 1 auto; }
   #refresh-time { display: none; }
   #alert-bar { top: 56px; left: 8px; max-width: calc(100vw - 16px); }
 

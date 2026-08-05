@@ -3,7 +3,7 @@
 // která už stahujeme (grid série + Open-Meteo hourly/daily).
 
 import { state } from "./state.js";
-import { esc, revealSwap, nowLocStr, haversine, ageMinutes } from "./utils.js";
+import { esc, num, revealSwap, nowLocStr, haversine, ageMinutes } from "./utils.js";
 import { moonIconImg, wImg, wcIconSvg, mostSevere } from "./icons.js";
 import { computeNight } from "./stargaze.js";
 import { nearestFreshStation } from "./models.js";
@@ -222,7 +222,7 @@ export function renderMinutely(ptId, minutely) {
     }
     const h = Math.max(12, Math.round(v / maxV * 100));
     const op = p != null ? Math.max(0.45, p / 100).toFixed(2) : null;
-    return `<i style="height:${h}%${op ? `;opacity:${op}` : ""}" title="${v.toFixed(1)} mm/h${pStr}"></i>`;
+    return `<i style="height:${h}%${op ? `;opacity:${op}` : ""}" title="${num(v)} mm/h${pStr}"></i>`;
   }).join(""));
   if (srcEl) {
     srcEl.textContent = prob ? `${src} · ens.` : src;
@@ -267,11 +267,11 @@ export function renderActivities(fc, data) {
   const stars = clamp10(10 * (1 - nightCloud / 100) - ((state._moonIllum ?? 0.5) * 3));
 
   const items = [
-    ["🏃", "Běhání", run, `pocitově až ${Math.round(feelsMax)}°, srážky ${probMax}%`],
+    ["🏃", "Běhání", run, `pocitově až ${Math.round(feelsMax)} °C, srážky ${probMax} %`],
     ["🚴", "Kolo", bike, `nárazy až ${Math.round(gustMax)} km/h`],
-    ["🚿", "Zalévání", water, precSum > 1 ? `spadne ~${precSum.toFixed(1)} mm — příroda zalije sama` : "beze srážek, zalij"],
+    ["🚿", "Zalévání", water, precSum > 1 ? `spadne ~${num(precSum)} mm — příroda zalije sama` : "beze srážek, zalij"],
     ["👕", "Prádlo", laundry, `vlhkost ~${Math.round(humMean)} %`],
-    ["🔥", "Gril", grill, `večer srážky ${Math.round(mx(evening, "prob"))}%`],
+    ["🔥", "Gril", grill, `večer srážky ${Math.round(mx(evening, "prob"))} %`],
     ["🔭", "Hvězdy", stars, `oblačnost v noci ~${Math.round(nightCloud)} %`],
   ];
   revealSwap(grid, items.map(([e, n, s, why]) =>
@@ -419,7 +419,7 @@ export function renderWinter(fc, data) {
   if (next48snow < 0.2 && frostHours === 0 && !iceRisk) { panel.classList.remove("show"); return; }
 
   const rows = [];
-  if (next48snow >= 0.2) rows.push(`<div class="astro-row"><span class="a-k">Sněžení</span><span class="a-v">~${next48snow.toFixed(1)} cm / 48 h</span></div>`);
+  if (next48snow >= 0.2) rows.push(`<div class="astro-row"><span class="a-k">Sněžení</span><span class="a-v">~${num(next48snow)} cm / 48 h</span></div>`);
   if (frostHours > 0) rows.push(`<div class="astro-row"><span class="a-k">Mráz</span><span class="a-v">${frostHours} h pod 0 °C</span><span class="a-d">z příštích 24 h</span></div>`);
   if (iceRisk) rows.push(`<div class="astro-row"><span class="a-k">Náledí</span><span class="a-v" style="color:var(--red)">riziko</span><span class="a-d">srážky při teplotě ≤ 1 °C</span></div>`);
   revealSwap(body, rows.join(""));
@@ -466,7 +466,7 @@ export function renderDayTimeline(fc) {
         ? `${Math.round(temps[0])}°`
         : `${Math.round(Math.min(...temps))}–${Math.round(Math.max(...temps))}°`)
       : "—";
-    const precStr = precip >= 0.2 ? `<span class="dtl-prec">${Math.round(precip * 10) / 10} mm</span>`
+    const precStr = precip >= 0.2 ? `<span class="dtl-prec">${num(precip)} mm</span>`
       : maxProb >= 40 ? `<span class="dtl-prec">${maxProb} %</span>` : "";
     return `<div class="dtl-seg">
       <div class="dtl-name">${esc(s.name)}</div>
@@ -501,13 +501,13 @@ export function renderStationCheck(fc) {
   const diff = Math.round((measured - modelT) * 10) / 10;
   const absD = Math.abs(diff);
   const diffStr = absD >= 1
-    ? ` — o <b>${absD.toFixed(1).replace(".", ",")} °C ${diff > 0 ? "tepleji" : "chladněji"}</b> než model`
+    ? ` — o <b>${num(absD)} °C ${diff > 0 ? "tepleji" : "chladněji"}</b> než model`
     : " — model sedí";
   // Přiznáme jen skutečně provedený přepočet — dřív se hláška řídila
   // vlastním prahem 100 m, takže mohla tvrdit něco jiného, než se stalo.
   const adjStr = st.lapseApplied ? " (přepočteno na výšku)" : "";
   el.innerHTML = `Stanice <b>${esc(st.name)}</b> (${st.distKm.toFixed(0)} km) hlásí `
-    + `<b>${measured.toFixed(1).replace(".", ",")} °C</b>${adjStr}${diffStr}.`;
+    + `<b>${num(measured)} °C</b>${adjStr}${diffStr}.`;
   el.classList.toggle("station-off", absD >= 2);
   el.classList.add("show");
 }

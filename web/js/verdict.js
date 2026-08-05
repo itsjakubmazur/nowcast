@@ -1,6 +1,6 @@
 import { state, WORKER_BASE } from "./state.js";
 import { wImg, wcLabel } from "./icons.js";
-import { haversine, localHM, esc } from "./utils.js";
+import { haversine, localHM, esc, num } from "./utils.js";
 import { assessRainGlobal } from "./globalrain.js";
 
 // ── Geo lookup v GRID ─────────────────────────────────────────────────────────
@@ -302,7 +302,7 @@ export function templateVerdict(ptId) {
   const as = assessRain(ptId);
   if (as?.status === "raining") {
     const kde = as.nearKm > 5 ? ` (jádro ~${as.nearKm} km odtud)` : "";
-    sentences.push(`${precipDescr(as.peak).now}${kde}${as.peak != null ? `, špička kolem ${as.peak} mm/h` : ""}.`);
+    sentences.push(`${precipDescr(as.peak).now}${kde}${as.peak != null ? `, špička kolem ${peakStr(as.peak)}` : ""}.`);
   } else if (as?.status === "soon") {
     const intenzita = rainIntensity(as.peak ?? 0);
     const total = as.total == null ? "" : as.total < 1 ? ", úhrn do 1 mm" : `, úhrn kolem ${Math.round(as.total)} mm`;
@@ -418,7 +418,7 @@ export function setPrecipTypeHint(fc) {
 // a bývá to spíš kroupy nebo pás tání než déšť. Vypsat "150 mm/h" (což je náš
 // vlastní strop, ne měření) je proto poplašná zpráva vydávaná za údaj.
 function peakStr(mm) {
-  return mm >= 100 ? "přes 100 mm/h" : `${mm} mm/h`;
+  return mm >= 100 ? "přes 100 mm/h" : `${num(mm)} mm/h`;
 }
 
 export function renderRainCountdown(ptId, minutely) {
@@ -531,17 +531,17 @@ function _tickCountdown() {
       `${descr.fut} za <span class="rc-timer">${minsAway} min</span>`;
     document.getElementById("rc-sub").textContent =
       `${localHM(new Date(startMs).toISOString())}${endMs ? `–${localHM(new Date(endMs).toISOString())}` : ""}`
-      + `${durMin ? ` · potrvá ~${durMin} min` : ""}${peak != null ? ` · špička ${peak} mm/h` : ""}${srcStr}${nearStr}${staleStr}`;
+      + `${durMin ? ` · potrvá ~${durMin} min` : ""}${peak != null ? ` · špička ${peakStr(peak)}` : ""}${srcStr}${nearStr}${staleStr}`;
   } else if (!endMs || now <= endMs) {
     const minsLeft = endMs ? Math.round((endMs - now) / 60000) : null;
     document.getElementById("rc-title").innerHTML = minsLeft != null
       ? `${descr.now} <span class="rc-timer">(ještě ~${Math.max(minsLeft, 1)} min)</span>`
       : descr.now;
     document.getElementById("rc-sub").textContent =
-      `${peak != null ? `Špička ${peakStr(peak)}` : "Podle aktuálních dat"}${total != null ? ` · úhrn ~${total} mm` : ""}${srcStr}${nearStr}${staleStr}`;
+      `${peak != null ? `Špička ${peakStr(peak)}` : "Podle aktuálních dat"}${total != null ? ` · úhrn ~${num(total)} mm` : ""}${srcStr}${nearStr}${staleStr}`;
   } else {
     document.getElementById("rc-title").textContent = "Přeháňka odezněla";
-    document.getElementById("rc-sub").textContent = `${total != null ? `Úhrn ~${total} mm · ` : ""}další výhled v modelu`;
+    document.getElementById("rc-sub").textContent = `${total != null ? `Úhrn ~${num(total)} mm · ` : ""}další výhled v modelu`;
     el.classList.remove("imminent");
     el.classList.add("clear");
     document.getElementById("rc-icon").innerHTML = wImg("partly-cloudy-day-rain");
@@ -727,9 +727,9 @@ export function renderAccuracyLine() {
   const leads = [["+10", acc.leadtime_10min], ["+20", acc.leadtime_20min], ["+30", acc.leadtime_30min]]
     .filter(([, l]) => l && l.hit_rate_pct != null);
   const perLead = leads.length > 1
-    ? ` · shoda ${leads.map(([t, l]) => `<b>${t}′ ${Math.round(l.hit_rate_pct)}%</b>`).join(" / ")}`
-    : ` · shoda příchodu srážek <b>${l10.hit_rate_pct}%</b>`;
-  el.innerHTML = `📊 Přesnost nowcastu (${acc.window_days} dní): MAE <b>${l10.mae_mm_h} mm/h</b>${perLead}` +
+    ? ` · shoda ${leads.map(([t, l]) => `<b>${t}′ ${Math.round(l.hit_rate_pct)} %</b>`).join(" / ")}`
+    : ` · shoda příchodu srážek <b>${l10.hit_rate_pct} %</b>`;
+  el.innerHTML = `📊 Přesnost nowcastu (${acc.window_days} dní): MAE <b>${num(l10.mae_mm_h, 2)} mm/h</b>${perLead}` +
     ` <span style="opacity:.7">(n=${l10.n})</span>`;
   el.classList.add("show");
   el.title = acc.method || "";
@@ -751,7 +751,7 @@ export function renderVerifCard() {
     const day = new Date(d.date + "T12:00:00");
     const label = ["Ne", "Po", "Út", "St", "Čt", "Pá", "So"][day.getDay()];
     const cls = pct >= 90 ? "good" : pct >= 75 ? "mid" : "bad";
-    return `<div class="vf-col" title="${d.date}: shoda ${pct} % (${d.n_runs} běhů, MAE ${d.mae_mm_h} mm/h)">
+    return `<div class="vf-col" title="${d.date}: shoda ${pct} % (${d.n_runs} běhů, MAE ${num(d.mae_mm_h, 2)} mm/h)">
       <div class="vf-bar-wrap"><div class="vf-bar ${cls}" style="height:${Math.max(8, pct)}%"></div></div>
       <div class="vf-pct">${pct}</div>
       <div class="vf-day">${label}</div>

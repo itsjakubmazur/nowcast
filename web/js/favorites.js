@@ -3,6 +3,7 @@ import { localHM, esc } from "./utils.js";
 import { showToast } from "./toast.js";
 import { getSettings, logNotif } from "./settings.js";
 import { assessRain, precipDescr } from "./verdict.js";
+import { initUiIcons } from "./uiicons.js";
 
 const FAV_KEY = "nowcast_favs";
 const FAV_MAX = 5;
@@ -53,13 +54,38 @@ export function renderFavRow(onSelect) {
   });
 }
 
+/**
+ * Přepsat POPISEK tlačítka, ne celé tlačítko.
+ *
+ * Tlačítka v kartě mají ikonu jako SVG uvnitř (data-icon, viz uiicons.js).
+ * `btn.textContent = "…"` by ji smazala — přesně ta chyba, kterou tu už
+ * jednou udělalo tlačítko polohy (přepsalo si zaměřovač textem) i tlačítko
+ * obnovy (přepsalo se na text a rozbilo tím topbar). Popisek proto žije
+ * ve vlastním <span class="lbl">, ikona zůstává vedle něj.
+ *
+ * Když se má změnit i ikona (☆→★, zvonek přeškrtnutý→normální), přepíše se
+ * data-icon a nechá se překreslit.
+ */
+function setBtnLabel(btn, text, icon) {
+  const lbl = btn.querySelector(".lbl");
+  if (lbl) lbl.textContent = text; else btn.textContent = text;
+  if (icon && btn.dataset.icon !== icon) {
+    btn.dataset.icon = icon;
+    delete btn.dataset.iconDone;
+    btn.querySelector("svg.uicon")?.remove();
+    initUiIcons(btn.parentElement || document);
+  }
+}
+
 export function updateFavBtn(lat, lon, label, onChange) {
   const btn = document.getElementById("btn-fav");
-  btn.style.display = "";
+  // Třída, ne inline styl: vzhled i viditelnost tlačítek v kartě řídí jeden
+  // blok v CSS (viz "AKCE V KARTĚ"), a inline display by ho přebíjel.
+  btn.classList.add("show");
   const favs = loadFavs();
   const idx = favs.findIndex(f => Math.abs(f.lat - lat) < 0.01 && Math.abs(f.lon - lon) < 0.01);
   if (idx >= 0) {
-    btn.textContent = "★ Uloženo";
+    setBtnLabel(btn, "Uloženo", "star");
     btn.classList.add("saved");
     btn.onclick = () => {
       const updated = loadFavs();
@@ -69,7 +95,7 @@ export function updateFavBtn(lat, lon, label, onChange) {
       updateFavBtn(lat, lon, label, onChange);
     };
   } else {
-    btn.textContent = "☆ Uložit";
+    setBtnLabel(btn, "Uložit", "star");
     btn.classList.remove("saved");
     btn.onclick = () => {
       if (loadFavs().length >= FAV_MAX) {
@@ -228,7 +254,7 @@ export async function pushDiagnosis() {
   if (!loadFavs().length) {
     return { ok: false, code: "no-favs",
       msg: "Nemáš uložené žádné oblíbené místo.",
-      hint: "Push hlídá právě oblíbená místa — ulož si aspoň jedno (☆)." };
+      hint: "Push hlídá právě oblíbená místa — ulož si aspoň jedno tlačítkem Uložit." };
   }
 
   const reg = await navigator.serviceWorker.ready.catch(() => null);
@@ -236,7 +262,7 @@ export async function pushDiagnosis() {
   if (!sub) {
     return { ok: false, code: "not-subscribed",
       msg: "Upozornění na pozadí nejsou zapnutá.",
-      hint: "Zapni je tlačítkem 🔕 — bez toho chodí jen s otevřenou appkou." };
+      hint: "Zapni je tlačítkem Zapnout upozornění — bez toho chodí jen s otevřenou appkou." };
   }
 
   // Poslední a nejzrádnější případ: prohlížeč subscription má, ale server o ní
@@ -294,7 +320,7 @@ export async function scheduleTestPush() {
   const reg = await navigator.serviceWorker.ready.catch(() => null);
   const sub = reg ? await reg.pushManager.getSubscription().catch(() => null) : null;
   if (!sub) {
-    showToast("Nejdřív zapni upozornění tlačítkem 🔕.");
+    showToast("Nejdřív zapni upozornění tlačítkem Zapnout upozornění.");
     return null;
   }
   try {
@@ -355,7 +381,7 @@ export async function initPushButton() {
       await unsubscribePush(reg);
     } else {
       if (!loadFavs().length) {
-        showToast("Nejdřív si ulož aspoň jedno oblíbené místo (☆ Uložit).");
+        showToast("Nejdřív si ulož aspoň jedno oblíbené místo tlačítkem Uložit.");
         return;
       }
       await subscribePush(reg);
@@ -370,7 +396,8 @@ export async function initPushButton() {
 }
 
 function _renderPushBtn(btn) {
-  btn.textContent = state.pushSubscribed ? "🔔 Upozornění zapnutá" : "🔕 Zapnout upozornění";
+  setBtnLabel(btn, state.pushSubscribed ? "Upozornění zapnutá" : "Zapnout upozornění",
+              state.pushSubscribed ? "bell" : "bell-off");
   btn.classList.toggle("on", state.pushSubscribed);
 }
 

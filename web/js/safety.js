@@ -6,7 +6,7 @@
 // + hodinovka z Open-Meteo), nic nového se nestahuje.
 
 import { state } from "./state.js";
-import { haversine, esc, localHM } from "./utils.js";
+import { haversine, esc, localHM, num } from "./utils.js";
 import { uiIcon } from "./uiicons.js";
 import { markPrecipBody } from "./extras.js";
 import { assessRain, nearestPt } from "./verdict.js";
@@ -62,7 +62,7 @@ export function renderStormImpact(lat, lon) {
   const title = etaMin <= 0 ? `${w} právě nad tebou` : `${w} tě zasáhne za ~${etaMin} min`;
   const dirs = ["S", "SSV", "SV", "VSV", "V", "VJV", "JV", "JJV", "J", "JJZ", "JZ", "ZJZ", "Z", "ZSZ", "SZ", "SSZ"];
   const from = dirs[Math.round(((cell.dir_deg + 180) % 360) / 22.5) % 16];
-  const sub = `${cell.dbz} dBZ · postupuje od ${from} rychlostí ${cell.speed_kmh} km/h`
+  const sub = `${num(cell.dbz)} dBZ · postupuje od ${from} rychlostí ${Math.round(cell.speed_kmh)} km/h`
     + (cell.hail ? " · riziko krup" : "");
   el.className = `storm-impact show ${sev.cls}`;
   el.innerHTML = `<div class="si-title">${uiIcon("bolt", "si-bolt")}${esc(title)}</div><div class="si-sub">${esc(sub)}</div>`;
@@ -167,7 +167,7 @@ export function renderOutlookWindows(minutely, fc) {
     const inGood = nextGood && p.ms >= nextGood[0] && p.ms < nextGood[1];
     const cls = wet ? "wet" : inGood ? "dry-good" : "dry";
     const op = wet ? (0.5 + 0.5 * Math.min(p.rate / maxRate, 1)).toFixed(2) : "";
-    return `<i class="${cls}"${op ? ` style="opacity:${op}"` : ""} title="${localHM(new Date(p.ms).toISOString())} · ${p.rate.toFixed(1)} mm/h"></i>`;
+    return `<i class="${cls}"${op ? ` style="opacity:${op}"` : ""} title="${localHM(new Date(p.ms).toISOString())} · ${num(p.rate)} mm/h"></i>`;
   }).join("");
 
   const ticks = [0, Math.floor(tl.length / 2), tl.length - 1]

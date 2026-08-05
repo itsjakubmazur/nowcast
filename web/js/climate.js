@@ -4,6 +4,7 @@
 // 30 let), cachovaného v localStorage na 30 dní per zaokrouhlenou polohu.
 
 import { state } from "./state.js";
+import { num } from "./utils.js";
 
 const CACHE_KEY = "nowcast_climate_normals_v2"; // v2: + rekordy max/min
 const CACHE_TTL_MS = 30 * 24 * 3600 * 1000;
@@ -161,11 +162,11 @@ export async function renderDayInHistory(lat, lon, data) {
 
   body.innerHTML = `
     <div class="hist-row"><span class="hist-label">Nejtepleji</span>
-      <b>${rec.hi.toFixed(1)} °C</b><span class="hist-year">${rec.hiY}</span></div>
+      <b>${num(rec.hi)} °C</b><span class="hist-year">${rec.hiY}</span></div>
     <div class="hist-row"><span class="hist-label">Nejchladněji</span>
-      <b>${rec.lo.toFixed(1)} °C</b><span class="hist-year">${rec.loY}</span></div>
+      <b>${num(rec.lo)} °C</b><span class="hist-year">${rec.loY}</span></div>
     ${normal != null ? `<div class="hist-row"><span class="hist-label">Průměr dne</span>
-      <b>${normal.toFixed(1)} °C</b><span class="hist-year">1991–2020</span></div>` : ""}
+      <b>${num(normal)} °C</b><span class="hist-year">1991–2020</span></div>` : ""}
     ${nearHi ? `<div class="hist-note">🔥 Dnešní maximum ${Math.round(todayMax)}° útočí na rekord!</div>` : ""}
     ${nearLo && !nearHi ? `<div class="hist-note">🧊 Dnešní minimum ${Math.round(todayMin)}° se blíží rekordu chladu.</div>` : ""}`;
   panel.classList.add("show");

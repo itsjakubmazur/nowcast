@@ -17,6 +17,15 @@ const P = {
   sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M19.1 4.9l-1.8 1.8M6.7 17.3l-1.8 1.8"/>',
   eye: '<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>',
   bolt: '<path d="M13 2 5 13h6l-1 9 8-12h-6z"/>',
+  // Akce v kartě — dřív emoji (☆ 🔕 🔗 🖼 ⇄), která se na každé platformě
+  // kreslila jinak a v barvě, zatímco ovládání mapy hned nad tím mělo tenké
+  // jednobarevné glyfy. Dva ikonografické jazyky na jedné obrazovce.
+  star: '<path d="M12 3.5l2.6 5.3 5.9.9-4.2 4.1 1 5.8-5.3-2.8-5.3 2.8 1-5.8-4.2-4.1 5.9-.9Z"/>',
+  bell: '<path d="M18 9a6 6 0 1 0-12 0c0 5-2 6-2 6h16s-2-1-2-6"/><path d="M10.3 20a2 2 0 0 0 3.4 0"/>',
+  'bell-off': '<path d="M18 9a6 6 0 0 0-9.3-5"/><path d="M6.2 6.2A6 6 0 0 0 6 9c0 5-2 6-2 6h12"/><path d="M10.3 20a2 2 0 0 0 3.4 0"/><path d="M3 3l18 18"/>',
+  link: '<path d="M10 13a4 4 0 0 0 5.7 0l3-3a4 4 0 1 0-5.7-5.7L11.5 5.8"/><path d="M14 11a4 4 0 0 0-5.7 0l-3 3a4 4 0 1 0 5.7 5.7l1.5-1.5"/>',
+  frame: '<rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M3 15l4.5-4.5 4 4 3-3L21 17"/>',
+  compare: '<path d="M4 8h13l-3-3M20 16H7l3 3"/>',
 };
 
 export function uiIcon(name, cls = "uicon") {

@@ -1,5 +1,5 @@
 import { state } from "./state.js";
-import { esc, ageMinutes, degToCompass, beaufortLabel } from "./utils.js";
+import { esc, num, ageMinutes, degToCompass, beaufortLabel } from "./utils.js";
 import { thinByZoom } from "./labelthin.js";
 
 // ── WU stanice (Weather Underground PWS) ─────────────────────────────────────
@@ -21,7 +21,7 @@ export function renderWuOwnPanel() {
     return `<div class="wu-mini-row" data-station-id="${esc(s.id)}">
       <div class="wu-mini-dot"></div>
       <div class="wu-mini-name">${esc(s.name || s.id)}</div>
-      <div class="wu-mini-temp">${s.temp != null ? esc(s.temp) + "°" : "—"}</div>
+      <div class="wu-mini-temp">${s.temp != null ? esc(num(s.temp)) + "°" : "—"}</div>
       ${meta ? `<div class="wu-mini-meta">${meta}</div>` : ""}
       <div class="wu-mini-arrow">›</div>
     </div>`;
@@ -50,9 +50,9 @@ export async function openWuDetail(stationId) {
     { label: "Srážky/hod", val: s.precip_rate != null ? s.precip_rate + " mm" : "0 mm" },
     { label: "Srážky dnes", val: s.precip_total != null ? s.precip_total + " mm" : "0 mm" },
     ...(s.solar_radiation != null ? [{ label: "Záření", val: Math.round(s.solar_radiation) + " W/m²" }] : []),
-    ...(s.uv != null ? [{ label: "UV index", val: s.uv.toFixed(1) }] : []),
+    ...(s.uv != null ? [{ label: "UV index", val: num(s.uv) }] : []),
     ...(s.feels != null ? [{ label: "Pocitová", val: s.feels + " °C" }] : []),
-    ...(s.dewpoint != null ? [{ label: "Rosný bod", val: s.dewpoint.toFixed(1) + " °C" }] : []),
+    ...(s.dewpoint != null ? [{ label: "Rosný bod", val: num(s.dewpoint) + " °C" }] : []),
   ];
   box.innerHTML = `
     <button id="wu-detail-close">✕</button>
@@ -298,16 +298,16 @@ export function chmiMarkerColor(layer, value) {
 function chmiMarkerText(layer, s) {
   const v = s[layer];
   if (v == null) return "—";
-  if (layer === "temp" || layer === "dewpoint") return v.toFixed(1) + "°";
+  if (layer === "temp" || layer === "dewpoint") return num(v) + "°";
   if (layer === "humidity") return Math.round(v) + "%";
   if (layer === "wind_kmh") return Math.round(v) + "km";
-  if (layer === "precip_1h") return v.toFixed(1) + "mm";
+  if (layer === "precip_1h") return num(v) + "mm";
   if (layer === "snow_cm") return Math.round(v) + "cm";
   if (layer === "pressure") return Math.round(v) + "";
   if (layer === "solar") return Math.round(v) + "W";
   if (layer === "visibility_m") {
     if (v >= 10000) return "≥10km";
-    if (v >= 1000) return (v / 1000).toFixed(1) + "km";
+    if (v >= 1000) return num(v / 1000) + "km";
     return Math.round(v) + "m";
   }
   return String(v);
@@ -365,13 +365,13 @@ export function renderChmiMarkers() {
         <span style="color:#10b981;font-size:var(--fs-tiny)"> ● ČHMÚ</span>${ageStr}${esc(elev)}<br>
         🌡️ ${s.temp != null ? esc(s.temp) + " °C" : "—"} &nbsp;
         💧 ${s.humidity != null ? esc(s.humidity) + " %" : "—"}
-        ${s.dewpoint != null ? "<small>ros. bod " + esc(s.dewpoint.toFixed(1)) + " °C</small>" : ""}<br>
+        ${s.dewpoint != null ? "<small>ros. bod " + esc(num(s.dewpoint)) + " °C</small>" : ""}<br>
         🌬️ ${s.wind_kmh != null ? esc(s.wind_kmh) + " km/h " + esc(windDir) : "—"}
         ${s.gust_kmh != null ? `<small>(nárazy ${esc(s.gust_kmh)})</small>` : ""}<br>
         🔵 ${s.pressure != null ? esc(s.pressure) + " hPa" : "—"} &nbsp;
-        🌧️ ${s.precip_1h != null ? esc(s.precip_1h.toFixed(1)) + " mm/hod" : s.precip_10m != null ? esc(s.precip_10m.toFixed(1)) + " mm/10min" : "—"}${s.precip_24h != null ? " &nbsp;<small>(24h: " + esc(s.precip_24h.toFixed(1)) + " mm)</small>" : ""}<br>
+        🌧️ ${s.precip_1h != null ? esc(num(s.precip_1h)) + " mm/hod" : s.precip_10m != null ? esc(num(s.precip_10m)) + " mm/10min" : "—"}${s.precip_24h != null ? " &nbsp;<small>(24h: " + esc(num(s.precip_24h)) + " mm)</small>" : ""}<br>
         ${s.snow_cm != null && s.snow_cm > 0 ? "❄️ Sníh: " + esc(Math.round(s.snow_cm)) + " cm &nbsp;" : ""}
-        ${s.visibility_m != null ? "👁️ " + esc(s.visibility_m >= 1000 ? (s.visibility_m / 1000).toFixed(1) + " km" : Math.round(s.visibility_m) + " m") : ""}
+        ${s.visibility_m != null ? "👁️ " + esc(s.visibility_m >= 1000 ? num(s.visibility_m / 1000) + " km" : Math.round(s.visibility_m) + " m") : ""}
         <br><small style="color:var(--muted)">${esc(s.id)}</small>
         <br><button class="chmi-detail-btn" data-station-id="${esc(stationId)}"
           style="margin-top:.4rem;padding:.35rem .7rem;font-size:var(--fs-body);cursor:pointer;min-height:32px;
@@ -496,8 +496,8 @@ function _renderTabDnes(body, stationId) {
 
   if (obs) {
     const tempVals = series.map(r => r.temp ?? null).filter(v => v != null);
-    const tMax = tempVals.length ? Math.max(...tempVals).toFixed(1) : null;
-    const tMin = tempVals.length ? Math.min(...tempVals).toFixed(1) : null;
+    const tMax = tempVals.length ? num(Math.max(...tempVals)) : null;
+    const tMin = tempVals.length ? num(Math.min(...tempVals)) : null;
     const age = obs.time_utc ? ageMinutes(obs.time_utc) : null;
     const hero = document.createElement("div");
     hero.className = "sd-hero";
@@ -515,7 +515,7 @@ function _renderTabDnes(body, stationId) {
     body.appendChild(hero);
   }
 
-  const fmt1 = v => v != null ? v.toFixed(1) : "—";
+  const fmt1 = v => num(v);
   const fmt0 = v => v != null ? Math.round(v) : "—";
   const cards = [
     sdCard("temp", "Teplota", "🌡", "#f87171", "°C", fmt1, series),

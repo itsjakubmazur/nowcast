@@ -1,6 +1,6 @@
 import { state, PLAY } from "./state.js";
 import { setRadarFrameUrl, setRadarOpacityBoth } from "./map.js";
-import { haversine, bearing } from "./utils.js";
+import { haversine, bearing, num } from "./utils.js";
 import { isDarkTheme } from "./theme.js";
 import { showToast } from "./toast.js";
 
@@ -489,7 +489,7 @@ function _drawRainSparkCanvas(ptId, wrap, canvas) {
   ctx.fillStyle = "#9ca3af";
   ctx.font = "11px system-ui";
   ctx.textAlign = "right";
-  ctx.fillText(hasRain ? `max ${Math.max(...vals).toFixed(1)} mm/h` : "žádné srážky", W - 4, 12);
+  ctx.fillText(hasRain ? `max ${num(Math.max(...vals))} mm/h` : "žádné srážky", W - 4, 12);
   ctx.textAlign = "left";
   ctx.fillText("hist", 3, 12);
   ctx.fillText("nowcast →", t0x + 4, 12);

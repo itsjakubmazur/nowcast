@@ -9,6 +9,29 @@ export function esc(s) {
     .replaceAll('"', "&quot;").replaceAll("'", "&#39;");
 }
 
+/**
+ * Desetinné číslo pro čtenáře — česky, tedy s ČÁRKOU.
+ *
+ * Appka to dělala oběma způsoby najednou. V pravém sloupci pod sebou stály
+ * dva panely: "NORMÁL 1991–2020 · 18,8 °C" (chmidata.js si čárku dosazoval
+ * ručně) a hned pod ním "TENTO DEN V HISTORII · 30.4 °C" (climate.js
+ * nechával toFixed jak je). Stejný typ čísla, stejná jednotka, dva zápisy
+ * na vzdálenost dvou centimetrů.
+ *
+ * Ruční `.replace(".", ",")` roztroušené po souborech to neuhlídá — stačí
+ * na jednom místě zapomenout. Proto jedna funkce, přes kterou jde každé
+ * číslo, které uvidí uživatel. Vnitřní hodnoty (klíče cache, souřadnice do
+ * URL, procenta do CSS) přes ni NESMÍ — tam musí zůstat tečka.
+ */
+export function num(v, digits = 1) {
+  if (v == null || !Number.isFinite(Number(v))) return "—";
+  // Koncová nula se ořezává. Bez toho vycházelo "UV INDEX 1,0" a "SRÁŽKY/H
+  // 0,0 mm" — desetinné místo, které nenese žádnou informaci, jen tvrdí
+  // přesnost, kterou ta čísla nemají. Když je co ukázat, ukáže se to:
+  // 0.42 → "0,42", 6.5 → "6,5", 22 → "22".
+  return Number(v).toFixed(digits).replace(/\.?0+$/, "").replace(".", ",") || "0";
+}
+
 export function haversine(la1, lo1, la2, lo2) {
   const R = 6371, r = Math.PI / 180;
   const dp = (la2 - la1) * r, dl = (lo2 - lo1) * r;

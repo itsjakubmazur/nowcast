@@ -1,6 +1,6 @@
 import { state } from "./state.js";
 import { wcIconSvg, wcLabel, mostSevere, wImg } from "./icons.js";
-import { uvClass, esc, revealSwap, nowLocStr, locDateStr } from "./utils.js";
+import { uvClass, esc, num, revealSwap, nowLocStr, locDateStr } from "./utils.js";
 import { isDarkTheme } from "./theme.js";
 
 const N_HOURLY = 6;
@@ -191,9 +191,9 @@ export function renderFcNow(fc, minutely) {
       sub: "", color: "var(--green)", pct: humPct },
     { label: "Tlak", val: now.pressure != null ? String(now.pressure) : "—", unit: "hPa",
       sub: "", color: "var(--purple)", pct: pressPct },
-    { label: "Srážky/h", val: String(now.precip ?? 0), unit: "mm",
+    { label: "Srážky/h", val: num(now.precip ?? 0), unit: "mm",
       sub: now.prob != null ? `šance ${now.prob} %` : "", color: "var(--blue)", pct: precipPct },
-    ...(now.uv != null ? [{ label: "UV index", val: String(now.uv), unit: "",
+    ...(now.uv != null ? [{ label: "UV index", val: num(now.uv), unit: "",
       sub: uvWord(now.uv), color: "var(--orange)", pct: Math.min(now.uv / 11 * 100, 100) }] : []),
     ...(now.cape != null && now.cape >= 200 ? [{ label: "CAPE", val: String(now.cape), unit: "J/kg",
       sub: "energie bouřek", color: "var(--red)", pct: Math.min(now.cape / 3000 * 100, 100) }] : []),
@@ -258,7 +258,7 @@ export function renderFc24(fc, label) {
       ? `<span class="fc24-arrow" style="transform:rotate(${(h.wind_dir ?? 0) + 180}deg)">↑</span>${h.wind}`
       : "";
     const barPct = h.precip > 0 ? Math.max(12, Math.round(h.precip / hourlyMax * 100)) : 0;
-    const precLabel = h.precip > 0 ? `${h.precip} mm` : h.prob >= 25 ? `${h.prob} %` : "";
+    const precLabel = h.precip > 0 ? `${num(h.precip)} mm` : h.prob >= 25 ? `${h.prob} %` : "";
     col.innerHTML = `
       <div class="fc24-time">${esc(h.t)}</div>
       <div class="fc24-icon">${wcIconSvg(h.wc, hh)}</div>
@@ -280,8 +280,8 @@ export function renderFc24(fc, label) {
     col.className = "fc24-col fc24-block";
     const tRange = b.tmin != null ? `${b.tmin}–${b.tmax}°` : "—";
     const precStr = b.precip > 0
-      ? `${b.prob}% ${b.precip}mm`
-      : b.prob >= 15 ? `${b.prob}%` : "";
+      ? `${b.prob} % ${num(b.precip)} mm`
+      : b.prob >= 15 ? `${b.prob} %` : "";
     col.innerHTML = `
       <div class="fc24-time">${esc(b.t)}</div>
       <div class="fc24-icon">${wcIconSvg(b.wc, parseInt(b.t))}</div>
@@ -348,7 +348,7 @@ export function renderFc7(data, label) {
     // Srážky: úhrn je konkrétnější než procenta, tak jde první. Suchý den se
     // neschovává — "0 mm" tlumeně je informace, prázdné místo je otázka.
     const precStr = (prec > 0)
-      ? `<span class="prec">${Math.round(prec * 10) / 10} mm</span>`
+      ? `<span class="prec">${num(prec)} mm</span>`
       : `<span class="dry">0 mm</span>`;
     const probStr = (prob != null && prob >= 20) ? `<span>${prob} %</span>` : "";
     const gustStr = gust != null && gust >= 45
@@ -898,7 +898,7 @@ function renderAQ(data) {
   // "8 µg/m³" mělo jednotku stejně velkou jako číslo a sloupec čísel
   // přestal lícovat.
   const items = [
-    { label: "PM2.5", series: hourlySlice(h, "pm2_5"), color: "#f59e0b",
+    { label: "PM2,5", series: hourlySlice(h, "pm2_5"), color: "#f59e0b",
       val: pm25 != null ? `<span class="aq-badge aq-${lvl?.[2] || "good"}"></span>${pm25.toFixed(0)}` : "—",
       unit: pm25 != null ? "µg/m³" : "" },
     { label: "PM10", series: hourlySlice(h, "pm10"), color: "#f59e0b",

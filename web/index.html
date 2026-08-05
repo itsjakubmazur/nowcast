@@ -130,7 +130,9 @@
     <button class="glass-btn icon-only" id="btn-theme" title="Přepnout motiv" aria-label="Přepnout motiv">
       <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.5a9.5 9.5 0 1 0 0 19V2.5Z"/><circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>
     </button>
-    <button class="glass-btn embed-hide" id="btn-refresh" title="Aktualizovat">↺</button>
+    <!-- icon-only: v topbaru je sedm prvků a jediný pružný je vyhledávací
+         pole. Cokoli, co si tady vezme šířku navíc, ji sebere jemu. -->
+    <button class="glass-btn icon-only embed-hide" id="btn-refresh" title="Aktualizovat" aria-label="Aktualizovat">↺</button>
     <span id="refresh-time" class="embed-hide"></span>
   </div>
 </div>
@@ -256,9 +258,9 @@
   </div>
 
   <div id="fav-row"></div>
-  <button id="btn-compare" title="Porovnat aktuální místo s jinou obcí">⇄ Porovnat s jiným místem</button>
-  <button id="btn-fav" style="display:none">☆ Uložit místo</button>
-  <button id="btn-push">🔕 Zapnout upozornění</button>
+  <button id="btn-compare" data-icon="compare" title="Porovnat aktuální místo s jinou obcí"><span class="lbl">Porovnat s jiným místem</span></button>
+  <button id="btn-fav" data-icon="star"><span class="lbl">Uložit místo</span></button>
+  <button id="btn-push" data-icon="bell-off"><span class="lbl">Zapnout upozornění</span></button>
   <!-- Proč upozornění (ne)chodí — bez tohohle nešlo odlišit "funguje jen
        s otevřenou appkou" od "je opravdu zapnuté na pozadí". -->
   <div id="push-status" data-sec="data"></div>
@@ -266,8 +268,8 @@
        appce jedou přes jiné (in-page) API než push na pozadí. -->
   <button id="btn-test-push">Zkušební upozornění za minutu</button>
   <div class="share-row embed-hide">
-    <button id="btn-share-2">🔗 Sdílet</button>
-    <button id="btn-embed">🖼 Embed</button>
+    <button id="btn-share-2" data-icon="link"><span class="lbl">Sdílet</span></button>
+    <button id="btn-embed" data-icon="frame"><span class="lbl">Embed</span></button>
   </div>
 </div>
 
@@ -437,7 +439,7 @@
 <div id="compare-overlay">
   <div id="compare-box">
     <div class="settings-head">
-      <h3>⇄ Porovnání míst</h3>
+      <h3>Porovnání míst</h3>
       <button id="compare-close" title="Zavřít" aria-label="Zavřít">✕</button>
     </div>
     <div class="suggest" style="position:relative">
@@ -465,7 +467,10 @@
 
 <!-- Legenda radaru -->
 <div id="radar-legend">
-  <div class="legend-title">Intenzita (dBZ)</div>
+  <!-- Bez "(dBZ)": hlavičky panelů se sázejí verzálkami a z dBZ by se stalo
+       "DBZ", což je jiná jednotka než ta zamýšlená. Značka je stejně hned
+       pod radarem v #radar-source, kde se sází normálně. -->
+  <div class="legend-title">Intenzita</div>
   <div class="legend-bar"></div>
   <div class="legend-labels"></div>
 </div>

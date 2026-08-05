@@ -45,7 +45,7 @@ import { prefetchGlobalRadar } from "./globalrain.js";
 import { renderModelsPanel } from "./models.js";
 import { ensureWorldStations } from "./worldstations.js";
 import { initWorldTemps, renderWorldTemps } from "./worldtemp.js";
-import { esc } from "./utils.js";
+import { esc, num } from "./utils.js";
 import { initUiIcons } from "./uiicons.js";
 import { initSections, markSectionAlerts } from "./sections.js";
 
@@ -199,7 +199,7 @@ function renderLocationVerdict(fc, lat, lon, label) {
   if (rainH.length) {
     const totalMm = Math.round(rainH.reduce((s, x) => s + x.precip, 0) * 10) / 10;
     const maxProb = Math.max(...rainH.map(x => x.prob));
-    const mmStr = totalMm < 1 ? "do 1 mm" : `kolem ${totalMm} mm`;
+    const mmStr = totalMm < 1 ? "do 1 mm" : `kolem ${num(totalMm)} mm`;
     sentences.push(`Srážky od ${rainH[0].t} do ${rainH[rainH.length - 1].t}, úhrn ${mmStr} (pravděpodobnost ${maxProb} %).`);
   } else {
     sentences.push("Srážky se v nejbližší době neočekávají.");
@@ -261,7 +261,7 @@ function showForecast(lat, lon, label) {
 
   document.getElementById("place").textContent = label || "Vybrané místo";
   document.getElementById("dist").textContent = inCZ
-    ? `Nejbližší bod mřížky: ${near.dist.toFixed(1)} km`
+    ? `Nejbližší bod mřížky: ${num(near.dist)} km`
     : "Světový režim — radar RainViewer + model";
   updateFavBtn(lat, lon, label, () => renderFavRow(showForecast));
   showAiAsk();
@@ -421,10 +421,20 @@ function initWakeRefresh() {
 }
 
 // ── Refresh ───────────────────────────────────────────────────────────────────
+// Tlačítko si NESMÍ přepsat obsah na text.
+//
+// Dřív si při obnově nastavilo textContent na "↺ Načítám…" a po dokončení
+// na "↺ Aktualizovat" — natrvalo. V topbaru je sedm prvků a jediný pružný
+// je vyhledávací pole, takže se o tu šířku připravilo ono: na mobilu z něj
+// po první obnově zbylo "Hle". A protože obnovu spouští i návrat do popředí
+// (initWakeRefresh), stalo se to prakticky při každém skutečném použití —
+// jen ne při čerstvém načtení, což je přesně to, co dělaly testy.
+// Stav proto nese třída a přístupný název, ne obsah tlačítka.
 async function refreshAll() {
   const btn = document.getElementById("btn-refresh");
   btn.classList.add("spinning");
-  btn.textContent = "↺ Načítám…";
+  btn.setAttribute("aria-busy", "true");
+  btn.title = "Načítám…";
   try {
     await loadData();
     preloadFrames();
@@ -436,7 +446,8 @@ async function refreshAll() {
     document.getElementById("refresh-time").textContent = "Chyba: " + e.message;
   } finally {
     btn.classList.remove("spinning");
-    btn.textContent = "↺ Aktualizovat";
+    btn.removeAttribute("aria-busy");
+    btn.title = "Aktualizovat";
   }
 }
 

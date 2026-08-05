@@ -523,7 +523,10 @@ async function main() {
 
   await page.waitForSelector("#aq-panel.show", { timeout: 5000 });
   const aqText = await page.textContent("#aq-panel");
-  assertTrue(aqText.includes("PM2.5"), "panel kvality ovzduší se vykreslil");
+  // PM2,5 s čárkou — panel měřených imisí to tak psal odjakživa (viz test
+  // níž), modelový panel psal PM2.5. Dva panely nad sebou, dva zápisy téže
+  // látky.
+  assertTrue(aqText.includes("PM2,5"), "panel kvality ovzduší se vykreslil");
 
   // ── Navigace sekcí — skáče, NESKRÝVÁ ─────────────────────────────────────
   // Regrese, kterou tenhle blok hlídá, je ta nejdražší z celé appky: první
@@ -675,6 +678,71 @@ async function main() {
       `přepínač nepřekrývá levou kartu (${Math.round(stack.navBottom)} ≤ ${Math.round(stack.cardTop)})`);
   }
 
+  // ── Hlavičky panelů mluví jedním hlasem ──────────────────────────────────
+  // "Průběh dne" a "Trefili jsme se?" se sázely jako věta tučně a bíle, tedy
+  // o dva stupně hlasitěji než ostatní hlavičky (verzálky, prostrkání, šedá).
+  // Ve svitku to nevypadá jako důraz, ale jako že tam ty panely nepatří.
+  {
+    const heads = await page.evaluate(() => {
+      const sel = ".fc24-title, .fc7-title, .aq-title, .meteo-title, .astro-title,"
+        + " .mdl-title, .pp-title, .dtl-title, .vf-title";
+      const out = [];
+      for (const el of document.querySelectorAll(sel)) {
+        if (el.offsetParent === null) continue;
+        const s = getComputedStyle(el);
+        out.push({ t: el.className, size: s.fontSize, w: s.fontWeight,
+                   up: s.textTransform, c: s.color });
+      }
+      return out;
+    });
+    assertTrue(heads.length >= 4, `hlavičky panelů se našly (${heads.length})`);
+    const odd = heads.filter(h => h.up !== "uppercase" || h.size !== heads[0].size
+                                  || h.c !== heads[0].c);
+    assertTrue(odd.length === 0,
+      `všechny hlavičky panelů mají stejný zápis (výjimky: ${odd.map(o => o.t).join(", ") || "0"})`);
+  }
+
+  // ── Čísla se píšou česky, tedy s čárkou ──────────────────────────────────
+  // V pravém sloupci stály pod sebou "NORMÁL · 18,8 °C" a "TENTO DEN
+  // V HISTORII · 30.4 °C". Stejný typ čísla, dva zápisy, dva centimetry od
+  // sebe. Test čte VYKRESLENÝ text, ne zdroj — jen tak pozná, co uživatel
+  // opravdu uvidí, ať už to číslo prošlo jakoukoli cestou.
+  {
+    const dots = await page.evaluate(() => {
+      const bad = [];
+      const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+      for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+        const p = n.parentElement;
+        if (!p || p.offsetParent === null) continue;
+        if (p.closest("script, style, #settings-log, .leaflet-control-attribution")) continue;
+        // Desetinná tečka mezi číslicemi. Verze, IP a souřadnice v appce
+        // nejsou, takže každý takový výskyt je číslo pro čtenáře.
+        const m = n.nodeValue.match(/\d+\.\d+/g);
+        if (m) bad.push(`${p.className || p.tagName}: ${m.slice(0, 2).join(",")}`);
+      }
+      return [...new Set(bad)];
+    });
+    assertTrue(dots.length === 0,
+      `žádné desetinné číslo s tečkou (${dots.slice(0, 4).join(" | ") || "0"})`);
+
+    // Mezera před procentem — česky se píše "5 %". Appka to střídala i uvnitř
+    // jednoho pole: "srážky 62%" hned vedle "vlhkost ~55 %".
+    const pct = await page.evaluate(() => {
+      const bad = [];
+      const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+      for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+        const p = n.parentElement;
+        if (!p || p.offsetParent === null) continue;
+        if (p.closest("script, style, .leaflet-control-attribution")) continue;
+        const m = n.nodeValue.match(/\d%/g);
+        if (m) bad.push(`${p.className || p.tagName}: …${m[0]}`);
+      }
+      return [...new Set(bad)];
+    });
+    assertTrue(pct.length === 0,
+      `procento má před sebou mezeru (${pct.slice(0, 4).join(" | ") || "0"})`);
+  }
+
   // ── Dlaždice: jedna gramatika a nic uříznutého ───────────────────────────
   // Dlaždice jsou v levé kartě široké ~114 px (dvousloupcová mřížka), takže
   // dlouhý popisek se uřízne třemi tečkami. "v nárazech 18 k…" nikomu
@@ -702,6 +770,32 @@ async function main() {
       `žádný text v dlaždici není uříznutý (${tiles.clipped.slice(0, 3).join(" | ") || "0"})`);
     assertTrue(tiles.aqUpper, "dlaždice ovzduší mají popisek verzálkami jako ostatní");
     assertTrue(tiles.aqUnitSmaller, "jednotka je menší než hodnota i v dlaždicích ovzduší");
+  }
+
+  // ── Akce v kartě mají jeden tvar ─────────────────────────────────────────
+  // Pět tlačítek dělá totéž (Porovnat, Uložit, Zapnout upozornění, Zkušební,
+  // Sdílet/Embed) a každé mělo vlastní poloměr, velikost písma, barvu textu
+  // i minimální výšku. Rozdíly nic neznamenaly, jen se nasčítaly.
+  {
+    const acts = await page.evaluate(() => {
+      const ids = ["btn-compare", "btn-fav", "btn-push", "btn-test-push", "btn-share-2", "btn-embed"];
+      return ids.map(id => {
+        const el = document.getElementById(id);
+        if (!el) return null;
+        const s = getComputedStyle(el);
+        return { id, r: s.borderRadius, fs: s.fontSize, fw: s.fontWeight, c: s.color,
+                 h: Math.round(el.getBoundingClientRect().height),
+                 emoji: /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(el.textContent) };
+      }).filter(Boolean);
+    });
+    assertTrue(acts.length >= 5, `akční tlačítka se našla (${acts.length})`);
+    const ref = acts[0];
+    const diff = acts.filter(a => a.r !== ref.r || a.fs !== ref.fs || a.c !== ref.c);
+    assertTrue(diff.length === 0,
+      `akce v kartě mají jeden tvar (liší se: ${diff.map(d => d.id).join(", ") || "0"})`);
+    const withEmoji = acts.filter(a => a.emoji).map(a => a.id);
+    assertTrue(withEmoji.length === 0,
+      `akce používají glyfy, ne emoji (${withEmoji.join(", ") || "0"})`);
   }
 
   // ── Dvě řady pilulek se nesmí plést ──────────────────────────────────────
@@ -953,6 +1047,31 @@ async function main() {
       `řádek přehrávače se nezalamuje — osa se smrskne (${Math.round(dock.playRow)} px)`);
     assertTrue(dock.layScrolls && dock.layH < 60,
       `vrstvy jsou JEDNA vodorovná dráha (${Math.round(dock.layH)} px, roluje=${dock.layScrolls})`);
+  }
+
+  // ── Obnova nesmí sežrat vyhledávací pole ─────────────────────────────────
+  // #btn-refresh si po dokončení přepsal textContent na "↺ Aktualizovat".
+  // V topbaru je sedm prvků a jediný pružný je vyhledávací pole, takže se
+  // o tu šířku připravilo ono — na mobilu z něj zbylo "Hle". Obnovu spouští
+  // i návrat do popředí, takže se to dělo prakticky při každém použití; jen
+  // ne při čerstvém načtení, což je přesně to, co testy uměly.
+  {
+    const w = () => pageM.evaluate(() =>
+      document.getElementById("search").getBoundingClientRect().width);
+    const before = await w();
+    await pageM.click("#btn-refresh");
+    await pageM.waitForFunction(
+      () => !document.getElementById("btn-refresh").classList.contains("spinning"),
+      null, { timeout: 8000 });
+    await pageM.waitForTimeout(200);
+    const after = await w();
+    const btnText = await pageM.evaluate(() =>
+      document.getElementById("btn-refresh").textContent.trim());
+    assertTrue(after >= before - 1,
+      `vyhledávací pole po obnově nezúžilo (${Math.round(before)} → ${Math.round(after)} px)`);
+    assertTrue(after > 90, `vyhledávací pole má použitelnou šířku (${Math.round(after)} px)`);
+    assertTrue(btnText === "↺",
+      `tlačítko obnovy zůstalo ikonou, nezměnilo se v text ("${btnText}")`);
   }
 
   assertTrue(errorsM.length === 0, `žádné JS chyby na mobilní šířce (nalezeno ${errorsM.length})`);
@@ -1509,7 +1628,10 @@ async function main() {
   {
     const cssPath = path.join(__dirname, "..", "web", "css", "app.css");
     const css = fs.readFileSync(cssPath, "utf8");
-    const body = css.slice(css.indexOf("--r-pill: 999px;"));   // za definicí tokenů
+    // Komentáře pryč: popisují i to, co se ODSTRANILO ("dřív tu bylo
+    // var(--glass-border)"), a scan by na tom zůstal viset navždy.
+    const strip = t => t.replace(/\/\*[\s\S]*?\*\//g, "");
+    const body = strip(css.slice(css.indexOf("--r-pill: 999px;")));   // za definicí tokenů
 
     const rawFs = [...body.matchAll(/font-size:\s*([\d.]+)(rem|px|em)\b/g)].map(m => m[0]);
     assertTrue(rawFs.length === 0,
@@ -1521,6 +1643,16 @@ async function main() {
       .map(m => parseFloat(m[1])).filter(v => v > 4 && v !== 999);
     assertTrue(rawR.length === 0,
       `žádný poloměr mimo stupnici (${rawR.slice(0, 5).join(", ") || "0"})`);
+
+    // Proměnná, která neexistuje, tiše shodí celou deklaraci. Tři panely tak
+    // přišly o ohraničení kvůli `var(--glass-border)` (prstenec se jmenuje
+    // --gring) a nikde to nekřičelo — jen vypadaly jinak než sousedi.
+    const defined = new Set([...body.matchAll(/(--[a-z0-9-]+)\s*:/g)].map(m => m[1]));
+    for (const m of strip(css).matchAll(/(--[a-z0-9-]+)\s*:/g)) defined.add(m[1]);
+    const ghosts = [...new Set([...body.matchAll(/var\((--[a-z0-9-]+)\s*\)/g)]
+      .map(m => m[1]).filter(v => !defined.has(v)))];
+    assertTrue(ghosts.length === 0,
+      `žádná CSS proměnná bez definice (${ghosts.join(", ") || "0"})`);
 
     // A totéž v šablonách — inline styl je jen jiné místo pro stejný nepořádek.
     const inlineHits = [];

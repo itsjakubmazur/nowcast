@@ -14,7 +14,7 @@
 // hlučný odhad. Dráhu buněk počítá stormtrack.js z radaru, kde je to poctivé.
 
 import { state } from "./state.js";
-import { esc } from "./utils.js";
+import { esc, num } from "./utils.js";
 
 const STORM_WINDOW_MIN = 20;    // okno pro shlukování
 const CELL_DEG = 0.11;          // ~12 km — hrubší by slepilo dvě bouřky v jednu
@@ -169,7 +169,7 @@ export function renderStorms(strikes, nowMs = Date.now()) {
       const mins = Math.round(ageMin);
       circle.bindPopup?.(
         `<div class="wu-popup"><strong>⚡ Bouřka — ${esc(lvl.label)}</strong><br>` +
-        `${st.count} úderů za ${STORM_WINDOW_MIN} min (${String(st.perMin).replace(".", ",")}/min)<br>` +
+        `${st.count} úderů za ${STORM_WINDOW_MIN} min (${num(st.perMin)}/min)<br>` +
         `<small style="color:var(--muted)">poslední ${mins < 1 ? "právě teď" : `před ${mins} min`} · ` +
         `průměr ~${Math.round(st.radiusKm * 2)} km</small></div>`);
       _layers.push(circle);
