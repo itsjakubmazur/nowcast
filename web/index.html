@@ -134,18 +134,19 @@
 <!-- úchyt sheetu — jen mobil: tažením dolů zvětšíš mapu, klepnutím přepneš -->
 <div id="sheet-grabber" aria-hidden="true"><i></i></div>
 
+<!-- Navigace sekcí: SKÁČE, neskrývá. První verze filtrovala obsah a při
+     prvním skutečném použití se ukázalo, proč je to špatně — trefit palcem
+     spodní lištu znamenalo přijít o nowcast i předpověď, aniž by bylo vidět
+     proč. Teď jen ukazuje, kde jsi, a doveze tě jinam. -->
+<nav id="secnav" aria-label="Sekce">
+  <button type="button" data-sec="now" aria-pressed="true">Teď</button>
+  <button type="button" data-sec="today" aria-pressed="false">Dnes</button>
+  <button type="button" data-sec="week" aria-pressed="false">Týden</button>
+  <button type="button" data-sec="data" aria-pressed="false">Data</button>
+</nav>
+
 <!-- Levá floating karta -->
 <div id="left-card">
-  <!-- Navigace sekcí: SKÁČE, neskrývá. První verze filtrovala obsah a při
-       prvním skutečném použití se ukázalo, proč je to špatně — trefit palcem
-       spodní lištu znamenalo přijít o nowcast i předpověď, aniž by bylo vidět
-       proč. Teď jen ukazuje, kde jsi, a doveze tě jinam. -->
-  <nav id="secnav" aria-label="Sekce">
-    <button type="button" data-sec="now" aria-pressed="true">Teď</button>
-    <button type="button" data-sec="today" aria-pressed="false">Dnes</button>
-    <button type="button" data-sec="week" aria-pressed="false">Týden</button>
-    <button type="button" data-sec="data" aria-pressed="false">Data</button>
-  </nav>
   <!-- Zásah bouřkou — nápadný banner, když predikovaná dráha buňky protne místo.
        Je první, aby při aktivní bouřce vyhrál; jinak je skrytý (display:none)
        a nezabírá místo, takže proužek vlastních stanic níž je fakticky nahoře. -->
@@ -463,7 +464,13 @@
 </div>
 
 <!-- Vrstvový selektor ČHMÚ markerů -->
+<!-- Výběr veličiny u STANIC — vybíráš jednu z devíti (rádio), ne zapínáš
+     vrstvy. Dřív to byly volné pilulky vypadající úplně stejně jako přepínače
+     vrstev v doku radaru pod tím, včetně skoro stejného popisku
+     (Teplota × Teploty). Teď je z toho jedna spojitá dráha s popiskem: spojitá
+     dráha se čte jako "vyber jedno", volné pilulky jako "zapni si co chceš". -->
 <div id="layer-selector">
+  <span class="ls-label" aria-hidden="true">Stanice</span>
   <button class="layer-btn active" data-layer="temp" data-icon="thermometer">Teplota</button>
   <button class="layer-btn" data-layer="dewpoint" data-icon="droplet">Rosný bod</button>
   <button class="layer-btn" data-layer="humidity" data-icon="droplets">Vlhkost</button>

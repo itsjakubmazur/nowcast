@@ -568,6 +568,165 @@ async function main() {
       `klepnutí na sekci odroluje na její začátek (${before} → ${after})`);
   }
 
+  // ── Přepínač sekcí se musí vykreslit jako pilulka ────────────────────────
+  // Konkrétní chyba, kterou tenhle blok hlídá: lišta byla potomkem #left-card,
+  // ta má backdrop-filter, a ten podle spec zakládá containing block pro
+  // position:fixed. Lišta se proto nepřilepila k oknu, ale ke kartě, přistála
+  // přes tlačítka Sdílet/Embed a její sklo se rozmazalo proti sklu rodiče,
+  // takže z ní zbyl holý text bez pozadí. Test kontroluje příčinu (žádný
+  // filtrující předek) i následek (opravdové pozadí, jezdec na správném
+  // segmentu, na mobilu přilepení k dolní hraně okna).
+  {
+    const noFilteredAncestor = await page.evaluate(() => {
+      const bad = [];
+      for (let n = document.getElementById("secnav")?.parentElement;
+           n && n !== document.documentElement; n = n.parentElement) {
+        const s = getComputedStyle(n);
+        const props = [s.filter, s.backdropFilter, s.webkitBackdropFilter,
+                       s.transform, s.perspective];
+        if (props.some(v => v && v !== "none")) bad.push(n.id || n.tagName);
+      }
+      return bad;
+    });
+    assertTrue(noFilteredAncestor.length === 0,
+      `přepínač nemá předka s filtrem/transformem (${noFilteredAncestor.join(",") || "žádný"})`);
+
+    const skin = await page.evaluate(() => {
+      const nav = document.getElementById("secnav");
+      const s = getComputedStyle(nav);
+      const r = nav.getBoundingClientRect();
+      return { bg: s.backgroundColor, radius: parseFloat(s.borderRadius),
+               shadow: s.boxShadow, w: r.width, h: r.height };
+    });
+    assertTrue(!/rgba\(0, 0, 0, 0\)|transparent/.test(skin.bg),
+      `přepínač má vlastní pozadí (${skin.bg})`);
+    assertTrue(skin.radius >= 12 && skin.h > 24 && skin.w > 160,
+      `přepínač má tvar pilulky (r=${skin.radius}, ${Math.round(skin.w)}×${Math.round(skin.h)})`);
+
+    // Jezdec: --sec-i musí sedět na pořadí aktivního tlačítka.
+    for (const [sec, idx] of [["now", 0], ["today", 1], ["week", 2], ["data", 3]]) {
+      await page.click(`#secnav button[data-sec="${sec}"]`);
+      const i = await page.evaluate(() =>
+        getComputedStyle(document.getElementById("secnav")).getPropertyValue("--sec-i").trim());
+      assertTrue(Number(i) === idx, `jezdec stojí na sekci ${sec} (--sec-i=${i})`);
+    }
+
+    // Na mobilu je z přepínače spodní lišta — musí být přilepená k oknu
+    // a nesmí ležet přes obsah karty.
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.waitForTimeout(300);
+    const mob = await page.evaluate(() => {
+      const r = document.getElementById("secnav").getBoundingClientRect();
+      const s = getComputedStyle(document.getElementById("secnav"));
+      return { bottomGap: window.innerHeight - r.bottom, left: r.left,
+               width: r.width, pos: s.position, vw: window.innerWidth };
+    });
+    assertTrue(mob.pos === "fixed" && mob.bottomGap >= 0 && mob.bottomGap < 60,
+      `na mobilu je přepínač přilepený dole (${Math.round(mob.bottomGap)} px nad hranou)`);
+    assertTrue(mob.width > mob.vw * 0.8,
+      `spodní lišta jde přes celou šířku (${Math.round(mob.width)} z ${mob.vw} px)`);
+
+    // Po odrolování dolů musí být pořád čitelná: kdyby byla průsvitná jako
+    // desktopové sklo, text pod ní by prosvítal a lišta by opticky zmizela.
+    // Pozor na formát: color-mix() se nepočítá do rgba(), ale do
+    // "color(srgb r g b / a)". Když se alfa nedá přečíst, test PADÁ — jinak
+    // by fallback na 1 tvrdil, že je všechno v pořádku, aniž by cokoli změřil.
+    const alpha = await page.evaluate(() => {
+      const bg = getComputedStyle(document.getElementById("secnav")).backgroundColor;
+      let m = bg.match(/^rgba?\(([^)]+)\)/);
+      if (m) {
+        const p = m[1].split(/[,/]/).map(v => parseFloat(v));
+        return p.length > 3 ? p[3] : 1;          // rgb() bez alfy = krycí
+      }
+      m = bg.match(/^color\([^/)]+\/\s*([\d.]+)\s*\)/);
+      if (m) return parseFloat(m[1]);
+      if (/^color\(/.test(bg)) return 1;         // color() bez lomítka = krycí
+      return NaN;                                 // neznámý formát → pád
+    });
+    assertTrue(Number.isFinite(alpha) && alpha > 0.85,
+      `spodní lišta je krycí, ne průsvitná (alfa ${alpha})`);
+
+    // SHOT=<adresář> uloží obě podoby lišty k očnímu srovnání. Geometrii
+    // ověří asserty, ale jestli to vypadá jako pilulka, rozhodne jen oko.
+    if (process.env.SHOT) await page.screenshot({ path: `${process.env.SHOT}/secnav-mobil.png` });
+
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.waitForTimeout(300);
+    if (process.env.SHOT) await page.screenshot({ path: `${process.env.SHOT}/secnav-desktop.png` });
+
+    // Na desktopu lišta visí NAD kartou, ne přes ni.
+    const stack = await page.evaluate(() => {
+      const n = document.getElementById("secnav").getBoundingClientRect();
+      const c = document.getElementById("left-card").getBoundingClientRect();
+      return { navBottom: n.bottom, cardTop: c.top };
+    });
+    assertTrue(stack.navBottom <= stack.cardTop + 1,
+      `přepínač nepřekrývá levou kartu (${Math.round(stack.navBottom)} ≤ ${Math.round(stack.cardTop)})`);
+  }
+
+  // ── Dvě řady pilulek se nesmí plést ──────────────────────────────────────
+  // Nad sebou byly dvě skoro identické řady: výběr veličiny u stanic
+  // (Teplota · Rosný bod · …, vybíráš JEDNU) a přepínače vrstev mapy
+  // (Teploty · Bouřky · …, zapínáš KOLIK CHCEŠ). Stejný tvar, stejná barva,
+  // skoro stejná slova. Rozdíl teď nese tvar, a tenhle blok hlídá, že ho
+  // někdo zpátky nesrovná do jedné podoby.
+  {
+    const shapes = await page.evaluate(() => {
+      const sel = document.getElementById("layer-selector");
+      const selS = getComputedStyle(sel);
+      const opt = sel.querySelector(".layer-btn:not(.active)");
+      const act = sel.querySelector(".layer-btn.active");
+      const ctrl = document.querySelector("#radar-bar button.ctrl[data-layer], #radar-bar #btn-temps");
+      const ctrlS = ctrl ? getComputedStyle(ctrl) : null;
+      const opaque = v => !!v && !/rgba\(0, 0, 0, 0\)|transparent/.test(v);
+      return {
+        trackHasGlass: opaque(selS.backgroundColor) && selS.backdropFilter !== "none",
+        optionBare: !opaque(getComputedStyle(opt).backgroundColor)
+                    && getComputedStyle(opt).boxShadow === "none",
+        activeFilled: opaque(getComputedStyle(act).backgroundColor),
+        ctrlOwnGlass: !!ctrlS && opaque(ctrlS.backgroundColor),
+        label: sel.querySelector(".ls-label")?.textContent?.trim() || null,
+      };
+    });
+    assertTrue(shapes.trackHasGlass,
+      "výběr veličiny je JEDNA spojitá dráha se společným sklem");
+    assertTrue(shapes.optionBare,
+      "jednotlivé volby v dráze nemají vlastní sklo (jinak vypadají jako vypínače)");
+    assertTrue(shapes.activeFilled,
+      "vybraná veličina je vyplněná — v dráze je právě jedna");
+    assertTrue(shapes.ctrlOwnGlass,
+      "přepínače vrstev naopak zůstávají volné pilulky s vlastním sklem");
+    assertTrue(shapes.label === "Stanice",
+      `dráha má popisek, čeho se výběr týká (${shapes.label})`);
+
+    // A hlavně: aktivní stav obou rodin nesmí vypadat stejně.
+    const same = await page.evaluate(() => {
+      const a = document.querySelector("#layer-selector .layer-btn.active");
+      const b = document.querySelector("#radar-bar button.ctrl.active");
+      if (!b) return null;
+      const ga = getComputedStyle(a), gb = getComputedStyle(b);
+      return ga.backgroundColor === gb.backgroundColor && ga.color === gb.color;
+    });
+    assertTrue(same === false,
+      "vybraná veličina a zapnutá vrstva se od sebe liší (výplň vs. prstenec)");
+
+    if (process.env.SHOT) {
+      const box = await page.locator("#layer-selector").boundingBox();
+      const bar = await page.locator("#radar-bar").boundingBox();
+      await page.screenshot({
+        path: `${process.env.SHOT}/dve-rady.png`,
+        clip: { x: box.x - 8, y: box.y - 8, width: Math.max(box.width, bar.width) + 16,
+                height: (bar.y + bar.height) - box.y + 16 },
+      });
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.waitForTimeout(300);
+      await page.locator("#layer-selector").scrollIntoViewIfNeeded();
+      await page.locator("#layer-selector").screenshot({ path: `${process.env.SHOT}/dve-rady-mobil.png` });
+      await page.setViewportSize({ width: 1280, height: 900 });
+      await page.waitForTimeout(200);
+    }
+  }
+
   // ── Sousedské sítě ────────────────────────────────────────────────────────
   // U hranic bývá zahraniční stanice blíž než česká — v Rychvaldu je polská
   // hranice pět kilometrů daleko. Fixture proto dává polskou stanici 1 km od

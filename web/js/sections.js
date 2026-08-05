@@ -38,10 +38,25 @@ function anchorFor(sec) {
   return null;
 }
 
+/**
+ * Přepnutí segmentu.
+ *
+ * Kromě aria-pressed nastavuje --sec-i, podle kterého CSS posouvá jezdec.
+ * Index se čte z pořadí tlačítek v DOMu, ne z indexu v SECTIONS: kdyby
+ * někdy nějaká sekce v HTML chyběla, jezdec by jinak ukazoval vedle.
+ */
 function markActive(sec) {
-  document.querySelectorAll("#secnav button").forEach(b => {
-    b.setAttribute("aria-pressed", String(b.dataset.sec === sec));
+  const nav = document.getElementById("secnav");
+  if (!nav) return;
+  const btns = [...nav.querySelectorAll("button[data-sec]")];
+  let i = 0;
+  btns.forEach((b, idx) => {
+    const on = b.dataset.sec === sec;
+    b.setAttribute("aria-pressed", String(on));
+    if (on) i = idx;
   });
+  nav.style.setProperty("--sec-n", String(btns.length || 1));
+  nav.style.setProperty("--sec-i", String(i));
 }
 
 /**

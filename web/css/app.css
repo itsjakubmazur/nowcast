@@ -140,8 +140,11 @@ img.wicon { filter: var(--wicon-shadow); vertical-align: middle; }
 .fade-swap { transition: opacity .32s ease; }
 
 /* ── Glass mixin — sdílený vzhled všech plovoucích vrstev ───────────────── */
+/* .layer-btn tady schválně NENÍ: sklo nese jeho kontejner #layer-selector,
+   protože je to výběr jedné veličiny (rádio), ne sada nezávislých vypínačů.
+   Volné skleněné pilulky jsou vyhrazené přepínačům vrstev v doku radaru. */
 #left-card, #right-panel, #radar-bar-inner, #storm-bar, #radar-legend,
-.layer-btn, button.glass-btn, .search-wrap, #suggestions, .logo,
+button.glass-btn, .search-wrap, #suggestions, .logo,
 #chmi-detail, #wu-detail-box, #notif-bar, button.ctrl, #alert-bar,
 #refresh-time {
   background: var(--glass);
@@ -292,8 +295,11 @@ button.glass-btn svg { width: 17px; height: 17px; display: block; }
 #sheet-grabber { display: none; }
 
 /* ── Left floating card ─────────────────────────────────────────────────── */
+/* top je 140px, ne 100px: nad kartou visí lišta sekcí (#secnav od 96px,
+   vysoká ~35px). Lišta nemůže být uvnitř karty — karta má backdrop-filter
+   a ten zakládá containing block pro position:fixed potomky. */
 #left-card {
-  position: fixed; left: 12px; top: 100px; bottom: calc(var(--radar-bar-h) + 20px);
+  position: fixed; left: 12px; top: 140px; bottom: calc(var(--radar-bar-h) + 20px);
   width: 292px; z-index: 50;
   border-radius: var(--r-panel);
   overflow-y: auto; overflow-x: hidden;
@@ -860,47 +866,82 @@ button.glass-btn svg { width: 17px; height: 17px; display: block; }
 }
 
 /* ══ NAVIGACE SEKCÍ ═══════════════════════════════════════════════════════
-   Appka má přes dvacet panelů. V jednom svitku jsou nepřehledné z principu,
-   i kdyby byl každý z nich krásný — proto se dělí na Teď / Dnes / Týden /
-   Data. Nic se nemaže, jen se ukazuje to, co je právě na řadě.
+   Appka má přes dvacet panelů. Navigace je dělí na Teď / Dnes / Týden / Data,
+   ale NIC NESKRÝVÁ — jen skáče.
 
-   Filtrování dělá CSS, ne JavaScript, a to schválně: vykreslovací funkce si
-   viditelnost panelů řídí samy (style.display, třída .show), takže kdyby je
-   skrýval JS, prali by se o totéž a panel by problikával. Proto !important —
-   tady je to jediná cesta, jak přebít inline styl z rendereru.
+   Původně sekce filtrovaly obsah a byla to chyba, kterou odhalilo první
+   skutečné použití: stačí palcem trefit spodní lištu a z appky zmizí nowcast,
+   předpověď i týden. Vypadá to, že přišla o polovinu funkcí, a nikde není
+   vidět proč. Cena za "míň scrollování" byla nepřijatelná, protože ten, kdo
+   si toho nevšimne, přijde o data, kvůli kterým appku otevřel. Skok na sekci
+   má stejný užitek (nemusíš rolovat přes všechno), ale nemůže nic ztratit.
+
+   ── Proč je lišta na úrovni <body>, a ne uvnitř #left-card ────────────────
+   Byla uvnitř karty a na mobilu se vůbec nevykreslila jako pilulka — zůstal
+   z ní holý text ležící přes tlačítka Sdílet/Embed. Příčina je subtilní:
+   #left-card má backdrop-filter, a ten podle spec zakládá containing block
+   pro potomky s position:fixed. Lišta se proto nepřilepila k oknu, ale ke
+   kartě, a její vlastní sklo se rozmazávalo proti sklu rodiče, takže pozadí
+   opticky zmizelo. Fixní prvek nesmí být potomkem ničeho, co má filter,
+   backdrop-filter, transform ani perspective.
+
+   ── Proč posuvný jezdec, a ne obarvené tlačítko ───────────────────────────
+   Přebarvené pozadí aktivního tlačítka se při přepnutí objeví jinde, než
+   zmizelo, a oko musí novou polohu najít. Jezdec se mezi segmenty přesune,
+   takže pohyb sám nese informaci "posunul ses o jedno doprava". Jede přes
+   transform, ne přes left, aby to byla kompozice a ne přepočet layoutu.
    ═══════════════════════════════════════════════════════════════════════ */
-/* Navigace NIC NESKRÝVÁ — jen skáče. Původně sekce filtrovaly obsah a byla
-   to chyba, kterou odhalilo první skutečné použití: stačí palcem trefit
-   spodní lištu a z appky zmizí nowcast, předpověď i týden. Vypadá to, že
-   přišla o polovinu funkcí, a nikde není vidět proč. Cena za "míň scrollování"
-   byla nepřijatelná, protože ten, kdo si toho nevšimne, přijde o data, kvůli
-   kterým appku otevřel.
-   Skok na sekci má stejný užitek (nemusíš rolovat přes všechno), ale nemůže
-   nic ztratit — všechno zůstává v jednom svitku, jen se k tomu dá dostat
-   jedním klepnutím. */
 #secnav {
-  position: sticky; top: 0; z-index: 12;
-  display: flex; gap: .2rem; padding: .25rem;
-  margin: 0 0 .5rem; border-radius: 999px;
+  --sec-i: 0;                              /* index aktivní sekce, nastavuje JS */
+  --sec-n: 4;                              /* počet segmentů */
+  --sec-pad: .25rem;
+  position: fixed; left: 12px; top: 96px; width: 292px; z-index: 55;
+  display: flex; gap: 0; padding: var(--sec-pad);
+  border-radius: 999px;
   background: var(--glass);
-  -webkit-backdrop-filter: blur(24px) saturate(1.6);
-  backdrop-filter: blur(24px) saturate(1.6);
+  -webkit-backdrop-filter: blur(26px) saturate(1.7);
+  backdrop-filter: blur(26px) saturate(1.7);
   box-shadow: var(--gshadow), inset 0 1.2px 0 var(--spec), inset 0 0 0 1px var(--gring);
 }
+/* Jezdec. Šířka je přesně jeden segment, posun násobek vlastní šířky. */
+#secnav::before {
+  content: ""; position: absolute; z-index: 0;
+  top: var(--sec-pad); bottom: var(--sec-pad); left: var(--sec-pad);
+  width: calc((100% - 2 * var(--sec-pad)) / var(--sec-n));
+  border-radius: 999px;
+  background: var(--accent);
+  box-shadow: 0 2px 10px color-mix(in srgb, var(--accent) 45%, transparent);
+  transform: translateX(calc(var(--sec-i) * 100%));
+  transition: transform .28s cubic-bezier(.32, .72, 0, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  #secnav::before { transition: none; }
+}
 #secnav button {
-  flex: 1; appearance: none; border: 0; cursor: pointer; background: transparent;
+  position: relative; z-index: 1;
+  flex: 1 1 0; min-width: 0;
+  appearance: none; border: 0; cursor: pointer; background: transparent;
   color: var(--muted); font: inherit; font-size: .68rem; font-weight: 800;
   letter-spacing: .05em; text-transform: uppercase;
-  padding: .34rem 0; border-radius: 999px;
-  transition: background .16s, color .16s;
+  padding: .38rem 0; border-radius: 999px;
+  transition: color .18s;
 }
-#secnav button[aria-pressed="true"] { background: var(--accent); color: #fff; }
-#secnav button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-/* Tečka u sekce, ve které se něco děje (výstraha, blížící se déšť). */
+#secnav button:hover { color: var(--text); }
+#secnav button[aria-pressed="true"] { color: #fff; }
+/* Aktivní segment nesmí zesvětlat pod prstem — jezdec už pod ním je. */
+#secnav button[aria-pressed="true"]:hover { color: #fff; }
+#secnav button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+/* Tečka u sekce, ve které se něco děje (výstraha, blížící se déšť).
+   Je absolutně nad textem, ne za ním v řádku — jinak by rozházela šířky
+   segmentů a jezdec by přestal sedět. */
 #secnav button[data-alert="1"]::after {
-  content: ""; display: inline-block; width: 5px; height: 5px; border-radius: 50%;
-  background: var(--orange); margin-left: .3rem; vertical-align: middle;
+  content: ""; position: absolute; top: .18rem; left: 50%;
+  transform: translateX(calc(-50% + 1.05em));
+  width: 5px; height: 5px; border-radius: 50%;
+  background: var(--orange);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--bg) 70%, transparent);
 }
+#secnav button[aria-pressed="true"][data-alert="1"]::after { background: #fff; }
 
 /* ══ GRAMATIKA DLAŽDICE ═══════════════════════════════════════════════════
    Jeden tvar pro každý číselný údaj v appce: mikropopisek verzálkami a šedě,
@@ -1136,28 +1177,60 @@ button.glass-btn svg { width: 17px; height: 17px; display: block; }
 .accum-popup { font-size: .8rem; }
 .accum-popup span { color: var(--muted); font-size: .68rem; }
 
-/* ── Layer selector ─────────────────────────────────────────────────────── */
+/* ── Výběr veličiny u stanic ────────────────────────────────────────────────
+   Dvě řady pilulek nad sebou dělaly z dolní části obrazovky hádanku: nahoře
+   "Teplota · Rosný bod · Vlhkost · Vítr · Srážky/hod", dole "Teploty · Bouřky ·
+   Vítr · Hladiny · Úhrn". Stejný tvar, stejná barva, skoro stejná slova — ale
+   horní řada MĚNÍ jedno číslo u stanic (výběr jedné z devíti) a dolní ZAPÍNÁ
+   nezávislé vrstvy mapy (klidně všechny naráz).
+
+   Rozdíl teď nese tvar, ne text:
+     · jedna spojitá dráha se společným sklem = vyber jedno (rádio)
+     · volné pilulky, každá se svým sklem     = zapni si co chceš (vypínače)
+   Aktivní volba je proto vyplněná (v dráze je jen jedna), zatímco zapnutá
+   vrstva se hlásí jen prstencem — plná výplň by u pěti vrstev naráz křičela.
+   ───────────────────────────────────────────────────────────────────────── */
 #layer-selector {
   position: fixed; bottom: calc(var(--radar-bar-h) + 14px); left: 316px;
   z-index: 110;
-  display: flex; align-items: center; gap: .3rem;
+  display: flex; align-items: center; gap: .18rem;
   flex-wrap: wrap; max-width: min(58vw, 640px);
+  padding: .22rem .3rem .22rem .22rem; border-radius: 999px;
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(26px) saturate(1.7);
+  backdrop-filter: blur(26px) saturate(1.7);
+  box-shadow: var(--gshadow), inset 0 1.2px 0 var(--spec), inset 0 0 0 1px var(--gring);
+}
+/* Popisek dráhy — bez něj se pořád dá splést, čeho se výběr týká. */
+.ls-label {
+  flex: none; padding: 0 .5rem 0 .55rem;
+  font-size: .58rem; font-weight: 800; letter-spacing: .09em;
+  text-transform: uppercase; color: var(--muted);
+  border-right: 1px solid var(--rowline); align-self: stretch;
+  display: flex; align-items: center;
 }
 .layer-btn {
-  padding: .34rem .75rem; border-radius: 999px;
+  padding: .34rem .7rem; border-radius: 999px;
+  background: transparent; border: 0; box-shadow: none;
   color: var(--muted); cursor: pointer; font-size: .74rem; font-weight: 600;
-  font-family: inherit; transition: all .15s; white-space: nowrap;
-  min-height: 30px;
+  font-family: inherit; transition: background .15s, color .15s;
+  white-space: nowrap; min-height: 30px;
 }
-.layer-btn:hover { color: var(--text); }
+.layer-btn:hover { color: var(--text); background: color-mix(in srgb, var(--text) 8%, transparent); }
 /* jednotné inline SVG ikony v ovládacích tlačítkách (místo emoji) */
 .layer-btn[data-icon], button.ctrl[data-icon] { display: inline-flex; align-items: center; gap: .34rem; }
 .uicon { width: 1.02em; height: 1.02em; flex: none; opacity: .92; }
 button.ctrl .uicon { width: 1.12em; height: 1.12em; }
+/* Vyplněná, protože v dráze je aktivní právě jedna — stejná gramatika jako
+   jezdec v liště sekcí. Prstenec (jako u vrstev) by tady mátl: říkal by
+   "tohle je zapnuté", ale ostatní vypnuté, což u výběru jedné veličiny
+   nedává smysl. */
 .layer-btn.active {
-  color: var(--accent);
-  box-shadow: var(--gshadow), inset 0 1px 0 var(--spec), inset 0 0 0 1.5px var(--accent);
+  color: #fff; background: var(--accent);
+  box-shadow: 0 2px 10px color-mix(in srgb, var(--accent) 40%, transparent);
 }
+.layer-btn.active:hover { color: #fff; background: var(--accent); }
+.layer-btn.active .uicon { opacity: 1; }
 
 /* ── Radar bar — plovoucí skleněný dok ──────────────────────────────────── */
 #radar-bar {
@@ -1710,10 +1783,13 @@ footer { display: none; }
 body.embed #topbar .topbar-right > *:not(#btn-theme),
 body.embed #right-panel,
 body.embed #layer-selector,
+body.embed #secnav,
 body.embed .embed-hide {
   display: none !important;
 }
-body.embed #left-card { bottom: 1rem; }
+/* Bez lišty sekcí (půlka jejích cílů leží v skrytém pravém panelu) se karta
+   vrací nahoru na místo, které lišta jinak zabírá. */
+body.embed #left-card { top: 100px; bottom: 1rem; }
 
 /* ── Redukce pohybu ─────────────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
@@ -1778,13 +1854,23 @@ body.embed #left-card { bottom: 1rem; }
     background: var(--muted); opacity: .45;
   }
   /* Na mobilu je navigace sekcí spodní lišta: nahoře už je topbar, pruh
-     výstrah a dok radaru, a palec tam stejně nedosáhne. */
+     výstrah a dok radaru, a palec tam stejně nedosáhne.
+
+     Pozadí je tady výrazně neprůhlednější než na desktopu. Sklo funguje,
+     když má za sebou mapu; spodní lišta má za sebou rolující text, a přes
+     ten se rozmazané sklo ztratí — na screenshotu z toho zbyl holý text bez
+     pilulky. Podklad proto míchám s --bg do skoro plné krycí schopnosti
+     a blur nechávám jen jako doplněk. */
   #secnav {
-    position: fixed; left: 10px; right: 10px; bottom: 0; top: auto;
+    --sec-pad: .3rem;
+    position: fixed; left: 10px; right: 10px; bottom: 0; top: auto; width: auto;
     z-index: 60; margin: 0 0 max(10px, env(safe-area-inset-bottom));
-    padding: .3rem;
+    background: color-mix(in srgb, var(--bg) 82%, var(--glass));
+    box-shadow: 0 8px 30px rgba(0, 0, 0, .45), inset 0 1.2px 0 var(--spec),
+                inset 0 0 0 1px var(--gring);
   }
-  #secnav button { font-size: .72rem; padding: .44rem 0; }
+  #secnav button { font-size: .72rem; padding: .5rem 0; }
+  #secnav button[data-alert="1"]::after { top: .24rem; }
   /* aby poslední panel nezmizel pod lištou */
   /* Spodní lišta sekcí je fixní, takže pod ni musí být místo — jinak leží
      přes poslední tlačítka v kartě (na screenshotu přes Sdílet a Embed). */
@@ -1844,12 +1930,20 @@ body.embed #left-card { bottom: 1rem; }
     position: relative; top: auto; bottom: auto; left: auto; right: auto;
     z-index: 10;
     display: flex; flex-wrap: nowrap; overflow-x: auto;
-    gap: .3rem; padding: .35rem .6rem; max-width: 100%;
-    background: var(--bg); scrollbar-width: none;
+    gap: .18rem; padding: .25rem .3rem; margin: .35rem .6rem; max-width: none;
+    scrollbar-width: none;
     -webkit-overflow-scrolling: touch;
   }
   #layer-selector::-webkit-scrollbar { display: none; }
   .layer-btn { flex: 0 0 auto; }
+  /* Popisek se drží u levého kraje i při odrolování dráhy — jinak zmizí
+     první a zbyde zase jen anonymní řada pilulek. */
+  .ls-label {
+    position: sticky; left: 0; z-index: 1; flex: none;
+    background: var(--glass);
+    -webkit-backdrop-filter: blur(26px) saturate(1.7);
+    backdrop-filter: blur(26px) saturate(1.7);
+  }
   #storm-bar {
     order: 6; position: relative; top: auto; bottom: auto; right: auto;
     margin: .35rem .6rem; z-index: 10; width: auto; max-width: none;
