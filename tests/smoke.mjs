@@ -553,19 +553,30 @@ async function main() {
       document.querySelector('#secnav button[data-sec="data"]').getAttribute("aria-pressed"));
     assertTrue(pressed === "true", "aktivní tlačítko hlásí aria-pressed");
 
-    // Skok musí obsah opravdu posunout, jinak je navigace jen ozdoba.
-    await page.evaluate(() => window.scrollTo({ top: 0 }));
-    await page.waitForTimeout(150);
-    const pos = () => page.evaluate(() => window.scrollY
-      + (document.getElementById("left-card")?.scrollTop || 0)
-      + (document.getElementById("right-panel")?.scrollTop || 0));
-    const before = await pos();
+    // Skok musí cíl DOSTAT NAHORU. Dřív to měřil ujetý počet pixelů, ale to
+    // je vlastnost rozvržení, ne navigace: jak se appka zhušťovala, vzdálenost
+    // klesala, až test začal padat na prahu, i když skok fungoval správně.
+    // Testuje se proto to, co navigace slibuje — po klepnutí je začátek sekce
+    // na obrazovce nahoře.
+    // Výchozí stav je schválně "úplně dole ve všech svitcích" — jinak by
+    // sedmidenní výhled mohl na startu náhodou už nahoře být a skok by se
+    // nedal odlišit od nicnedělání.
+    await page.evaluate(() => {
+      window.scrollTo({ top: 99999 });
+      for (const id of ["left-card", "right-panel"]) {
+        const el = document.getElementById(id);
+        if (el) el.scrollTop = 99999;
+      }
+    });
+    await page.waitForTimeout(200);
+    const topOf = id => page.evaluate(
+      i => document.getElementById(i).getBoundingClientRect().top, id);
+    const before = await topOf("fc7");
     await page.click('#secnav button[data-sec="week"]');
     await page.waitForTimeout(700);
-    const after = await pos();
-    // Skok může jít nahoru i dolů — podstatné je, že se OPRAVDU pohnul.
-    assertTrue(Math.abs(after - before) > 40,
-      `klepnutí na sekci odroluje na její začátek (${before} → ${after})`);
+    const after = await topOf("fc7");
+    assertTrue(Math.abs(after - before) > 20 && after >= -8 && after < 160,
+      `klepnutí na sekci vytáhne její začátek nahoru (${Math.round(before)} → ${Math.round(after)} px od horní hrany)`);
   }
 
   // ── Přepínač sekcí se musí vykreslit jako pilulka ────────────────────────
@@ -664,6 +675,35 @@ async function main() {
       `přepínač nepřekrývá levou kartu (${Math.round(stack.navBottom)} ≤ ${Math.round(stack.cardTop)})`);
   }
 
+  // ── Dlaždice: jedna gramatika a nic uříznutého ───────────────────────────
+  // Dlaždice jsou v levé kartě široké ~114 px (dvousloupcová mřížka), takže
+  // dlouhý popisek se uřízne třemi tečkami. "v nárazech 18 k…" nikomu
+  // nepomůže, a protože je to nowrap + ellipsis, nikde to jinak nekřikne —
+  // test je jediné místo, které si toho všimne.
+  {
+    const tiles = await page.evaluate(() => {
+      const clipped = [];
+      for (const el of document.querySelectorAll(".tile-l, .tile-v, .tile-s, .aq-item-label, .aq-item-val")) {
+        if (el.scrollWidth > el.clientWidth + 1) clipped.push(el.textContent.trim().slice(0, 24));
+      }
+      // Ovzduší a pyl musí mluvit stejnou gramatikou jako vítr nebo tlak:
+      // popisek verzálkami a jednotka menší než hodnota.
+      const l = document.querySelector(".aq-item-label");
+      const u = document.querySelector(".aq-item-val .u");
+      const ls = l ? getComputedStyle(l) : null;
+      return {
+        clipped,
+        aqUpper: ls?.textTransform === "uppercase",
+        aqUnitSmaller: !!u && parseFloat(getComputedStyle(u).fontSize)
+                            < parseFloat(getComputedStyle(u.parentElement).fontSize),
+      };
+    });
+    assertTrue(tiles.clipped.length === 0,
+      `žádný text v dlaždici není uříznutý (${tiles.clipped.slice(0, 3).join(" | ") || "0"})`);
+    assertTrue(tiles.aqUpper, "dlaždice ovzduší mají popisek verzálkami jako ostatní");
+    assertTrue(tiles.aqUnitSmaller, "jednotka je menší než hodnota i v dlaždicích ovzduší");
+  }
+
   // ── Dvě řady pilulek se nesmí plést ──────────────────────────────────────
   // Nad sebou byly dvě skoro identické řady: výběr veličiny u stanic
   // (Teplota · Rosný bod · …, vybíráš JEDNU) a přepínače vrstev mapy
@@ -722,8 +762,13 @@ async function main() {
       await page.waitForTimeout(300);
       await page.locator("#layer-selector").scrollIntoViewIfNeeded();
       await page.locator("#layer-selector").screenshot({ path: `${process.env.SHOT}/dve-rady-mobil.png` });
+      // Celá stránka na mobilu i desktopu — na jednotnost formátování se
+      // nedá ptát po kouscích, musí se vidět všechno pod sebou.
+      await page.evaluate(() => window.scrollTo({ top: 0 }));
+      await page.screenshot({ path: `${process.env.SHOT}/audit-mobil.png`, fullPage: true });
       await page.setViewportSize({ width: 1280, height: 900 });
       await page.waitForTimeout(200);
+      await page.screenshot({ path: `${process.env.SHOT}/audit-desktop.png`, fullPage: true });
     }
   }
 
@@ -871,6 +916,45 @@ async function main() {
   await pageM.waitForSelector("#rain-countdown.show", { timeout: 8000 });
   const ctrlBox = await pageM.locator("#btn-play").boundingBox();
   assertTrue(ctrlBox && ctrlBox.height >= 40, `radar ovládací tlačítka mají dost velký dotykový cíl na mobilu (výška=${ctrlBox?.height})`);
+
+  // ── Ovládání mapy nesmí ukrojit půlku mobilu ─────────────────────────────
+  // Dok zabíral s přepínači vrstev a výběrem veličiny skoro třetinu obrazovky:
+  // osa na vlastním řádku, pod ní přehrávání a pod tím sedm vrstev zalomených
+  // do dvou až tří řad po 44 px. Je to ovládání mapy, ne obsah — nesmí
+  // soutěžit s tím, kvůli čemu je appka otevřená.
+  {
+    const dockUp = await waitForAsync(pageM, () => {
+      const el = document.getElementById("radar-bar");
+      return !!el && getComputedStyle(el).display !== "none"
+             && el.getBoundingClientRect().height > 20;
+    }, 8000);
+    assertTrue(dockUp, "dok radaru se na mobilu vykreslil");
+
+    const dock = await pageM.evaluate(() => {
+      const h = id => {
+        const el = document.getElementById(id);
+        if (!el || getComputedStyle(el).display === "none") return 0;
+        return el.getBoundingClientRect().height;
+      };
+      const rows = [...document.querySelectorAll("#radar-bar .radar-row")]
+        .filter(r => getComputedStyle(r).display !== "none");
+      const lay = document.getElementById("radar-row-layers");
+      return {
+        total: h("radar-bar") + h("layer-selector") + h("radar-legend"),
+        vh: window.innerHeight,
+        playRow: rows[0] ? rows[0].getBoundingClientRect().height : 0,
+        layH: lay ? lay.getBoundingClientRect().height : 0,
+        layScrolls: !!lay && lay.scrollWidth > lay.clientWidth + 4,
+      };
+    });
+    assertTrue(dock.total > 0 && dock.total < dock.vh * 0.22,
+      `ovládání mapy zabírá pod pětinu obrazovky (${Math.round(dock.total)} z ${dock.vh} px)`);
+    assertTrue(dock.playRow > 0 && dock.playRow < 60,
+      `řádek přehrávače se nezalamuje — osa se smrskne (${Math.round(dock.playRow)} px)`);
+    assertTrue(dock.layScrolls && dock.layH < 60,
+      `vrstvy jsou JEDNA vodorovná dráha (${Math.round(dock.layH)} px, roluje=${dock.layScrolls})`);
+  }
+
   assertTrue(errorsM.length === 0, `žádné JS chyby na mobilní šířce (nalezeno ${errorsM.length})`);
   await mobile.close();
 
@@ -1414,6 +1498,40 @@ async function main() {
   assertTrue(!accShownG, "statistika přesnosti CZ nowcastu je mimo ČR skrytá");
   assertTrue(errorsG.length === 0, `žádné JS chyby ve světovém režimu (nalezeno ${errorsG.length}: ${errorsG[0] || ""})`);
   await pageG.close();
+
+  // ── Jednotné formátování — hlídá stupnice, ne konkrétní čísla ────────────
+  // Appka měla 48 různých velikostí písma mezi .52rem a 3.7rem a sedm
+  // poloměrů mezi 8 a 18 px. Vzniklo to poctivě: každý panel se ladil zvlášť
+  // a pokaždé se trefil "skoro" jako sousedi. Rozdíl dvou setin rem ale oko
+  // nepřečte jako záměr, jen jako nepořádek. Tenhle test drží stupnici —
+  // nová velikost se musí přidat jako token, ne jako výjimka v jednom
+  // pravidle. Čte se přímo zdroj, prohlížeč k tomu není potřeba.
+  {
+    const cssPath = path.join(__dirname, "..", "web", "css", "app.css");
+    const css = fs.readFileSync(cssPath, "utf8");
+    const body = css.slice(css.indexOf("--r-pill: 999px;"));   // za definicí tokenů
+
+    const rawFs = [...body.matchAll(/font-size:\s*([\d.]+)(rem|px|em)\b/g)].map(m => m[0]);
+    assertTrue(rawFs.length === 0,
+      `žádná velikost písma mimo stupnici (${rawFs.slice(0, 4).join(", ") || "0"})`);
+
+    // Poloměry: povolené jsou tokeny, pilulka a proužky do 4 px (tam je
+    // poloměr prostě půlka výšky, ne rozhodnutí o tvaru).
+    const rawR = [...body.matchAll(/border-radius:\s*([\d.]+)px/g)]
+      .map(m => parseFloat(m[1])).filter(v => v > 4 && v !== 999);
+    assertTrue(rawR.length === 0,
+      `žádný poloměr mimo stupnici (${rawR.slice(0, 5).join(", ") || "0"})`);
+
+    // A totéž v šablonách — inline styl je jen jiné místo pro stejný nepořádek.
+    const inlineHits = [];
+    for (const f of ["web/index.html", ...fs.readdirSync(path.join(__dirname, "..", "web", "js"))
+        .filter(n => n.endsWith(".js")).map(n => `web/js/${n}`)]) {
+      const t = fs.readFileSync(path.join(__dirname, "..", f), "utf8");
+      for (const m of t.matchAll(/font-size:\s*([\d.]+)(rem|px|em)\b/g)) inlineHits.push(`${f}: ${m[0]}`);
+    }
+    assertTrue(inlineHits.length === 0,
+      `žádná velikost písma napevno v šablonách (${inlineHits.slice(0, 3).join("; ") || "0"})`);
+  }
 
   await browser.close();
   server.close();

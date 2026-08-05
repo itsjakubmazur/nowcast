@@ -75,12 +75,12 @@ export async function openWuDetail(stationId) {
             </svg>
           </div>
         </div>
-        <div style="font-size:.72rem;font-weight:600;text-align:center">${esc(windVal)}</div>
-        <div style="font-size:.6rem;color:var(--muted);text-align:center">${esc(dirStr)}</div>
+        <div style="font-size:var(--fs-sm);font-weight:600;text-align:center">${esc(windVal)}</div>
+        <div style="font-size:var(--fs-micro);color:var(--muted);text-align:center">${esc(dirStr)}</div>
       </div>` : ""}
       <div>
-        ${s.feels != null ? `<div style="font-size:.72rem;color:var(--muted)">pocitová ${esc(s.feels)}°C</div>` : ""}
-        <div style="font-size:.72rem;color:var(--muted)">${esc(beaufortLabel(s.wind_kmh))}</div>
+        ${s.feels != null ? `<div style="font-size:var(--fs-sm);color:var(--muted)">pocitová ${esc(s.feels)}°C</div>` : ""}
+        <div style="font-size:var(--fs-sm);color:var(--muted)">${esc(beaufortLabel(s.wind_kmh))}</div>
       </div>
     </div>
     <div class="wu-detail-grid">
@@ -89,7 +89,7 @@ export async function openWuDetail(stationId) {
         <div class="wu-detail-cell-val">${esc(c.val)}</div>
       </div>`).join("")}
     </div>
-    <div id="wu-history-charts"><div style="color:var(--muted);font-size:.72rem;margin-top:.75rem">Načítám historii…</div></div>`;
+    <div id="wu-history-charts"><div style="color:var(--muted);font-size:var(--fs-sm);margin-top:.75rem">Načítám historii…</div></div>`;
   overlay.classList.add("open");
   box.querySelector("#wu-detail-close").addEventListener("click", closeWuDetail);
   await _loadAndRenderWuHistory(stationId);
@@ -116,7 +116,7 @@ function _renderWuHistory(stationId) {
   if (!container) return;
   const hist = state.WU_HISTORY?.stations?.[stationId];
   if (!hist?.series?.length) {
-    container.innerHTML = `<div style="color:var(--muted);font-size:.72rem;margin-top:.75rem">Historie stanic není k dispozici.</div>`;
+    container.innerHTML = `<div style="color:var(--muted);font-size:var(--fs-sm);margin-top:.75rem">Historie stanic není k dispozici.</div>`;
     return;
   }
   const series = hist.series;
@@ -142,7 +142,7 @@ function _renderWuHistory(stationId) {
     { key: "precip_rate", label: "Srážky/hod", color: "#3b82f6", unit: "mm", bar: true },
   ];
 
-  container.innerHTML = `<div style="font-size:.72rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-top:1rem;margin-bottom:.5rem">Historie · ${series.length} záznamů</div>`;
+  container.innerHTML = `<div style="font-size:var(--fs-sm);font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-top:1rem;margin-bottom:.5rem">Historie · ${series.length} záznamů</div>`;
 
   for (const cfg of chartCfgs) {
     const vals = series.map(r => r[cfg.key] ?? null);
@@ -202,7 +202,7 @@ export function renderWuMarkers() {
 
     const windDir = s.wind_dir != null ? degToCompass(s.wind_dir) : "—";
     const age = s.time_utc ? ageMinutes(s.time_utc) : null;
-    const ageStr = age != null ? `<span style="color:var(--muted);font-size:.7rem"> před ${age} min</span>` : "";
+    const ageStr = age != null ? `<span style="color:var(--muted);font-size:var(--fs-tiny)"> před ${age} min</span>` : "";
 
     const popup = `
       <div class="wu-popup">
@@ -355,14 +355,14 @@ export function renderChmiMarkers() {
 
     const windDir = s.wind_dir != null ? degToCompass(s.wind_dir) : "—";
     const age = s.time_utc ? ageMinutes(s.time_utc) : null;
-    const ageStr = age != null ? `<span style="color:var(--muted);font-size:.7rem"> · před ${age} min</span>` : "";
+    const ageStr = age != null ? `<span style="color:var(--muted);font-size:var(--fs-tiny)"> · před ${age} min</span>` : "";
     const stationId = s.id;
     const elev = s.elev != null ? ` · ${Math.round(s.elev)} m` : "";
 
     const popup = `
       <div class="wu-popup">
         <strong>${esc(s.name || s.id)}</strong>
-        <span style="color:#10b981;font-size:.7rem"> ● ČHMÚ</span>${ageStr}${esc(elev)}<br>
+        <span style="color:#10b981;font-size:var(--fs-tiny)"> ● ČHMÚ</span>${ageStr}${esc(elev)}<br>
         🌡️ ${s.temp != null ? esc(s.temp) + " °C" : "—"} &nbsp;
         💧 ${s.humidity != null ? esc(s.humidity) + " %" : "—"}
         ${s.dewpoint != null ? "<small>ros. bod " + esc(s.dewpoint.toFixed(1)) + " °C</small>" : ""}<br>
@@ -374,7 +374,7 @@ export function renderChmiMarkers() {
         ${s.visibility_m != null ? "👁️ " + esc(s.visibility_m >= 1000 ? (s.visibility_m / 1000).toFixed(1) + " km" : Math.round(s.visibility_m) + " m") : ""}
         <br><small style="color:var(--muted)">${esc(s.id)}</small>
         <br><button class="chmi-detail-btn" data-station-id="${esc(stationId)}"
-          style="margin-top:.4rem;padding:.35rem .7rem;font-size:.78rem;cursor:pointer;min-height:32px;
+          style="margin-top:.4rem;padding:.35rem .7rem;font-size:var(--fs-body);cursor:pointer;min-height:32px;
                  background:#10b981;color:#fff;border:none;border-radius:6px;">
           Detaily →
         </button>
@@ -631,7 +631,7 @@ function _renderTabRekordy(body, stationId) {
   let html = `<div style="display:grid;gap:.6rem;padding:.5rem 0">`;
   for (const [key, rec] of Object.entries(stats.records)) {
     const [label, unit, icon] = LABELS[key] || [key, "", ""];
-    const date = rec.date ? `<span style="color:var(--muted);font-size:.7rem">${esc(rec.date.slice(0, 10))}</span>` : "";
+    const date = rec.date ? `<span style="color:var(--muted);font-size:var(--fs-tiny)">${esc(rec.date.slice(0, 10))}</span>` : "";
     html += `<div style="display:flex;justify-content:space-between;align-items:baseline;
                padding:.4rem .5rem;background:var(--bg);border-radius:6px;border:1px solid var(--border)">
       <span>${icon} ${esc(label)}</span>
@@ -736,7 +736,7 @@ export async function openChmiDetail(stationId) {
   panel.classList.add("open");
 
   if (!_chmiSeriesCache[stationId]) {
-    body.innerHTML = `<div style="color:var(--muted);font-size:.85rem;padding:1rem">Načítám data…</div>`;
+    body.innerHTML = `<div style="color:var(--muted);font-size:var(--fs-body);padding:1rem">Načítám data…</div>`;
     try {
       const r = await fetch(`data/chmi_series/${encodeURIComponent(stationId)}.json?v=${encodeURIComponent(state.CHMI?.generated_at_utc || Date.now())}`, { cache: "no-store" });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -777,7 +777,7 @@ function _renderChmiTabs(body, stationId, activeTab) {
     const active = t.id === activeTab ? "background:#10b981;color:#fff;border-color:#10b981" : "";
     tabsHtml += `<button class="chmi-tab-btn" data-tab="${t.id}"
       style="padding:.35rem .65rem;border-radius:5px;border:1px solid var(--border);min-height:32px;
-             background:transparent;color:var(--text);cursor:pointer;font-size:.75rem;${active}">
+             background:transparent;color:var(--text);cursor:pointer;font-size:var(--fs-sm);${active}">
       ${esc(t.label)}</button>`;
   }
   tabsHtml += `</div><div id="chmi-tab-content" style="flex:1;overflow-y:auto;padding:.5rem 0"></div>`;

@@ -61,29 +61,36 @@
 <!-- Radar bar — plovoucí skleněný dok -->
 <div id="radar-bar" style="display:none">
   <div id="radar-bar-inner">
-  <div class="radar-row" style="margin-bottom:.6rem">
-    <div class="timeline-wrap" style="flex:1">
+  <!-- ŘÁDEK 1 — přehrávač: převíjení, osa, čas. Dřív byla osa sama na řádku
+       a ovládání až pod ní; na mobilu z toho byly dva řádky místo jednoho
+       a nahoře zbývalo prázdné místo. Takhle to zároveň sedí na běžný
+       tvar přehrávače (tlačítka vlevo, scrubber, čas vpravo). -->
+  <div class="radar-row" id="radar-row-play">
+    <button class="ctrl" id="btn-prev" title="Předchozí snímek (←)" aria-label="Předchozí snímek">◀</button>
+    <button class="ctrl" id="btn-play" title="Přehrát/Pozastavit (mezerník)" aria-label="Přehrát/Pozastavit">▶</button>
+    <button class="ctrl" id="btn-next" title="Další snímek (→)" aria-label="Další snímek">▶▶</button>
+    <div class="timeline-wrap">
       <input type="range" id="timeline" min="0" value="0" aria-label="Časová osa radaru" />
       <div id="t0-tick"></div>
       <div id="t0-marker">teď</div>
     </div>
+    <div id="frame-time">—</div>
+    <span id="radar-t0" style="font-size:var(--fs-body);font-weight:600;color:var(--text)"></span>
   </div>
-  <div class="radar-row">
-    <button class="ctrl" id="btn-prev" title="Předchozí snímek (←)" aria-label="Předchozí snímek">◀</button>
-    <button class="ctrl" id="btn-play" title="Přehrát/Pozastavit (mezerník)" aria-label="Přehrát/Pozastavit">▶</button>
-    <button class="ctrl" id="btn-next" title="Další snímek (→)" aria-label="Další snímek">▶▶</button>
+  <!-- ŘÁDEK 2 — co se kreslí na mapu. Nezávislé vypínače, klidně všechny
+       naráz; na mobilu jedna vodorovná dráha, ne zalomení do tří řad. -->
+  <div class="radar-row" id="radar-row-layers">
     <div class="speed-group" title="Rychlost animace">
       <button class="ctrl" id="speed-slow" data-ms="900">½×</button>
       <button class="ctrl active" id="speed-norm" data-ms="500">1×</button>
       <button class="ctrl" id="speed-fast" data-ms="200">2×</button>
     </div>
-    <div id="frame-time" style="min-width:60px;text-align:center">—</div>
-    <span id="radar-t0" style="font-size:.78rem;font-weight:600;color:var(--text)"></span>
-    <div class="opacity-group" style="margin-left:auto;display:flex;align-items:center;gap:.5rem">
+    <div class="opacity-group">
       <label for="opacity-slider">Průhlednost</label>
       <input type="range" id="opacity-slider" min="0" max="100" value="70" style="width:70px" />
-      <span id="opacity-val" style="font-size:.72rem;color:var(--muted);min-width:30px">70 %</span>
+      <span id="opacity-val" style="font-size:var(--fs-sm);color:var(--muted);min-width:30px">70 %</span>
     </div>
+    <span class="rl-label" aria-hidden="true">Na mapě</span>
     <button class="ctrl" id="btn-global" data-icon="globe" title="Globální radarové dlaždice (RainViewer)">Svět</button>
     <button class="ctrl" id="btn-satellite" data-icon="satellite" title="Satelitní IR vrstva — oblačnost (RainViewer)">Družice</button>
     <button class="ctrl active" id="btn-temps" data-icon="thermometer" title="Naměřené teploty ze stanic (celosvětově) — vypni pro lepší výhled na mapu">Teploty</button>
@@ -91,12 +98,12 @@
     <button class="ctrl" id="btn-wind" data-icon="wind" title="Animované částice větru (10 m)">Vítr</button>
     <button class="ctrl" id="btn-hydro" data-icon="waves" title="Hlásné profily — stavy a průtoky toků (ČHMÚ)">Hladiny</button>
     <button class="ctrl" id="btn-accum" data-icon="droplets" title="Úhrn srážek za posledních 24 h (model)">Úhrn</button>
-    <span id="radar-updated" style="font-size:.68rem;color:var(--muted)"></span>
+    <span id="radar-updated" style="font-size:var(--fs-tiny);color:var(--muted)"></span>
   </div>
   <div class="rain-spark-wrap" id="rain-spark-wrap" style="display:none">
     <canvas id="rain-spark"></canvas>
   </div>
-  <span id="radar-source" style="font-size:.65rem;color:var(--muted);font-style:italic;display:block;margin-top:.3rem"></span>
+  <span id="radar-source" style="font-size:var(--fs-tiny);color:var(--muted);font-style:italic;display:block;margin-top:.3rem"></span>
   </div>
 </div>
 
@@ -445,7 +452,7 @@
 <div id="storm-bar">
   🌩️ Nejbližší jádro: <span id="storm-dist">—</span>
   <span id="storm-dir"></span>
-  <span id="storm-trend" style="font-size:.75rem;margin-left:.3rem"></span>
+  <span id="storm-trend" style="font-size:var(--fs-sm);margin-left:.3rem"></span>
 </div>
 
 <!-- Legenda úhrnu srážek -->
@@ -458,7 +465,7 @@
 
 <!-- Legenda radaru -->
 <div id="radar-legend">
-  <div>Intenzita (dBZ)</div>
+  <div class="legend-title">Intenzita (dBZ)</div>
   <div class="legend-bar"></div>
   <div class="legend-labels"></div>
 </div>

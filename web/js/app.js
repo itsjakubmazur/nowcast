@@ -167,7 +167,7 @@ async function showFc24(lat, lon, label) {
     } catch (e) { console.warn("v2 doplňky selhaly:", e); }
   } catch (e) {
     if (e.name === "AbortError") return;
-    scroll.innerHTML = `<div style="padding:.6rem 1rem;color:var(--muted);font-size:.85rem">Předpověď se nepodařilo načíst (${esc(e.message)}).</div>`;
+    scroll.innerHTML = `<div style="padding:.6rem 1rem;color:var(--muted);font-size:var(--fs-body)">Předpověď se nepodařilo načíst (${esc(e.message)}).</div>`;
     document.getElementById("fc7").style.display = "none";
     // Skeletony ostatních karet by jinak zůstaly navždy "načítat se" —
     // schovej je stejně, jako by to udělal jejich vlastní render, kdyby

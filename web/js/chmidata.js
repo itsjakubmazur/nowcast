@@ -242,8 +242,11 @@ export function renderAirMeasured() {
   const chips = keys.map(k => {
     const v = vals[k];
     const num = String(v.val).replace(".", ",");
+    // Jednotka je UVNITŘ hodnoty, ne za ní — jinak spadne na vlastní řádek
+    // a dlaždice přestane vypadat jako ostatní (popisek / hodnota s malou
+    // jednotkou vedle sebe).
     return `<div class="air-chip"><span>${esc(AIR_LABEL[k] || k)}</span>` +
-      `<b>${num}</b><i>${esc(v.unit || "")}</i></div>`;
+      `<b>${num}<i>${esc(v.unit || "")}</i></b></div>`;
   }).join("");
 
   const age = state.CHMI_AIR?.age_min;

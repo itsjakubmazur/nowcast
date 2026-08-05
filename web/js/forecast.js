@@ -179,21 +179,25 @@ export function renderFcNow(fc, minutely) {
   // Hodnota a jednotka jsou oddělené schválně: jednotka patří k popisku, ne
   // k číslu. Když se sází stejně velká jako hodnota, ukrádá jí pozornost a
   // sloupec čísel přestane lícovat.
+  // Popisky i kontextové řádky jsou schválně krátké. Mřížka .tiles je v levé
+  // kartě dvousloupcová (auto-fit od 106 px), takže dlaždice je široká ~114 px:
+  // vejde se asi dvanáct znaků verzálek a osmnáct malých. Delší text se uřízne
+  // třemi tečkami a přestane být k něčemu — "v nárazech 18 k…" nikomu nepomůže.
   const stats = [
     { label: "Vítr", val: now.wind != null ? String(now.wind) : "—",
       unit: now.wind != null ? `km/h${windDir ? " " + windDir : ""}` : "",
-      sub: now.gust != null ? `V NÁRAZECH ${now.gust}` : "", color: "var(--teal)", pct: windPct },
+      sub: now.gust != null ? `nárazy ${now.gust} km/h` : "", color: "var(--teal)", pct: windPct },
     { label: "Vlhkost", val: now.humidity != null ? String(now.humidity) : "—", unit: "%",
       sub: "", color: "var(--green)", pct: humPct },
     { label: "Tlak", val: now.pressure != null ? String(now.pressure) : "—", unit: "hPa",
       sub: "", color: "var(--purple)", pct: pressPct },
-    { label: "Srážky za hodinu", val: String(now.precip ?? 0), unit: "mm",
-      sub: now.prob != null ? `PRAVDĚPODOBNOST ${now.prob} %` : "", color: "var(--blue)", pct: precipPct },
+    { label: "Srážky/h", val: String(now.precip ?? 0), unit: "mm",
+      sub: now.prob != null ? `šance ${now.prob} %` : "", color: "var(--blue)", pct: precipPct },
     ...(now.uv != null ? [{ label: "UV index", val: String(now.uv), unit: "",
       sub: uvWord(now.uv), color: "var(--orange)", pct: Math.min(now.uv / 11 * 100, 100) }] : []),
     ...(now.cape != null && now.cape >= 200 ? [{ label: "CAPE", val: String(now.cape), unit: "J/kg",
-      sub: "ENERGIE PRO BOUŘKY", color: "var(--red)", pct: Math.min(now.cape / 3000 * 100, 100) }] : []),
-    ...(nearGust != null && nearGust >= 25 ? [{ label: "Náraz do 15 min", val: String(Math.round(nearGust)),
+      sub: "energie bouřek", color: "var(--red)", pct: Math.min(now.cape / 3000 * 100, 100) }] : []),
+    ...(nearGust != null && nearGust >= 25 ? [{ label: "Náraz 15 min", val: String(Math.round(nearGust)),
       unit: "km/h", sub: "", color: "var(--blue)", pct: Math.min(nearGust / 120 * 100, 100) }] : []),
   ];
 
@@ -209,12 +213,18 @@ export function renderFcNow(fc, minutely) {
 }
 
 // Slovní popis UV — číslo samo o sobě nikomu nic neříká.
+//
+// Malými písmeny, a to schválně. Kontextový řádek dlaždice se dřív sázel
+// verzálkami stejně jako popisek nad hodnotou, takže každá dlaždice křičela
+// dvakrát. Navíc české verzálky s háčky se při .68rem rozpadaly — Figtree
+// nechává nad Ď tak široký akcent, že se "PRAVDĚPODOBNOST" četlo jako
+// "PRAV DĚPO DOBNOST". Verzálky drží popisek, kontext mluví normálně.
 function uvWord(uv) {
-  if (uv < 3) return "NÍZKÝ";
-  if (uv < 6) return "STŘEDNÍ";
-  if (uv < 8) return "VYSOKÝ";
-  if (uv < 11) return "VELMI VYSOKÝ";
-  return "EXTRÉMNÍ";
+  if (uv < 3) return "nízký";
+  if (uv < 6) return "střední";
+  if (uv < 8) return "vysoký";
+  if (uv < 11) return "velmi vysoký";
+  return "extrémní";
 }
 
 function degCompass(deg) {
@@ -883,20 +893,26 @@ function renderAQ(data) {
     })
     .filter(p => p.max3d > 0);
 
+  // Jednotka se sází zvlášť a menší (span.u) — je to gramatika dlaždice,
+  // stejná jako u větru nebo tlaku. Dřív byla součástí hodnoty, takže
+  // "8 µg/m³" mělo jednotku stejně velkou jako číslo a sloupec čísel
+  // přestal lícovat.
   const items = [
     { label: "PM2.5", series: hourlySlice(h, "pm2_5"), color: "#f59e0b",
-      val: pm25 != null ? `<span class="aq-badge aq-${lvl?.[2] || "good"}"></span>${pm25.toFixed(0)} µg/m³` : "—" },
+      val: pm25 != null ? `<span class="aq-badge aq-${lvl?.[2] || "good"}"></span>${pm25.toFixed(0)}` : "—",
+      unit: pm25 != null ? "µg/m³" : "" },
     { label: "PM10", series: hourlySlice(h, "pm10"), color: "#f59e0b",
-      val: cur.pm10 != null ? cur.pm10.toFixed(0) + " µg/m³" : "—" },
+      val: cur.pm10 != null ? cur.pm10.toFixed(0) : "—", unit: cur.pm10 != null ? "µg/m³" : "" },
     { label: "Ozón O₃", series: hourlySlice(h, "ozone"), color: "#30B0C7",
-      val: cur.ozone != null ? cur.ozone.toFixed(0) + " µg/m³" : "—" },
+      val: cur.ozone != null ? cur.ozone.toFixed(0) : "—", unit: cur.ozone != null ? "µg/m³" : "" },
     { label: "Evropský AQI", series: hourlySlice(h, "european_aqi"), color: "#0A84FF",
-      val: cur.european_aqi != null ? String(Math.round(cur.european_aqi)) : "—" },
+      val: cur.european_aqi != null ? String(Math.round(cur.european_aqi)) : "—", unit: "" },
     ...pollenItems.map(p => ({
       label: `Pyl · ${p.label}`, series: p.series, color: "#22c55e",
       val: p.now != null && p.now > 0
-        ? `${p.now.toFixed(0)} zrn/m³`
-        : `<span style="color:var(--muted)">nyní 0 · max ${p.max3d.toFixed(0)}</span>`,
+        ? p.now.toFixed(0)
+        : `<span style="color:var(--muted)">0</span>`,
+      unit: p.now != null && p.now > 0 ? "zrn/m³" : `max ${p.max3d.toFixed(0)} za 3 dny`,
     })),
   ];
 
@@ -904,7 +920,7 @@ function renderAQ(data) {
   revealSwap(panel, `<div class="aq-title">Ovzduší a pyl${lvl ? ` <span style="color:var(--muted);font-weight:400">· ${esc(lvl[3])}</span>` : ""}<span class="aq-title-days">vývoj 3 dny</span></div>
     <div class="aq-grid">${items.map(it => `<div class="aq-item">
       <div class="aq-item-label">${esc(it.label)}</div>
-      <div class="aq-item-val">${it.val}</div>
+      <div class="aq-item-val">${it.val}${it.unit ? `<span class="u">${esc(it.unit)}</span>` : ""}</div>
       ${sparkSvg(it.series, it.color)}
       ${it.series ? `<div class="aq-item-axis"><span>teď</span><span>+3 dny</span></div>` : ""}
     </div>`).join("")}</div>`);

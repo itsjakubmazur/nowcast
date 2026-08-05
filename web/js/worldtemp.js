@@ -106,7 +106,7 @@ export async function renderWorldTemps() {
     const age = ageMinutes(s.time_utc);
     const m = L.marker([s.lat, s.lon], { icon, zIndexOffset: 20 })
       .bindPopup(`<div class="wu-popup"><strong>${esc(s.name || s.id)}</strong>`
-        + `<span style="color:var(--muted);font-size:.7rem"> ● METAR</span><br>`
+        + `<span style="color:var(--muted);font-size:var(--fs-tiny)"> ● METAR</span><br>`
         + `🌡️ ${esc(s.temp)} °C`
         + (s.humidity != null ? ` &nbsp; 💧 ${esc(s.humidity)} %` : "")
         + (s.wind_kmh != null ? `<br>🌬️ ${esc(s.wind_kmh)} km/h` : "")
