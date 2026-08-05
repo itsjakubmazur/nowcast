@@ -147,6 +147,13 @@ async function waitForAsync(page, fn, timeoutMs = 8000, stepMs = 100) {
   return false;
 }
 
+// Stránky v testech startují v sekci "Vše": drtivá většina asercí ověřuje
+// VYKRESLENÍ panelu, ne to, ve které sekci sedí. Filtrování by je jen slepilo.
+// Samotné přepínání sekcí má vlastní blok asercí.
+async function startInAllSections(p) {
+  await p.addInitScript(() => localStorage.setItem("nowcast_section", "all"));
+}
+
 function prepareServeDir() {
   rmrf(SERVE);
   fs.mkdirSync(SERVE, { recursive: true });
@@ -359,6 +366,7 @@ async function main() {
   await context.addInitScript(() => localStorage.setItem("nowcast_more_open", "1"));
   await context.grantPermissions(["clipboard-read", "clipboard-write"]).catch(() => {});
   const page = await context.newPage();
+  await startInAllSections(page);
 
   const consoleErrors = [];
   page.on("console", msg => {
@@ -525,20 +533,50 @@ async function main() {
   const aqText = await page.textContent("#aq-panel");
   assertTrue(aqText.includes("PM2.5"), "panel kvality ovzduší se vykreslil");
 
-  // ── Sbalitelná sekce "Podrobnější data" ───────────────────────────────────
-  const moreHasContent = await page.evaluate(() =>
-    document.getElementById("more-panels")?.classList.contains("has-content"));
-  assertTrue(moreHasContent, "sekce Podrobnější data se ukázala (panely mají data)");
-  // teď je rozbalená (localStorage v testu) → sbal a ověř, že se tělo skryje
-  await page.click("#more-toggle");
-  await page.waitForTimeout(150);
-  const collapsedHidden = await page.evaluate(() => {
-    const b = document.getElementById("more-body");
-    return getComputedStyle(b).display === "none";
-  });
-  assertTrue(collapsedHidden, "klepnutí sbalí Podrobnější data (tělo skryté)");
-  await page.click("#more-toggle"); // zpět rozbalit pro další kontroly
-  await page.waitForTimeout(150);
+  // ── Navigace sekcí — Teď / Dnes / Týden / Data / Vše ─────────────────────
+  // Sbalitelnou sekci "Podrobnější data" nahradily sekce: dvě vrstvy skládání
+  // by znamenaly klik navíc k témuž. Test hlídá to podstatné — že přepnutí
+  // opravdu skryje cizí panely a že se volba pamatuje.
+  {
+    const secs = await page.evaluate(() =>
+      [...document.querySelectorAll("#secnav button")].map(b => b.dataset.sec));
+    assertTrue(secs.join(",") === "now,today,week,data,all",
+      `navigace nabízí všech pět sekcí (${secs.join(",")})`);
+
+    await page.click('#secnav button[data-sec="week"]');
+    await page.waitForTimeout(200);
+    const inWeek = await page.evaluate(() => ({
+      body: document.body.dataset.sec,
+      fc7: getComputedStyle(document.getElementById("fc7")).display !== "none",
+      fc24: getComputedStyle(document.getElementById("fc24")).display !== "none",
+      aq: getComputedStyle(document.getElementById("aq-panel")).display !== "none",
+      stored: localStorage.getItem("nowcast_section"),
+      pressed: document.querySelector('#secnav button[data-sec="week"]')
+        .getAttribute("aria-pressed"),
+    }));
+    assertTrue(inWeek.body === "week" && inWeek.fc7,
+      `sekce Týden ukazuje 7denní výhled (${inWeek.body})`);
+    assertTrue(!inWeek.fc24 && !inWeek.aq,
+      `sekce Týden skryla panely z Dnes (fc24=${inWeek.fc24}, ovzduší=${inWeek.aq})`);
+    assertTrue(inWeek.stored === "week", `volba sekce se pamatuje (${inWeek.stored})`);
+    assertTrue(inWeek.pressed === "true", "aktivní tlačítko hlásí aria-pressed");
+
+    // Navigace sama nese data-sec na tlačítkách — nesmí se odfiltrovat.
+    const navVisible = await page.evaluate(() =>
+      [...document.querySelectorAll("#secnav button")]
+        .every(b => getComputedStyle(b).display !== "none"));
+    assertTrue(navVisible, "tlačítka navigace zůstala viditelná i po přepnutí");
+
+    await page.click('#secnav button[data-sec="all"]');
+    await page.waitForTimeout(200);
+    const inAll = await page.evaluate(() => ({
+      fc7: getComputedStyle(document.getElementById("fc7")).display !== "none",
+      fc24: getComputedStyle(document.getElementById("fc24")).display !== "none",
+      aq: getComputedStyle(document.getElementById("aq-panel")).display !== "none",
+    }));
+    assertTrue(inAll.fc7 && inAll.fc24 && inAll.aq,
+      "sekce Vše nefiltruje nic (na širokém monitoru se svitek uživí)");
+  }
 
   // ── Vlna PRO: bouřkové buňky, verifikace, bias stanice, průběh dne ────────
   const stormInfo = await page.evaluate(async () => {
@@ -877,6 +915,7 @@ async function main() {
 
   // ── Auto-obnova posledního místa (bez URL parametrů) ─────────────────────
   const page2 = await context.newPage();
+  await startInAllSections(page2);
   await page2.route("https://unpkg.com/leaflet@1.9.4/dist/leaflet.js", route => route.fulfill({ path: path.join(FIXTURES, "leaflet-stub.js"), contentType: "text/javascript" }));
   await page2.route("https://unpkg.com/leaflet@1.9.4/dist/leaflet.css", route => route.fulfill({ body: "", contentType: "text/css" }));
   await page2.route("https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js", route => route.fulfill({ path: path.join(FIXTURES, "chart-stub.js"), contentType: "text/javascript" }));
@@ -906,6 +945,7 @@ async function main() {
     geolocation: { latitude: 49.84, longitude: 18.29 }, // Ostrava
   });
   const pageG0 = await geoCtx.newPage();
+  await startInAllSections(pageG0);
   const errG0 = [];
   pageG0.on("pageerror", e => errG0.push(e.message));
   await pageG0.route("https://unpkg.com/leaflet@1.9.4/dist/leaflet.js", route => route.fulfill({ path: path.join(FIXTURES, "leaflet-stub.js"), contentType: "text/javascript" }));
@@ -1083,6 +1123,7 @@ async function main() {
   const wakeCtx = async (ageMin) => {
     const c = await browser.newContext({ serviceWorkers: "block" });
     const p = await c.newPage();
+    await startInAllSections(p);
     let manifestHits = 0;
     await p.route("**/data/radar_manifest.json*", async route => {
       manifestHits++;
@@ -1120,6 +1161,7 @@ async function main() {
   {
     const denyCtx = await browser.newContext({ serviceWorkers: "block" }); // bez permission = zamítnuto
     const pd = await denyCtx.newPage();
+  await startInAllSections(pd);
     await pd.route("https://unpkg.com/leaflet@1.9.4/dist/leaflet.js", route => route.fulfill({ path: path.join(FIXTURES, "leaflet-stub.js"), contentType: "text/javascript" }));
     await pd.route("https://unpkg.com/leaflet@1.9.4/dist/leaflet.css", route => route.fulfill({ body: "", contentType: "text/css" }));
     await pd.route("https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js", route => route.fulfill({ path: path.join(FIXTURES, "chart-stub.js"), contentType: "text/javascript" }));
@@ -1145,6 +1187,7 @@ async function main() {
   // ── Mobilní šířka ─────────────────────────────────────────────────────────
   const mobile = await browser.newContext({ viewport: { width: 390, height: 844 }, serviceWorkers: "block" });
   const pageM = await mobile.newPage();
+  await startInAllSections(pageM);
   const errorsM = [];
   pageM.on("pageerror", e => errorsM.push(e.message));
   await pageM.route("https://unpkg.com/leaflet@1.9.4/dist/leaflet.js", route => route.fulfill({ path: path.join(FIXTURES, "leaflet-stub.js"), contentType: "text/javascript" }));
@@ -1164,6 +1207,7 @@ async function main() {
 
   // ── Modely pro tohle místo: panel + učící se verifikace ───────────────────
   const pageMod = await context.newPage();
+  await startInAllSections(pageMod);
   const errorsMod = [];
   pageMod.on("pageerror", e => errorsMod.push(e.message));
   await pageMod.route("https://unpkg.com/leaflet@1.9.4/dist/leaflet.js", route => route.fulfill({ path: path.join(FIXTURES, "leaflet-stub.js"), contentType: "text/javascript" }));
@@ -1558,6 +1602,7 @@ async function main() {
 
   // ── Světový režim — místo mimo pokrytí českého radaru (New York) ──────────
   const pageG = await context.newPage();
+  await startInAllSections(pageG);
   const errorsG = [];
   pageG.on("pageerror", e => { errorsG.push(e.message); if (process.env.DEBUG) console.log("[pageG:pageerror]", e.message); });
   pageG.on("console", msg => {

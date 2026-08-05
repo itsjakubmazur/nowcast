@@ -136,6 +136,16 @@
 
 <!-- Levá floating karta -->
 <div id="left-card">
+  <!-- Navigace sekcí. Na mobilu je to spodní lišta (palec ji dosáhne),
+       na desktopu lepicí pruh v hlavě karty. Nic neskrývá natrvalo —
+       jen určuje, co je právě na řadě. -->
+  <nav id="secnav" aria-label="Sekce">
+    <button type="button" data-sec="now" aria-pressed="true">Teď</button>
+    <button type="button" data-sec="today" aria-pressed="false">Dnes</button>
+    <button type="button" data-sec="week" aria-pressed="false">Týden</button>
+    <button type="button" data-sec="data" aria-pressed="false">Data</button>
+    <button type="button" data-sec="all" aria-pressed="false">Vše</button>
+  </nav>
   <!-- Zásah bouřkou — nápadný banner, když predikovaná dráha buňky protne místo.
        Je první, aby při aktivní bouřce vyhrál; jinak je skrytý (display:none)
        a nezabírá místo, takže proužek vlastních stanic níž je fakticky nahoře. -->
@@ -157,13 +167,13 @@
   <!-- Druhý názor na odpočet výš: publikovaná extrapolace ČHMÚ (COTREC).
        Patří sem, a ne dolů mezi doplňky — je to výpověď o tom, jestli se dá
        číslu v odpočtu věřit, takže musí být vidět spolu s ním. -->
-  <div id="cotrec-card"></div>
+  <div id="cotrec-card" data-sec="now"></div>
 
   <!-- Srážky v čase — JEDEN panel se dvěma měřítky.
        Dřív to byly dvě karty nad sebou: minutový graf 0–120 min a "Kdy
        vyrazit" 0–12 h. Je to ale totéž ve dvou přiblíženích, takže to jen
        zabíralo místo a nutilo srovnávat dva různé pruhy. -->
-  <div id="precip-panel">
+  <div id="precip-panel" data-sec="now">
     <div class="pp-head">
       <span class="pp-title">Srážky</span>
       <div class="pp-tabs" id="pp-tabs">
@@ -189,7 +199,7 @@
     </div>
   </div>
 
-  <div id="forecast-panel">
+  <div id="forecast-panel" data-sec="now">
     <div class="place" id="place">Zvolte místo</div>
     <div class="dist" id="dist"></div>
     <div id="fc-hero" style="display:none" class="fc-hero">
@@ -217,9 +227,9 @@
     </div>
     <div id="ai-answer"></div>
     <div class="updated" id="updated"></div>
-    <div id="accuracy-line"></div>
+    <div id="accuracy-line" data-sec="data"></div>
     <!-- Verifikace po dnech — "Trefili jsme se?" -->
-    <div id="verif-panel"></div>
+    <div id="verif-panel" data-sec="data"></div>
     <div id="fc-now" style="display:none"></div>
     <!-- Kontrola proti nejbližší meteostanici (bias modelu) -->
     <div id="station-check"></div>
@@ -227,7 +237,7 @@
   </div>
 
   <!-- Aktivitní indexy -->
-  <div id="activities-panel">
+  <div id="activities-panel" data-sec="now">
     <div class="act-label"><span>Aktivity dnes</span><span>z hodinových dat</span></div>
     <div class="act-grid" id="act-grid"></div>
   </div>
@@ -238,7 +248,7 @@
   <button id="btn-push">🔕 Zapnout upozornění</button>
   <!-- Proč upozornění (ne)chodí — bez tohohle nešlo odlišit "funguje jen
        s otevřenou appkou" od "je opravdu zapnuté na pozadí". -->
-  <div id="push-status"></div>
+  <div id="push-status" data-sec="data"></div>
   <!-- Odložený test: okamžitý by nic nedokázal, protože notifikace v otevřené
        appce jedou přes jiné (in-page) API než push na pozadí. -->
   <button id="btn-test-push">Zkušební upozornění za minutu</button>
@@ -250,13 +260,13 @@
 
 <!-- Pravý floating panel -->
 <div id="right-panel">
-  <div class="fc24" id="fc24">
+  <div class="fc24" id="fc24" data-sec="today">
     <div class="fc24-title">24 hodin — <span id="fc24-place">—</span></div>
     <div class="fc24-scroll" id="fc24-scroll"></div>
   </div>
   <!-- Průběh dne — den jako příběh po fázích -->
   <div id="daytl-panel"></div>
-  <div class="meteo-block" id="meteo-block">
+  <div class="meteo-block" id="meteo-block" data-sec="today">
     <div class="meteo-head">
       <div class="meteo-title">Meteogram</div>
       <div class="meteo-tabs" id="meteo-tabs">
@@ -269,60 +279,59 @@
     </div>
     <div id="meteo-canvas-wrap"></div>
   </div>
-  <div class="fc7" id="fc7" style="display:none">
+  <div class="fc7" id="fc7" data-sec="week" style="display:none">
     <div class="fc7-title">7 dní — <span id="fc7-place">—</span></div>
     <div class="fc7-grid" id="fc7-grid"></div>
   </div>
   <!-- Pokročilá data — sbaleno, ať jádro (24h / průběh dne / meteogram / 7 dní)
        dýchá; rozbalí se jedním klepnutím, stav se pamatuje -->
-  <div id="more-panels" class="collapsed">
-    <button id="more-toggle" type="button" aria-expanded="false" aria-controls="more-body">
-      <span>Podrobnější data</span>
-      <span class="more-caret" aria-hidden="true"></span>
-    </button>
+  <!-- Sbalovací sekce "Podrobnější data" zrušená: panely dělí navigace
+       sekcí (Teď/Dnes/Týden/Data), takže druhá vrstva skládání by jen
+       přidala klik navíc. Obal zůstal kvůli rozvržení. -->
+  <div id="more-panels">
     <div class="more-body" id="more-body">
       <!-- Konsenzus modelů vážený naměřenou přesností — jedno číslo místo deseti -->
-      <div id="blend-card"></div>
+      <div id="blend-card" data-sec="data"></div>
       <!-- 9 modelů + hodnocení přesnosti pro konkrétní místo -->
-      <div id="models-panel"></div>
-      <div class="aq-panel" id="aq-panel"></div>
+      <div id="models-panel" data-sec="data"></div>
+      <div class="aq-panel" id="aq-panel" data-sec="today"></div>
       <!-- Astro — slunce, měsíc, kvalita noci -->
-      <div id="astro-panel">
+      <div id="astro-panel" data-sec="today">
         <div class="astro-title">Obloha a astro</div>
         <div id="astro-body"></div>
       </div>
       <!-- Zimní panel — jen v sezóně (sníh, náledí) -->
-      <div id="winter-panel">
+      <div id="winter-panel" data-sec="week">
         <div class="astro-title">Zimní podmínky</div>
         <div id="winter-body"></div>
       </div>
       <!-- Tento den v historii — rekordy ERA5 1991–2020 -->
-      <div id="history-panel">
+      <div id="history-panel" data-sec="week">
         <div class="astro-title">Tento den v historii</div>
         <div id="history-body"></div>
       </div>
       <!-- Měřená kvalita ovzduší — státní síť imisního monitoringu ČHMÚ -->
-      <div id="air-panel">
+      <div id="air-panel" data-sec="today">
         <div class="astro-title">Ovzduší — měřeno</div>
         <div id="air-body"></div>
       </div>
       <!-- Normál 1991–2020 z nejbližší klimatologické stanice -->
-      <div id="normal-panel">
+      <div id="normal-panel" data-sec="week">
         <div class="astro-title">Normál 1991–2020</div>
         <div id="normal-body"></div>
       </div>
       <!-- Prostředí pro bouřky — aerologie + výška vrcholů -->
-      <div id="convect-panel">
+      <div id="convect-panel" data-sec="today">
         <div class="astro-title">Prostředí pro bouřky</div>
         <div id="convect-body"></div>
       </div>
       <!-- Letošní rok proti normálu 1991–2020 (areálové průměry ČHMÚ) -->
-      <div id="regional-panel">
+      <div id="regional-panel" data-sec="week">
         <div class="astro-title">Letos proti normálu</div>
         <div id="regional-body"></div>
       </div>
       <!-- Oficiální textová předpověď ČHMÚ -->
-      <div id="chmitext-panel">
+      <div id="chmitext-panel" data-sec="week">
         <div class="astro-title">Slovy ČHMÚ</div>
         <div id="chmitext-body"></div>
       </div>

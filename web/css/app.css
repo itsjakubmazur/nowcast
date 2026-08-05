@@ -841,6 +841,47 @@ button.glass-btn svg { width: 17px; height: 17px; display: block; }
   .fc7-grid { display: flex; grid-template-columns: none; }
 }
 
+/* ══ NAVIGACE SEKCÍ ═══════════════════════════════════════════════════════
+   Appka má přes dvacet panelů. V jednom svitku jsou nepřehledné z principu,
+   i kdyby byl každý z nich krásný — proto se dělí na Teď / Dnes / Týden /
+   Data. Nic se nemaže, jen se ukazuje to, co je právě na řadě.
+
+   Filtrování dělá CSS, ne JavaScript, a to schválně: vykreslovací funkce si
+   viditelnost panelů řídí samy (style.display, třída .show), takže kdyby je
+   skrýval JS, prali by se o totéž a panel by problikával. Proto !important —
+   tady je to jediná cesta, jak přebít inline styl z rendereru.
+   ═══════════════════════════════════════════════════════════════════════ */
+body[data-sec="now"]   [data-sec]:not([data-sec~="now"]),
+body[data-sec="today"] [data-sec]:not([data-sec~="today"]),
+body[data-sec="week"]  [data-sec]:not([data-sec~="week"]),
+body[data-sec="data"]  [data-sec]:not([data-sec~="data"]) { display: none !important; }
+/* Navigace sama nese data-sec na tlačítkách — ta se filtrovat nesmí. */
+#secnav, #secnav button { display: revert !important; }
+
+#secnav {
+  position: sticky; top: 0; z-index: 12;
+  display: flex; gap: .2rem; padding: .25rem;
+  margin: 0 0 .5rem; border-radius: 999px;
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(24px) saturate(1.6);
+  backdrop-filter: blur(24px) saturate(1.6);
+  box-shadow: var(--gshadow), inset 0 1.2px 0 var(--spec), inset 0 0 0 1px var(--gring);
+}
+#secnav button {
+  flex: 1; appearance: none; border: 0; cursor: pointer; background: transparent;
+  color: var(--muted); font: inherit; font-size: .68rem; font-weight: 800;
+  letter-spacing: .05em; text-transform: uppercase;
+  padding: .34rem 0; border-radius: 999px;
+  transition: background .16s, color .16s;
+}
+#secnav button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+#secnav button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* Tečka u sekce, ve které se něco děje (výstraha, blížící se déšť). */
+#secnav button[data-alert="1"]::after {
+  content: ""; display: inline-block; width: 5px; height: 5px; border-radius: 50%;
+  background: var(--orange); margin-left: .3rem; vertical-align: middle;
+}
+
 /* ══ GRAMATIKA DLAŽDICE ═══════════════════════════════════════════════════
    Jeden tvar pro každý číselný údaj v appce: mikropopisek verzálkami a šedě,
    pod ním velká hodnota s tabulkovými číslicemi, pod ní kontext.
@@ -1483,8 +1524,10 @@ button.ctrl.active { background: var(--accent); color: #fff;
 
 #fc-headline { display: none; font-size: .82rem; font-weight: 600; color: var(--text); margin: .15rem 0 .4rem; line-height: 1.45; }
 /* ── Progresivní odhalování — pokročilá data ve sbalitelné sekci ─────────── */
-#more-panels { display: none; }             /* skryto, dokud panely nemají data */
-#more-panels.has-content { display: block; }
+/* Obal už nic neskládá ani neskrývá — o to, co je vidět, se stará navigace
+   sekcí. Dřív se zapínal třídou has-content z MutationObserveru; s tím
+   zmizel i důvod, proč by měl být defaultně schovaný. */
+#more-panels { display: block; }
 #more-toggle {
   width: 100%; display: flex; align-items: center; justify-content: space-between;
   background: var(--glass); border: 1px solid var(--glass-border); color: var(--text);
@@ -1559,7 +1602,6 @@ button.ctrl.active { background: var(--accent); color: #fff;
 }
 
 .more-body { display: flex; flex-direction: column; gap: .5rem; margin-top: .5rem; }
-#more-panels.collapsed .more-body { display: none; }
 
 /* ── Modely pro tohle místo (9 modelů + přesnost) ───────────────────────── */
 #models-panel {
@@ -1698,6 +1740,16 @@ body.embed #left-card { bottom: 1rem; }
     width: 2.6rem; height: .3rem; border-radius: 999px;
     background: var(--muted); opacity: .45;
   }
+  /* Na mobilu je navigace sekcí spodní lišta: nahoře už je topbar, pruh
+     výstrah a dok radaru, a palec tam stejně nedosáhne. */
+  #secnav {
+    position: fixed; left: 10px; right: 10px; bottom: 0; top: auto;
+    z-index: 60; margin: 0 0 max(10px, env(safe-area-inset-bottom));
+    padding: .3rem;
+  }
+  #secnav button { font-size: .72rem; padding: .44rem 0; }
+  /* aby poslední panel nezmizel pod lištou */
+  #right-panel { padding-bottom: 3.6rem; }
   #left-card {
     order: 3;
     position: relative; left: auto; top: auto; bottom: auto;

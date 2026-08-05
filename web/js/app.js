@@ -47,6 +47,7 @@ import { ensureWorldStations } from "./worldstations.js";
 import { initWorldTemps, renderWorldTemps } from "./worldtemp.js";
 import { esc } from "./utils.js";
 import { initUiIcons } from "./uiicons.js";
+import { initSections, markSectionAlerts } from "./sections.js";
 
 // ── Data fetch (graceful degradation — radar/grid kritické, zbytek volitelné) ─
 async function loadData() {
@@ -439,32 +440,6 @@ async function refreshAll() {
   }
 }
 
-// ── Progresivní odhalování: sekce "Podrobnější data" ────────────────────────
-// Pokročilé panely (modely, ovzduší, obloha, zima, klima) jsou defaultně
-// sbalené, ať jádro dýchá. Sekce se sama skryje, když ani jeden panel nemá
-// data (MutationObserver sleduje jejich .show), a stav rozbalení se pamatuje.
-function initMorePanels() {
-  const wrap = document.getElementById("more-panels");
-  const btn = document.getElementById("more-toggle");
-  const body = document.getElementById("more-body");
-  if (!wrap || !btn || !body) return;
-  const KEY = "nowcast_more_open";
-  const open = localStorage.getItem(KEY) === "1";
-  wrap.classList.toggle("collapsed", !open);
-  btn.setAttribute("aria-expanded", String(open));
-  btn.addEventListener("click", () => {
-    const willOpen = wrap.classList.contains("collapsed");
-    wrap.classList.toggle("collapsed", !willOpen);
-    btn.setAttribute("aria-expanded", String(willOpen));
-    localStorage.setItem(KEY, willOpen ? "1" : "0");
-  });
-  const IDS = ["models-panel", "aq-panel", "astro-panel", "winter-panel", "history-panel"];
-  const update = () => wrap.classList.toggle("has-content",
-    IDS.some(id => document.getElementById(id)?.classList.contains("show")));
-  new MutationObserver(update).observe(body, { attributes: true, attributeFilter: ["class", "style"], subtree: true });
-  update();
-}
-
 // ── Init ──────────────────────────────────────────────────────────────────────
 // Izolace kroků inicializace. Bez ní platí, že první výjimka v init() zabije
 // VŠECHNO, co se registruje za ní — a protože zapojení tlačítek a nastavení
@@ -488,7 +463,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   initToastClose();
   initEmbedMode();
   initUiIcons();   // emoji v tlačítkách → jednotná SVG ikonografie
-  initMorePanels(); // sbalitelná sekce "Podrobnější data"
+  initSections();   // Teď / Dnes / Týden / Data — dělí dvacet panelů na čtyři pohledy
 
   try {
     await loadData();
@@ -515,6 +490,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   step("chmiMarkers", renderChmiMarkers);
   step("warningsLayer", renderWarningsLayer);
   step("stormTracks", renderStormTracks);
+  step("sectionAlerts", markSectionAlerts);
   step("rainNotifications", checkRainNotifications);
   step("pushButton", initPushButton);
   step("search", () => initSearch(showForecast));
