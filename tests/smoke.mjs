@@ -823,6 +823,57 @@ async function main() {
       `žádná emoji ve zdrojích (${srcHits.slice(0, 5).join(" | ") || "0"})`);
   }
 
+  // ── Pás 12h výhledu: souvislá stuha, ne řada přihrádek ───────────────────
+  // Měl zaoblený obal, ale hranaté úseky uvnitř oddělené mezerou, takže se
+  // zaoblil jen levý konec. A hlavně: suché úseky měly natvrdo bílou na 9 %,
+  // což je ve světlém motivu bílá na bílé — pět ze šestnácti dílků nebylo
+  // vidět a pás vypadal, že v 68 % šířky prostě končí.
+  {
+    await page.evaluate(() => document.querySelector('.pp-tab[data-scale="12h"]')?.click());
+    await page.waitForTimeout(300);
+    const ow = await page.evaluate(() => {
+      const b = document.getElementById("ow-bars");
+      if (!b || !b.children.length) return null;
+      const kids = [...b.children];
+      const r = b.getBoundingClientRect();
+      const last = kids[kids.length - 1].getBoundingClientRect();
+      const rgb = v => (v.match(/[\d.]+/g) || []).map(Number);
+      // Porovnává se proti KARTĚ za dráhou, ne proti dráze samotné: dráhu
+      // úseky celou zakrývají, takže vůči ní by i neviditelný dílek vycházel
+      // v pořádku. Hledá se první předek, který má skutečné pozadí.
+      let host = b.parentElement, bg = [0, 0, 0, 0];
+      while (host && (bg[3] ?? 1) < 0.5) {
+        bg = rgb(getComputedStyle(host).backgroundColor);
+        if ((bg[3] ?? 1) >= 0.5) break;
+        host = host.parentElement;
+      }
+      // Poloprůhledný dílek se s pozadím SMÍCHÁ — právě proto bílá na 9 %
+      // ve světlém motivu zmizela. Test proto míchá stejně.
+      const mix = c => {
+        const a = c[3] ?? 1;
+        return [0, 1, 2].map(i => c[i] * a + bg[i] * (1 - a));
+      };
+      const minDelta = Math.min(...kids.map(k => {
+        const m = mix(rgb(getComputedStyle(k).backgroundColor));
+        return Math.abs(m[0] - bg[0]) + Math.abs(m[1] - bg[1]) + Math.abs(m[2] - bg[2]);
+      }));
+      return {
+        gap: getComputedStyle(b).gap,
+        radius: parseFloat(getComputedStyle(b).borderRadius),
+        fills: Math.abs(last.right - r.right) < 2,
+        minDelta,
+      };
+    });
+    assertTrue(ow, "pás 12h výhledu se vykreslil");
+    assertTrue(parseFloat(ow.gap) === 0,
+      `úseky pásu na sebe navazují bez mezer (gap ${ow.gap})`);
+    assertTrue(ow.radius >= 12,
+      `pás má zaoblené konce (r=${ow.radius})`);
+    assertTrue(ow.fills, "poslední úsek dosahuje na pravý konec dráhy");
+    assertTrue(ow.minDelta > 8,
+      `každý úsek je odlišitelný od podkladu i ve světlém motivu (nejmenší rozdíl ${Math.round(ow.minDelta)})`);
+  }
+
   // ── Každý název ikony musí v sadě existovat ──────────────────────────────
   // uiIcon() u neznámého názvu vrátí prázdný řetězec. Překlep se tedy
   // neprojeví chybou, ale TICHÝM zmizením ikony — a všimne si ho leda ten,
@@ -941,6 +992,15 @@ async function main() {
       await page.waitForTimeout(300);
       await page.locator("#layer-selector").scrollIntoViewIfNeeded();
       await page.locator("#layer-selector").screenshot({ path: `${process.env.SHOT}/dve-rady-mobil.png` });
+      // Pás 12h výhledu — přepni na měřítko 12 h a vyfoť ho.
+      await page.evaluate(() => {
+        document.querySelector('.pp-tab[data-scale="12h"]')?.click();
+        document.getElementById("precip-panel")?.scrollIntoView();
+      });
+      await page.waitForTimeout(400);
+      const owb = await page.locator("#ow-bars").boundingBox();
+      if (owb) await page.screenshot({ path: `${process.env.SHOT}/ow.png`,
+        clip: { x: owb.x - 12, y: owb.y - 40, width: owb.width + 24, height: owb.height + 70 } });
       // Celá stránka na mobilu i desktopu — na jednotnost formátování se
       // nedá ptát po kouscích, musí se vidět všechno pod sebou.
       await page.evaluate(() => window.scrollTo({ top: 0 }));
@@ -1728,6 +1788,22 @@ async function main() {
       .map(m => parseFloat(m[1])).filter(v => v > 4 && v !== 999);
     assertTrue(rawR.length === 0,
       `žádný poloměr mimo stupnici (${rawR.slice(0, 5).join(", ") || "0"})`);
+
+    // Natvrdo zapsaná bílá/černá jako POZADÍ funguje jen v jednom motivu.
+    // Přesně na tom zmizel suchý konec pásu 12h výhledu: rgba(255,255,255,.09)
+    // je ve tmě decentní šeď, ve světlém motivu bílá na bílé. Pět z šestnácti
+    // úseků nebylo vidět a vypadalo to jako chybějící data. Barvy pozadí proto
+    // musí jít přes tokeny, které mají obě varianty. Výjimka: clona pod
+    // modálním oknem má ztmavovat vždy.
+    {
+      const bad = [];
+      for (const m of body.matchAll(/background(?:-color)?:\s*([^;}]*rgba?\(\s*(?:255,\s*255,\s*255|0,\s*0,\s*0)[^)]*\)[^;}]*)/g)) {
+        if (/inset\s*:\s*0/.test(body.slice(Math.max(0, m.index - 160), m.index))) continue;  // clona modálu
+        bad.push(m[1].trim().slice(0, 60));
+      }
+      assertTrue(bad.length === 0,
+        `žádné pozadí natvrdo bílé/černé mimo clonu modálu (${bad.join(" | ") || "0"})`);
+    }
 
     // Proměnná, která neexistuje, tiše shodí celou deklaraci. Tři panely tak
     // přišly o ohraničení kvůli `var(--glass-border)` (prstenec se jmenuje

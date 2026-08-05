@@ -839,7 +839,10 @@ button.glass-btn svg { width: 17px; height: 17px; display: block; }
 /* Pruhování místo linek. Linka mezi sloupci je čára navíc v už tak hustém
    pruhu; střídavý podklad udělá totéž a zmizí, jakmile se na něj člověk
    přestane dívat. */
-.fc24-alt { background: rgba(255,255,255,.045); }
+/* --rowline, ne natvrdo bílá: token má obě varianty, takže pruh je vždycky
+   ODLIŠNÝ od podkladu. Bílá na 4,5 % ve světlém motivu skoro mizí — stejná
+   chyba, jaká úplně schovala suchý konec pásu ve 12h výhledu. */
+.fc24-alt { background: var(--rowline); }
 [data-theme="light"] .fc24-alt { background: rgba(14,26,43,.035); }
 @media (prefers-color-scheme: light) {
   :root:not([data-theme]) .fc24-alt { background: rgba(14,26,43,.035); }
@@ -1743,11 +1746,35 @@ button.ctrl.active {
 /* ── Kdy vyrazit — 12h okna beze srážek ─────────────────────────────────── */
 /* 12h pruh uvnitř společného panelu — plochý, ať se neplete se sloupcovým
    2h grafem ve vedlejší záložce. Intenzita se nese tónem, ne výškou. */
-.ow-bars { display: flex; gap: 2px; height: 14px; border-radius: var(--r-mini); overflow: hidden; }
+/* ── Pás 12h výhledu ────────────────────────────────────────────────────────
+   Tři chyby najednou, a ta nejhorší nebyla vidět jako chyba:
+
+   1. `.dry` mělo natvrdo rgba(255,255,255,.09) — bílou na 9 %. Ve tmavém
+      motivu to je decentní šeď, ve světlém BÍLÁ NA BÍLÉ. Pět z šestnácti
+      úseků tak ve dne zmizelo a pás vypadal, že končí v 68 % šířky. Vypadalo
+      to jako chybějící data, přitom tam data byla. Proto --rowline, který
+      má obě varianty.
+
+   2. Dráha měla zaoblený obal (overflow:hidden), ale úseky uvnitř byly
+      hranaté a oddělené mezerou. Zaoblil se tím jen levý konec — vpravo
+      poslední úsek na obal nedosáhl, takže pás byl zaoblený z jedné strany
+      a useknutý z druhé.
+
+   3. Mezery mezi úseky dělaly z plynulého času řadu přihrádek. Čas ale
+      přihrádky nemá; tady jde o to, KDY prší a KDY ne, ne o šestnáct
+      nezávislých políček.
+
+   Řešení všeho tří: souvislá stuha bez mezer se zaoblenými konci. Barvy
+   drží hranice mezi úseky samy. */
+.ow-bars {
+  display: flex; gap: 0; height: 14px;
+  border-radius: var(--r-pill); overflow: hidden;
+  background: var(--rowline);
+}
 .ow-bars i { flex: 1; min-width: 0; display: block; }
-.ow-bars i.wet { background: var(--blue, #0A84FF); }
-.ow-bars i.dry { background: rgba(255, 255, 255, .09); }
-.ow-bars i.dry-good { background: var(--green, #30D158); }
+.ow-bars i.wet { background: var(--blue); }
+.ow-bars i.dry { background: var(--rowline); }
+.ow-bars i.dry-good { background: var(--green); }
 .ow-axis { display: flex; justify-content: space-between; font-size: var(--fs-micro); color: var(--muted); margin-top: .2rem; }
 
 /* ── Blesky: trend + blízko ─────────────────────────────────────────────── */
