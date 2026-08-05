@@ -823,6 +823,57 @@ async function main() {
       `žádná emoji ve zdrojích (${srcHits.slice(0, 5).join(" | ") || "0"})`);
   }
 
+  // ── Barevná plocha musí být zaoblená ─────────────────────────────────────
+  // Odpočet měl v základu border-radius:0, protože je HLAVOU srážkové karty
+  // (žádné vlastní sklo, jen dělicí linka). Stavy .clear/.imminent ale to
+  // rozhodnutí obcházely a přikreslily celý box — jenže nulový poloměr
+  // a nulové boční odsazení po hlavě zůstaly. Vznikl ostrohranný obdélník
+  // zaražený do zaoblené karty, s ikonou nalepenou na rámeček.
+  //
+  // Pravidlo, které z toho plyne: co má vlastní barevnou plochu, má i tvar.
+  // Průhledné prvky (řádky, oddělovače) se netýkají — ty žádnou plochu
+  // nekreslí. Výjimka jsou dílky uvnitř zaobleného ořezaného obalu: tvar
+  // za ně drží obal (např. úseky pásu 12h výhledu).
+  {
+    for (const st of ["clear", "imminent"]) {
+      const geo = await page.evaluate(cls => {
+        const el = document.getElementById("rain-countdown");
+        el.classList.remove("clear", "imminent");
+        el.classList.add("show", cls);
+        const c = getComputedStyle(el);
+        return { r: parseFloat(c.borderRadius), pl: parseFloat(c.paddingLeft),
+                 pr: parseFloat(c.paddingRight) };
+      }, st);
+      assertTrue(geo.r >= 12 && geo.pl > 4 && geo.pr > 4,
+        `odpočet ve stavu ${st} je zaoblený a odsazený (r=${geo.r}, p=${geo.pl}/${geo.pr})`);
+    }
+
+    const square = await page.evaluate(() => {
+      const bad = [];
+      const rgba = v => (v.match(/[\d.]+/g) || []).map(Number);
+      for (const el of document.querySelectorAll("#left-card *, #right-panel *")) {
+        if (el.offsetParent === null) continue;
+        const c = getComputedStyle(el);
+        const bg = rgba(c.backgroundColor);
+        if ((bg[3] ?? 1) < 0.04) continue;                 // nic nekreslí
+        if (parseFloat(c.borderRadius) > 0) continue;      // má tvar
+        const r = el.getBoundingClientRect();
+        if (r.width < 24 || r.height < 14) continue;       // proužky a tečky
+        // Dílek uvnitř zaobleného ořezaného obalu — tvar drží obal.
+        let p = el.parentElement, clipped = false;
+        for (let i = 0; p && i < 3; p = p.parentElement, i++) {
+          const pc = getComputedStyle(p);
+          if (pc.overflow === "hidden" && parseFloat(pc.borderRadius) > 0) { clipped = true; break; }
+        }
+        if (clipped) continue;
+        bad.push(el.id || el.className || el.tagName);
+      }
+      return [...new Set(bad)];
+    });
+    assertTrue(square.length === 0,
+      `žádná barevná plocha bez zaoblení (${square.slice(0, 5).join(" | ") || "0"})`);
+  }
+
   // ── Pás 12h výhledu: souvislá stuha, ne řada přihrádek ───────────────────
   // Měl zaoblený obal, ale hranaté úseky uvnitř oddělené mezerou, takže se
   // zaoblil jen levý konec. A hlavně: suché úseky měly natvrdo bílou na 9 %,
@@ -992,6 +1043,21 @@ async function main() {
       await page.waitForTimeout(300);
       await page.locator("#layer-selector").scrollIntoViewIfNeeded();
       await page.locator("#layer-selector").screenshot({ path: `${process.env.SHOT}/dve-rady-mobil.png` });
+      // Odpočet v obou zabarvených stavech — tvar musí sedět v obou.
+      for (const st of ["clear", "imminent"]) {
+        await page.evaluate(cls => {
+          const el = document.getElementById("rain-countdown");
+          el.classList.remove("clear", "imminent");
+          el.classList.add("show", cls);
+          el.scrollIntoView();
+          window.scrollBy(0, -130);   // ať nezůstane schovaný pod topbarem
+        }, st);
+        await page.waitForTimeout(300);
+        const rc = await page.locator("#rain-countdown").boundingBox();
+        if (rc) await page.screenshot({ path: `${process.env.SHOT}/rc-${st}.png`,
+          clip: { x: rc.x - 14, y: rc.y - 14, width: rc.width + 28, height: rc.height + 28 } });
+      }
+
       // Pás 12h výhledu — přepni na měřítko 12 h a vyfoť ho.
       await page.evaluate(() => {
         document.querySelector('.pp-tab[data-scale="12h"]')?.click();

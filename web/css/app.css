@@ -371,14 +371,31 @@ button.glass-btn svg { width: 17px; height: 17px; display: block; }
   border-left: 0; border-radius: 0; background: none; box-shadow: none;
 }
 #rain-countdown.show { display: flex; }
-#rain-countdown.imminent {
-  background: color-mix(in srgb, var(--blue) 22%, var(--glass2));
-  box-shadow: inset 0 1px 0 var(--spec), inset 0 0 0 1px color-mix(in srgb, var(--blue) 40%, var(--gring));
-}
+
+/* ── Zabarvený stav odpočtu ────────────────────────────────────────────────
+   Základní pravidlo výš říká, že odpočet je HLAVA srážkové karty: žádné
+   vlastní sklo, jen dělicí linka. Stavy .clear/.imminent ale to rozhodnutí
+   obcházely — přikreslily celý box s prstencem, jenže border-radius zůstal
+   po hlavě nulový a padding nulový i po stranách. Vznikl tak ostrohranný
+   obdélník zaražený do zaoblené karty, s ikonou nalepenou na rámeček.
+
+   Zabarvení je užitečné (zelená = sucho se pozná okamžitě), takže zůstává —
+   ale jako zaoblený plovoucí blok s odsazením, ne jako uříznutý rámeček.
+   Prstenec je pryč: rámeček v rámečku byl přesně ten optický šum, kvůli
+   kterému odpočet o vlastní sklo přišel. Barevná plocha stačí.
+
+   Dělicí linka se v zabarveném stavu ruší — blok se od obsahu pod sebou
+   odděluje sám, dvojí oddělení je nadbytek. */
+#rain-countdown.imminent,
 #rain-countdown.clear {
-  background: color-mix(in srgb, var(--green) 14%, var(--glass2));
-  box-shadow: inset 0 1px 0 var(--spec), inset 0 0 0 1px color-mix(in srgb, var(--green) 30%, var(--gring));
+  border-radius: var(--r-card);
+  padding: .6rem .75rem;
+  margin-bottom: .6rem;
+  border-bottom: none;
+  box-shadow: none;
 }
+#rain-countdown.imminent { background: color-mix(in srgb, var(--blue) 20%, var(--glass2)); }
+#rain-countdown.clear    { background: color-mix(in srgb, var(--green) 14%, var(--glass2)); }
 .rc-icon { font-size: var(--fs-xl); line-height: 1; flex-shrink: 0; }
 .rc-icon svg, .rc-icon img { width: 38px; height: 38px; display: block; }
 .rc-body { min-width: 0; }
