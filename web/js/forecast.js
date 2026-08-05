@@ -176,24 +176,45 @@ export function renderFcNow(fc, minutely) {
   // Nejbližší 15min krok s nejvyšším nárazem — jemnější detail než hodinové maximum
   const nearGust = minutely?.length ? Math.max(...minutely.map(m => m.gust ?? 0)) : null;
 
+  // Hodnota a jednotka jsou oddělené schválně: jednotka patří k popisku, ne
+  // k číslu. Když se sází stejně velká jako hodnota, ukrádá jí pozornost a
+  // sloupec čísel přestane lícovat.
   const stats = [
-    { label: "Vítr", val: windVal, color: "#06b6d4", pct: windPct },
-    { label: "Vlhkost", val: now.humidity != null ? now.humidity + " %" : "—", color: "#22c55e", pct: humPct },
-    { label: "Tlak", val: now.pressure != null ? now.pressure + " hPa" : "—", color: "#a855f7", pct: pressPct },
-    { label: "Srážky", val: (now.precip ?? 0) > 0 ? now.precip + " mm" : "0 mm", color: "#3b82f6", pct: precipPct },
-    ...(now.uv != null ? [{ label: "UV index", val: String(now.uv), color: "#f59e0b", pct: Math.min(now.uv / 11 * 100, 100) }] : []),
-    ...(now.cape != null && now.cape >= 200 ? [{ label: "CAPE", val: now.cape + " J/kg", color: "#ef4444", pct: Math.min(now.cape / 3000 * 100, 100) }] : []),
-    ...(nearGust != null && nearGust >= 25 ? [{ label: "Náraz (15min)", val: Math.round(nearGust) + " km/h", color: "#0ea5e9", pct: Math.min(nearGust / 120 * 100, 100) }] : []),
+    { label: "Vítr", val: now.wind != null ? String(now.wind) : "—",
+      unit: now.wind != null ? `km/h${windDir ? " " + windDir : ""}` : "",
+      sub: now.gust != null ? `V NÁRAZECH ${now.gust}` : "", color: "var(--teal)", pct: windPct },
+    { label: "Vlhkost", val: now.humidity != null ? String(now.humidity) : "—", unit: "%",
+      sub: "", color: "var(--green)", pct: humPct },
+    { label: "Tlak", val: now.pressure != null ? String(now.pressure) : "—", unit: "hPa",
+      sub: "", color: "var(--purple)", pct: pressPct },
+    { label: "Srážky za hodinu", val: String(now.precip ?? 0), unit: "mm",
+      sub: now.prob != null ? `PRAVDĚPODOBNOST ${now.prob} %` : "", color: "var(--blue)", pct: precipPct },
+    ...(now.uv != null ? [{ label: "UV index", val: String(now.uv), unit: "",
+      sub: uvWord(now.uv), color: "var(--orange)", pct: Math.min(now.uv / 11 * 100, 100) }] : []),
+    ...(now.cape != null && now.cape >= 200 ? [{ label: "CAPE", val: String(now.cape), unit: "J/kg",
+      sub: "ENERGIE PRO BOUŘKY", color: "var(--red)", pct: Math.min(now.cape / 3000 * 100, 100) }] : []),
+    ...(nearGust != null && nearGust >= 25 ? [{ label: "Náraz do 15 min", val: String(Math.round(nearGust)),
+      unit: "km/h", sub: "", color: "var(--blue)", pct: Math.min(nearGust / 120 * 100, 100) }] : []),
   ];
 
   el.style.display = "block";
-  el.innerHTML = `<div class="fc-stats">
-    ${stats.map(s => `<div class="fc-stat">
-      <div class="fc-stat-label">${esc(s.label)}</div>
-      <div class="fc-stat-val">${esc(s.val)}</div>
+  el.innerHTML = `<div class="tiles">
+    ${stats.map(s => `<div class="tile">
+      <div class="tile-l"><span class="dot" style="background:${s.color}"></span>${esc(s.label)}</div>
+      <div class="tile-v">${esc(s.val)}${s.unit ? `<span class="u">${esc(s.unit)}</span>` : ""}</div>
+      ${s.sub ? `<div class="tile-s">${esc(s.sub)}</div>` : ""}
       ${s.pct != null ? `<div class="fc-stat-bar"><div class="fc-stat-bar-fill" style="width:${s.pct.toFixed(0)}%;background:${s.color}"></div></div>` : ""}
     </div>`).join("")}
   </div>`;
+}
+
+// Slovní popis UV — číslo samo o sobě nikomu nic neříká.
+function uvWord(uv) {
+  if (uv < 3) return "NÍZKÝ";
+  if (uv < 6) return "STŘEDNÍ";
+  if (uv < 8) return "VYSOKÝ";
+  if (uv < 11) return "VELMI VYSOKÝ";
+  return "EXTRÉMNÍ";
 }
 
 function degCompass(deg) {
@@ -211,23 +232,32 @@ export function renderFc24(fc, label) {
   scroll.style.opacity = "0";
   scroll.innerHTML = "";
 
-  // Kompaktní pruh úmyslně ukazuje JEN čas/ikonu/teplotu/srážky — vítr, UV a
-  // CAPE jsou k vidění v "Teď" statistikách a v meteogramu. Nacpat všechno
-  // do 56–68px sloupce dřív přetékalo mimo sloupec a překrývalo sousední
-  // hodiny (viz oprava — bylo nečitelné).
-  for (const h of fc.hourly) {
+  // Sloupce se oddělují PRUHOVÁNÍM, ne linkami: střídavý podklad ohraničí
+  // hodinu bez jediné čáry navíc, a noc dostane tmavší pás. Díky tomu se do
+  // stejné šířky vejde i vítr a proužek srážek — dřív se sem nevešly, protože
+  // sloupec bez ohraničení splýval se sousedním a text přetékal.
+  const hourlyMax = Math.max(0.4, ...fc.hourly.map(h => h.precip || 0));
+  fc.hourly.forEach((h, i) => {
     const col = document.createElement("div");
-    col.className = "fc24-col";
-    const precStr = h.precip > 0
-      ? `${h.precip}mm`
-      : h.prob >= 15 ? `${h.prob}%` : "";
+    const hh = parseInt(h.t, 10);
+    const night = Number.isFinite(hh) && (hh >= 21 || hh < 5);
+    col.className = "fc24-col" + (i % 2 ? " fc24-alt" : "") + (night ? " fc24-night" : "");
+    // Vítr: šipka ukazuje, KAM vítr fouká (meteorologický směr + 180°),
+    // protože "odkud" si člověk musí přepočítat v hlavě a stejně to splete.
+    const windStr = h.wind != null
+      ? `<span class="fc24-arrow" style="transform:rotate(${(h.wind_dir ?? 0) + 180}deg)">↑</span>${h.wind}`
+      : "";
+    const barPct = h.precip > 0 ? Math.max(12, Math.round(h.precip / hourlyMax * 100)) : 0;
+    const precLabel = h.precip > 0 ? `${h.precip} mm` : h.prob >= 25 ? `${h.prob} %` : "";
     col.innerHTML = `
       <div class="fc24-time">${esc(h.t)}</div>
-      <div class="fc24-icon">${wcIconSvg(h.wc, parseInt(h.t))}</div>
+      <div class="fc24-icon">${wcIconSvg(h.wc, hh)}</div>
       <div class="fc24-temp">${h.temp != null ? h.temp + "°" : "—"}</div>
-      <div class="fc24-sub fc24-prec">${esc(precStr)}</div>`;
+      <div class="fc24-wind">${windStr}</div>
+      <div class="fc24-bar"><i style="width:${barPct}%"></i></div>
+      <div class="fc24-sub fc24-prec">${esc(precLabel)}</div>`;
     scroll.appendChild(col);
-  }
+  });
 
   if (fc.hourly.length && fc.blocks.length) {
     const sep = document.createElement("div");
@@ -258,6 +288,25 @@ export function renderFc24(fc, label) {
 const CZ_DAYS = ["Ne", "Po", "Út", "St", "Čt", "Pá", "So"];
 const CZ_MONTHS = ["led", "úno", "bře", "dub", "kvě", "čvn", "čvc", "srp", "zář", "říj", "lis", "pro"];
 
+// Teplotní pruhy týdne na společné škále. Bez společné škály by pruh nic
+// neříkal: každý den by vyplnil celou šířku a rozdíly by zmizely.
+function paintRanges(grid, d) {
+  const mins = (d.temperature_2m_min || []).filter(v => v != null);
+  const maxs = (d.temperature_2m_max || []).filter(v => v != null);
+  if (!mins.length || !maxs.length) return;
+  const lo = Math.min(...mins), hi = Math.max(...maxs);
+  const span = hi - lo || 1;
+  grid.querySelectorAll(".fc7-day").forEach((row, i) => {
+    const bar = row.querySelector(".fc7-range i");
+    const tmin = d.temperature_2m_min?.[i], tmax = d.temperature_2m_max?.[i];
+    if (!bar || tmin == null || tmax == null) return;
+    const l = ((tmin - lo) / span) * 100;
+    const r = ((hi - tmax) / span) * 100;
+    bar.style.left = l.toFixed(1) + "%";
+    bar.style.right = r.toFixed(1) + "%";
+  });
+}
+
 export function renderFc7(data, label) {
   const el = document.getElementById("fc7");
   const grid = document.getElementById("fc7-grid");
@@ -286,13 +335,15 @@ export function renderFc7(data, label) {
     const rise = d.sunrise?.[i]?.slice(11, 16);
     const set_ = d.sunset?.[i]?.slice(11, 16);
 
-    const tempStr = (tmax != null && tmin != null)
-      ? `<span>${Math.round(tmax)}°</span> <span class="tmin">${Math.round(tmin)}°</span>` : "—";
-    const precStr = (prob > 0 || prec > 0)
-      ? `<span class="prec">${prob != null ? prob + "%" : ""}${prec > 0 ? " " + Math.round(prec * 10) / 10 + "mm" : ""}</span>` : "";
-    const gustStr = gust != null && gust >= 30 ? `<span>${wImg("wind", "wicon winline")} ${Math.round(gust)} km/h</span>` : "";
-    const uvStr = uv != null && uv >= 1 ? `<span class="${uvClass(uv)}">UV${Math.round(uv)}</span>` : "";
-    const sunStr = (rise && set_) ? `<span>${wImg("sunrise", "wicon winline")}${esc(rise)} ${wImg("sunset", "wicon winline")}${esc(set_)}</span>` : "";
+    // Srážky: úhrn je konkrétnější než procenta, tak jde první. Suchý den se
+    // neschovává — "0 mm" tlumeně je informace, prázdné místo je otázka.
+    const precStr = (prec > 0)
+      ? `<span class="prec">${Math.round(prec * 10) / 10} mm</span>`
+      : `<span class="dry">0 mm</span>`;
+    const probStr = (prob != null && prob >= 20) ? `<span>${prob} %</span>` : "";
+    const gustStr = gust != null && gust >= 45
+      ? `<span>${wImg("wind", "wicon winline")} ${Math.round(gust)}</span>` : "";
+    const uvStr = uv != null && uv >= 6 ? `<span class="${uvClass(uv)}">UV ${Math.round(uv)}</span>` : "";
 
     const day = document.createElement("div");
     day.className = "fc7-day" + (isToday ? " fc7-today" : "");
@@ -300,11 +351,17 @@ export function renderFc7(data, label) {
       <div class="fc7-day-name">${esc(dayName)}</div>
       <div class="fc7-day-date">${esc(dayDate)}</div>
       <div class="fc7-day-icon">${wcIconSvg(wc)}</div>
-      <div class="fc7-day-temp">${tempStr}</div>
-      <div class="fc7-day-sub">${precStr}${gustStr}${uvStr}</div>
-      <div class="fc7-day-sun">${sunStr}</div>`;
+      <div class="fc7-day-temp">${tmin != null ? Math.round(tmin) + "°" : "—"}</div>
+      <div class="fc7-range"><i></i></div>
+      <div class="fc7-day-tmax">${tmax != null ? Math.round(tmax) + "°" : "—"}</div>
+      <div class="fc7-day-sub">${precStr}${probStr || gustStr || uvStr}</div>`;
     grid.appendChild(day);
   });
+
+  // Pruhy na SPOLEČNÉ škále — jinak by každý den vypadal stejně teple.
+  // Škála se počítá až po vykreslení, protože potřebuje minimum a maximum
+  // celého týdne, ne jednotlivého dne.
+  paintRanges(grid, d);
 
   el.style.display = "block";
   void grid.offsetWidth;
@@ -378,12 +435,12 @@ export async function addEnsembleFan(lat, lon, data) {
       col.querySelectorAll(".fc7-ens").forEach(el => el.remove());
       const lo = Math.round(Math.min(...d.tmax)), hi = Math.round(Math.max(...d.tmax));
       const wetPct = Math.round(d.wet / d.members * 100);
-      const wetStr = wetPct >= 20 ? ` · <span class="prec">${wetPct} % scénářů déšť</span>` : "";
+      const wetStr = wetPct >= 20 ? ` · <span class="prec">${wetPct} % déšť</span>` : "";
       const div = document.createElement("div");
       div.className = "fc7-ens";
       div.title = `ICON ensemble, ${d.members} členů: rozptyl denních maxim ${lo}–${hi} °C, `
         + `${wetPct} % členů se srážkami ≥ 1 mm`;
-      div.innerHTML = `<span>${lo}–${hi}°</span>${wetStr}`;
+      div.innerHTML = `<span>rozptyl ${lo}–${hi}°</span>${wetStr}`;
       col.appendChild(div);
     });
   } catch { /* vějíř je bonus — bez něj fc7 funguje dál */ }
