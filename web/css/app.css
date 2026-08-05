@@ -1199,8 +1199,16 @@ button.ctrl {
 }
 button.ctrl:hover { background: color-mix(in srgb, var(--text) 10%, var(--glass)); }
 button.ctrl:active { transform: scale(.94); }
-button.ctrl.active { background: var(--accent); color: #fff;
-  box-shadow: var(--gshadow), inset 0 1px 0 rgba(255,255,255,.35); }
+/* Zapnutá vrstva se hlásí prstencem a barvou textu, ne plnou modrou.
+   Plná výplň je v našem systému vyhrazená pro JEDINOU akci na obrazovce
+   (přehrát, aktivní sekce). Když ji dostalo pět přepínačů vrstev naráz,
+   křičelo přes sebe pět tlačítek a nic z toho nebylo hlavní — přesně ten
+   "kočkopes" pocit z horní části. Stejný zápis už používá .layer-btn.active
+   i #btn-push.on, takže se tím tři jazyky slily na jeden. */
+button.ctrl.active {
+  color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, var(--glass));
+  box-shadow: var(--gshadow), inset 0 1px 0 var(--spec), inset 0 0 0 1.5px var(--accent);
+}
 #btn-play { background: var(--accent); color: #fff;
   box-shadow: var(--gshadow), inset 0 1px 0 rgba(255,255,255,.35); }
 .speed-group { display: flex; gap: 2px; }
@@ -1840,7 +1848,10 @@ body.embed #left-card { bottom: 1rem; }
   }
   footer { order: 9; display: block; padding: 1rem 1rem 2.5rem; font-size: .72rem; color: var(--muted);
     background: var(--bg); position: relative; z-index: 10; }
-  button.ctrl, button.glass-btn, .layer-btn { min-height: 44px; }
+  button.ctrl, button.glass-btn { min-height: 44px; }
+  /* Vrstvy leží nad mapou a je jich pět — 44px cíl by z nich udělal pruh přes
+     třetinu mapy. 36px je pořád v pohodě trefitelných a dráha se vejde. */
+  .layer-btn { min-height: 36px; padding: .3rem .62rem; font-size: .72rem; }
 }
 
 /* ── Střední šířky — pravý panel by se křížil s levým ───────────────────── */
