@@ -179,17 +179,30 @@ def geosphere(now):
     ids = ",".join(list(info)[:400])
     d = SESSION.get(base, params={"parameters": "TL", "station_ids": ids,
                                   "output_format": "geojson"}, timeout=TIMEOUT).json()
-    ts = (d.get("timestamps") or [None])[-1]
-    dt = _parse_iso(ts)
-    if not _fresh(dt, now):
+    stamps = [_parse_iso(t) for t in (d.get("timestamps") or [])]
+    if not stamps:
         return []
     out = []
     for ft in d.get("features") or []:
         props = ft.get("properties") or {}
         sid = str(props.get("station") or "")
         series = ((props.get("parameters") or {}).get("TL") or {}).get("data") or []
-        temp = _f(series[-1]) if series else None
-        if temp is None or sid not in info:
+        if sid not in info or not series:
+            continue
+        # Poslední NEPRÁZDNÁ hodnota, ne poslední prvek řady. Stanice nehlásí
+        # všechny ve stejnou minutu — část TAWES jede po hodině — takže na
+        # posledním časovém razítku má většina null. Brát natvrdo series[-1]
+        # znamenalo, že z 277 rakouských stanic prošla JEDNA.
+        temp = dt = None
+        for i in range(len(series) - 1, -1, -1):
+            v = _f(series[i])
+            if v is None:
+                continue
+            t = stamps[i] if i < len(stamps) else stamps[-1]
+            if _fresh(t, now):
+                temp, dt = v, t
+            break
+        if temp is None or dt is None:
             continue
         name, lat, lon, elev = info[sid]
         out.append(rec(f"at-{sid}", name, lat, lon, elev, dt, temp, "AT"))
