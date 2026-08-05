@@ -13,12 +13,12 @@ import { state } from "./state.js";
 import { esc, num, haversine, ageMinutes } from "./utils.js";
 import { tilesForBounds, loadTile } from "./worldstations.js";
 import { chmiMarkerColor, renderChmiMarkers, popupRows, popupHead } from "./stations.js";
-import { thinByZoom, maxLabelsFor } from "./labelthin.js";
+import { thinByZoom, capForBounds } from "./labelthin.js";
 
 const LS_KEY = "nowcast_temps_on";
 const MIN_ZOOM = 4;        // níž je celý kontinent a popisky by byly kaše
 const MAX_TILES = 16;      // pojistka proti "oddálím na celý svět"
-const MAX_LABELS = 160;
+const MAX_LABELS = 400;      // jen výkonnostní strop; o hustotě rozhoduje mřížka
 const MAX_AGE_MIN = 180;
 const CHMI_SKIP_KM = 12;   // blíž k české stanici popisek nekreslíme
 
@@ -45,8 +45,14 @@ function clearMarkers() {
 // Sdíleno s českou vrstvou (labelthin.js), ať se obě chovají stejně —
 // dřív měla každá vrstva vlastní pravidlo a české stanice se neprořezávaly
 // vůbec.
-export function thinStations(stations, zoom, maxLabels = MAX_LABELS) {
-  return thinByZoom(stations, zoom, { maxLabels: maxLabelsFor(zoom, maxLabels) });
+export function thinStations(stations, zoom, bounds = null, maxLabels = MAX_LABELS) {
+  // Strop podle PLOCHY výřezu, ne podle zoomu. Zoom 5 může být Rakousko
+  // i půlka zeměkoule; dřív z toho v obou případech vyšlo 18 popisků a na
+  // světové mapě z šesti tisíc stanic zbyla hrstka.
+  const cap = bounds
+    ? capForBounds(bounds.south, bounds.west, bounds.north, bounds.east, zoom, maxLabels)
+    : maxLabels;
+  return thinByZoom(stations, zoom, { maxLabels: cap });
 }
 
 function nearChmi(s) {
@@ -91,7 +97,7 @@ export async function renderWorldTemps() {
     }
   }
 
-  const shown = thinStations(inView, zoom);
+  const shown = thinStations(inView, zoom, { south, west, north, east });
   const markers = [];
   for (const s of shown) {
     const t = Math.round(s.temp);

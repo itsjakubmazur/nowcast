@@ -1504,7 +1504,7 @@ async function main() {
   // Regrese, kterou to hlídá: české stanice se dřív kreslily VŠECHNY bez
   // ohledu na zoom, takže při oddálení byla mapa pod souvislou plochou štítků.
   const thin = await page.evaluate(async () => {
-    const { thinByZoom, stationRank, cellSizeDeg, maxLabelsFor } =
+    const { thinByZoom, stationRank, cellSizeDeg, capForBounds } =
       await import("./js/labelthin.js");
     // Umělá hustá síť: 200 stanic na malé ploše, jako je tomu v ČR.
     const mk = (i) => ({
@@ -1518,7 +1518,19 @@ async function main() {
     return {
       counts: out,
       cellShrinks: cellSizeDeg(5) > cellSizeDeg(9),
-      capGrows: maxLabelsFor(5) < maxLabelsFor(10),
+      // Strop teď rozhoduje PLOCHA výřezu, ne zoom. Dřív to byla tabulka
+      // podle zoomu a při zoomu 5 dávala 18 popisků — jenže zoom 5 je pohled
+      // na Rakousko i na půlku zeměkoule, takže na světové mapě z šesti tisíc
+      // stanic zbylo osmnáct a vypadalo to jako chybějící data.
+      capBySize: {
+        malyVyrez: capForBounds(49, 14, 51, 19, 7),
+        velkyVyrez: capForBounds(-60, -180, 75, 180, 3),
+        // Stejný zoom, větší plocha → víc popisků. (Porovnávat výřezy při
+        // RŮZNÉM zoomu nemá smysl: s přiblížením se zmenší i buňka, takže
+        // počet buněk na obrazovku zůstává zhruba stejný — a to je správně.)
+        stejnyZoomVetsiPlocha: capForBounds(35, -10, 60, 30, 7),
+        strop: capForBounds(-89, -180, 89, 180, 12),
+      },
       // hlavní síť musí mít přednost před národní
       wmoBeatsNational: stationRank({ id: "0-20000-0-11518" })
         > stationRank({ id: "0-203-0-41701105001" }),
@@ -1558,8 +1570,15 @@ async function main() {
     `přiblížení odkrývá víc popisků (z5=${thin.counts[5]}, z9=${thin.counts[9]}, z12=${thin.counts[12]})`);
   assertTrue(thin.counts[5] <= 18,
     `při oddálení zbyde jen hrstka popisků (${thin.counts[5]})`);
-  assertTrue(thin.cellShrinks && thin.capGrows,
-    "buňka se se zoomem zmenšuje a strop popisků roste");
+  assertTrue(thin.cellShrinks, "buňka se se zoomem zmenšuje");
+  assertTrue(thin.capBySize.velkyVyrez > thin.capBySize.malyVyrez,
+    `větší výřez dovolí víc popisků než menší (svět ${thin.capBySize.velkyVyrez} > ČR ${thin.capBySize.malyVyrez})`);
+  assertTrue(thin.capBySize.velkyVyrez >= 200,
+    `na světové mapě není strop hrstka (${thin.capBySize.velkyVyrez})`);
+  assertTrue(thin.capBySize.stejnyZoomVetsiPlocha > thin.capBySize.malyVyrez,
+    `při stejném zoomu dostane větší plocha vyšší strop (${thin.capBySize.stejnyZoomVetsiPlocha} > ${thin.capBySize.malyVyrez})`);
+  assertTrue(thin.capBySize.strop <= 400,
+    `tvrdý strop drží i pro nesmyslně velký výřez (${thin.capBySize.strop})`);
   assertTrue(thin.wmoBeatsNational,
     "hlavní klimatologická stanice má přednost před národní");
   assertTrue(thin.violations.length === 0,

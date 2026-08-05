@@ -1,6 +1,6 @@
 import { state } from "./state.js";
 import { esc, num, ageMinutes, degToCompass, beaufortLabel } from "./utils.js";
-import { thinByZoom } from "./labelthin.js";
+import { thinByZoom, capForBounds } from "./labelthin.js";
 import { uiIcon } from "./uiicons.js";
 
 /**
@@ -366,7 +366,14 @@ export function renderChmiMarkers() {
   const inView = typeof bounds?.contains === "function"
     ? candidates.filter(s => bounds.contains([s.lat, s.lon]))
     : candidates;
-  const shown = thinByZoom(inView.length ? inView : candidates, zoom);
+  // Stejně jako u světové vrstvy: strop podle plochy výřezu, ne podle zoomu.
+  // Mřížka buněk se o nepřekrývání stará sama, cap je jen pojistka výkonu.
+  const cap = typeof bounds?.getSouth === "function"
+    ? capForBounds(bounds.getSouth(), bounds.getWest(),
+                   bounds.getNorth(), bounds.getEast(), zoom, 300)
+    : undefined;
+  const shown = thinByZoom(inView.length ? inView : candidates, zoom,
+                           cap ? { maxLabels: cap } : {});
 
   shown.forEach(s => {
     const val = s[state.chmiLayer];

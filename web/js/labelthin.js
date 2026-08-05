@@ -22,15 +22,39 @@ export function cellSizeDeg(zoom) {
   return 70 / Math.pow(2, z);
 }
 
-// Kolik popisků má vůbec smysl ukázat najednou. Roste se zoomem, ale zdaleka
-// ne lineárně — na obrazovku se jich víc než ~120 čitelně nevejde.
-export function maxLabelsFor(zoom, hardCap = 160) {
-  if (zoom <= 5) return Math.min(hardCap, 18);
-  if (zoom <= 6) return Math.min(hardCap, 30);
-  if (zoom <= 7) return Math.min(hardCap, 45);
-  if (zoom <= 8) return Math.min(hardCap, 70);
-  if (zoom <= 9) return Math.min(hardCap, 100);
-  return hardCap;
+// Kolik popisků má smysl ukázat najednou.
+//
+// POZOR na pokušení odvodit to jen ze zoomu — přesně to tady bylo a bylo to
+// špatně. Tabulka dávala při zoomu 5 osmnáct popisků, jenže zoom 5 může být
+// pohled na Rakousko i na půlku zeměkoule. Na světové mapě tak z šesti tisíc
+// stanic zbylo osmnáct kousků a vypadalo to, jako by data chyběla. (Vznikla
+// pro ČESKOU síť: 296 stanic na malé ploše, kde je oříznutí opravdu potřeba.)
+//
+// Rozhoduje proto PLOCHA VÝŘEZU, ne zoom. Mřížka buněk (cellSizeDeg) už sama
+// zaručuje, že se popisky nepřekryjí — z každé buňky projde jeden. Přirozený
+// strop je tedy počet viditelných buněk a všechno pod ním je zbytečné
+// ořezávání. Tvrdý strop zůstává jen jako pojistka proti výkonu.
+export function capForBounds(south, west, north, east, zoom, hardCap = 400) {
+  const cell = cellSizeDeg(zoom);
+  const dLat = Math.max(0, north - south);
+  // Přes datovou hranici vyjde záporná šířka — dopočítej ji přes 360°.
+  const dLon = east >= west ? east - west : (360 - west + east);
+  const cols = Math.ceil(dLon / cell);
+  const rows = Math.ceil(dLat / cell);
+  return Math.max(24, Math.min(hardCap, cols * rows));
+}
+
+// Záloha pro volající, který výřez nezná.
+//
+// Vrací KONSTANTU, a to schválně. Buňka i výřez se se zoomem zmenšují stejně
+// rychle, takže počet buněk na obrazovku je na zoomu prakticky nezávislý —
+// funkce "stropu podle zoomu" by jen předstírala, že něco řídí. Skutečné
+// řízení hustoty dělá velikost buňky (cellSizeDeg) a skutečný strop
+// capForBounds z plochy výřezu.
+export const SCREEN_LABEL_BUDGET = 120;
+
+export function maxLabelsFor(_zoom, hardCap = 400) {
+  return Math.min(hardCap, SCREEN_LABEL_BUDGET);
 }
 
 // Priorita stanice — vyšší číslo vyhrává souboj o buňku.
