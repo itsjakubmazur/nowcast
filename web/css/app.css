@@ -530,14 +530,24 @@ button.glass-btn svg { width: 17px; height: 17px; display: block; }
 .act .a-s.bad  { color: var(--red); }
 
 /* fav row inside left card */
-#fav-row { display: flex; flex-direction: column; gap: 0; padding: .3rem 0 0; }
+/* Oblíbená místa jako vodorovná dráha, ne seznam. Tři místa pod sebou zabrala
+   tři plné řádky svitku a přitom je to přepínač, ne obsah — člověk na něj
+   sáhne jednou za čas a mezitím jen zabíral místo. */
+#fav-row {
+  display: flex; flex-direction: row; flex-wrap: nowrap;
+  gap: .35rem; padding: .3rem .1rem .1rem;
+  overflow-x: auto; scrollbar-width: none;
+}
+#fav-row::-webkit-scrollbar { display: none; }
 #fav-row:empty { display: none; }
 .fav-chip {
-  display: flex; align-items: center; gap: .4rem;
-  padding: .5rem .95rem;
-  font-size: .82rem; cursor: pointer;
-  transition: background .12s; border-bottom: 1px solid var(--rowline);
-  color: var(--text);
+  flex: 0 0 auto;
+  display: flex; align-items: center; gap: .35rem;
+  padding: .32rem .7rem; border-radius: 999px;
+  background: var(--glass2); box-shadow: inset 0 0 0 1px var(--gring);
+  font-size: .76rem; font-weight: 600; cursor: pointer;
+  transition: background .12s; border-bottom: 0;
+  color: var(--text); white-space: nowrap;
 }
 .fav-chip:last-child { border-bottom: none; }
 .fav-chip:hover { background: color-mix(in srgb, var(--text) 6%, transparent); }
@@ -1774,7 +1784,10 @@ body.embed #left-card { bottom: 1rem; }
   }
   #secnav button { font-size: .72rem; padding: .44rem 0; }
   /* aby poslední panel nezmizel pod lištou */
-  #right-panel { padding-bottom: 3.6rem; }
+  /* Spodní lišta sekcí je fixní, takže pod ni musí být místo — jinak leží
+     přes poslední tlačítka v kartě (na screenshotu přes Sdílet a Embed). */
+  #right-panel { padding-bottom: .5rem; }
+  footer { padding-bottom: 4.5rem; }
   #left-card {
     order: 3;
     position: relative; left: auto; top: auto; bottom: auto;
@@ -1816,30 +1829,33 @@ body.embed #left-card { bottom: 1rem; }
   #radar-bar .radar-row:first-child { margin-bottom: .55rem; }
   #frame-time { margin-left: auto; text-align: right; }
   #btn-global { min-width: auto; }
-  /* Vrstvy ovládají MAPU, takže patří na mapu — ne do hlavy sheetu.
-     Dokud byly v toku dokumentu, měl sheet čtyři řady chromu (ikony, dok
-     radaru, vrstvy, blesky) dřív, než začal jakýkoli obsah. Teď je to jedna
-     vodorovná dráha přilepená nad hranu sheetu; kdo ji nepotřebuje, přejede
-     přes ni prstem a nikdy si jí nevšimne. */
+  /* POZOR na pokušení dát tyhle prvky "na mapu" přes position: fixed.
+     Zkusil jsem to a rozbil tím appku: mapa je fixní jen dokud sheet leží
+     v klidu. Jakmile se roluje, sheet se přes mapu posune nahoru — ale fixní
+     prvek zůstane viset na svém místě a plave přes obsah. Na screenshotu pak
+     proužek blesků ležel přes tabulku modelů a přepínač vrstev přes hlavičku
+     "MODEL MAX DÉŠŤ CHYBA".
+     Zůstávají tedy v toku dokumentu. Zhuštění se dělá jinak: JEDNA vodorovná
+     dráha místo zalamování do dvou řad. */
   #layer-selector {
-    order: 10;
-    position: fixed; left: 6px; right: 6px;
-    top: calc(var(--sheet-top) - 50px); bottom: auto;
-    z-index: 30;
+    order: 4;
+    position: relative; top: auto; bottom: auto; left: auto; right: auto;
+    z-index: 10;
     display: flex; flex-wrap: nowrap; overflow-x: auto;
-    gap: .3rem; padding: 0 2px 2px; max-width: none;
-    background: none; scrollbar-width: none;
+    gap: .3rem; padding: .35rem .6rem; max-width: 100%;
+    background: var(--bg); scrollbar-width: none;
     -webkit-overflow-scrolling: touch;
   }
   #layer-selector::-webkit-scrollbar { display: none; }
   .layer-btn { flex: 0 0 auto; }
-  /* Bouřkový proužek a blesky jsou taky stav mapy — nad vrstvami, ne v obsahu. */
-  #storm-bar, #lightning-chip {
-    position: fixed; left: 6px; right: 6px; bottom: auto;
-    top: calc(var(--sheet-top) - 92px); z-index: 30;
-    margin: 0; width: auto; max-width: none;
+  #storm-bar {
+    order: 6; position: relative; top: auto; bottom: auto; right: auto;
+    margin: .35rem .6rem; z-index: 10; width: auto; max-width: none;
   }
-  #lightning-chip { top: calc(var(--sheet-top) - 134px); }
+  #lightning-chip {
+    order: 7; position: relative; top: auto; bottom: auto; left: auto; right: auto;
+    margin: .35rem .6rem; z-index: 10; width: auto; max-width: none;
+  }
   #radar-legend { order: 5; position: relative; bottom: auto; left: auto; margin: .4rem .75rem; z-index: 10; }
   #offline-badge { bottom: auto; top: 100px; }
   #notif-bar {
