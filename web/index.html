@@ -151,29 +151,25 @@
        a nezabírá místo, takže proužek vlastních stanic níž je fakticky nahoře. -->
   <div id="storm-impact"></div>
 
-  <!-- Vlastní/sledované WU stanice — tenký minimalistický proužek na koukání
-       jedním pohledem; uživatel na ně chodí často, patří nahoru -->
-  <div id="wu-own-panel"></div>
 
-  <!-- Hero countdown -->
-  <div id="rain-countdown">
-    <div class="rc-icon" id="rc-icon"><img class="wicon" src="icons/weather/clear-day.svg" alt="" decoding="async"></div>
-    <div class="rc-body">
-      <div class="rc-title" id="rc-title">—</div>
-      <div class="rc-sub" id="rc-sub"></div>
-    </div>
-  </div>
 
-  <!-- Druhý názor na odpočet výš: publikovaná extrapolace ČHMÚ (COTREC).
-       Patří sem, a ne dolů mezi doplňky — je to výpověď o tom, jestli se dá
-       číslu v odpočtu věřit, takže musí být vidět spolu s ním. -->
-  <div id="cotrec-card" data-sec="now"></div>
 
   <!-- Srážky v čase — JEDEN panel se dvěma měřítky.
        Dřív to byly dvě karty nad sebou: minutový graf 0–120 min a "Kdy
        vyrazit" 0–12 h. Je to ale totéž ve dvou přiblíženích, takže to jen
        zabíralo místo a nutilo srovnávat dva různé pruhy. -->
+  <!-- JEDNA karta o dešti. Dřív o něm mluvily čtyři: odpočet, tenhle panel,
+       badge v předpovědi a druhý názor ČHMÚ — každá ze svého zdroje, takže si
+       uměly odporovat (a taky odporovaly: "Právě lije" nad "Sucho ještě 2 h").
+       Teď je odpočet hlavou karty, graf tělem a ČHMÚ patičkou. -->
   <div id="precip-panel" data-sec="now">
+    <div id="rain-countdown">
+      <div class="rc-icon" id="rc-icon"><img class="wicon" src="icons/weather/clear-day.svg" alt="" decoding="async"></div>
+      <div class="rc-body">
+        <div class="rc-title" id="rc-title">—</div>
+        <div class="rc-sub" id="rc-sub"></div>
+      </div>
+    </div>
     <div class="pp-head">
       <span class="pp-title">Srážky</span>
       <div class="pp-tabs" id="pp-tabs">
@@ -197,7 +193,16 @@
         <div class="ow-axis" id="ow-axis"></div>
       </div>
     </div>
+    <!-- Druhý názor: publikovaná extrapolace ČHMÚ (COTREC). Je to výpověď
+         o tom, jestli se dá číslu v odpočtu věřit, takže patří k němu —
+         ne o dvacet karet níž. -->
+    <div id="cotrec-card"></div>
   </div>
+
+  <!-- Vlastní/sledovaná čidla. Bývala nad odpočtem, jenže nad kartou pro
+       vybrané místo pak visely dvě cizí obce a mátlo to — vlastní čidla jsou
+       zajímavá, ne však důležitější než "prší tady teď". -->
+  <div id="wu-own-panel"></div>
 
   <div id="forecast-panel" data-sec="now">
     <div class="place" id="place">Zvolte místo</div>

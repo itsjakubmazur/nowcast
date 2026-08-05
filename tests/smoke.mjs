@@ -567,6 +567,45 @@ async function main() {
         .every(b => getComputedStyle(b).display !== "none"));
     assertTrue(navVisible, "tlačítka navigace zůstala viditelná i po přepnutí");
 
+    // Přejetí prstem přepíná sekce. Vertikální stránkování by nešlo (karty mají
+    // různou výšku), vodorovné gesto se se svislým scrollem nepere.
+    await page.evaluate(() => {
+      document.body.dataset.sec = "now";
+      const t = (type, x, y) => {
+        const touch = new Touch({ identifier: 1, target: document.body,
+          clientX: x, clientY: y });
+        document.dispatchEvent(new TouchEvent(type, {
+          bubbles: true, cancelable: true,
+          touches: type === "touchend" ? [] : [touch],
+          changedTouches: [touch],
+        }));
+      };
+      t("touchstart", 300, 400);
+      t("touchend", 100, 410);          // doleva, skoro vodorovně
+    });
+    await page.waitForTimeout(150);
+    const afterSwipe = await page.evaluate(() => document.body.dataset.sec);
+    assertTrue(afterSwipe === "today",
+      `přejetí doleva posune na další sekci (${afterSwipe})`);
+
+    // Šikmý tah je scroll, ne přepnutí — jinak by rolování přeskakovalo sekce.
+    await page.evaluate(() => {
+      const t = (type, x, y) => {
+        const touch = new Touch({ identifier: 1, target: document.body,
+          clientX: x, clientY: y });
+        document.dispatchEvent(new TouchEvent(type, {
+          bubbles: true, cancelable: true,
+          touches: type === "touchend" ? [] : [touch],
+          changedTouches: [touch],
+        }));
+      };
+      t("touchstart", 300, 400);
+      t("touchend", 200, 300);          // 100 px do strany, 100 px dolů
+    });
+    await page.waitForTimeout(150);
+    const afterDiag = await page.evaluate(() => document.body.dataset.sec);
+    assertTrue(afterDiag === "today", `šikmý tah sekci nepřepne (${afterDiag})`);
+
     await page.click('#secnav button[data-sec="all"]');
     await page.waitForTimeout(200);
     const inAll = await page.evaluate(() => ({

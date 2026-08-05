@@ -37,7 +37,11 @@ export function syncPrecipPanel() {
   if (!panel || !track) return;
   const bodies = [...track.querySelectorAll(".pp-body")];
   const withData = bodies.filter(b => b.dataset.has === "1");
-  panel.classList.toggle("show", withData.length > 0);
+  // Karta se ukáže i tehdy, když má co říct jen odpočet. Po sloučení je
+  // odpočet její hlavou, takže skrytí panelu kvůli prázdnému grafu by
+  // umlčelo i větu "Právě lije" — což je ta nejdůležitější informace v appce.
+  const headSpeaks = document.getElementById("rain-countdown")?.classList.contains("show");
+  panel.classList.toggle("show", withData.length > 0 || !!headSpeaks);
 
   // Prázdné měřítko z dráhy úplně zmizí — jinak by šlo přejet na prázdno.
   bodies.forEach(b => { b.hidden = b.dataset.has !== "1"; });
