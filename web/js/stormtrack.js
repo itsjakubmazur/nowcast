@@ -5,7 +5,8 @@
 // možného krupobití (bez volume dat je sloupcové MAX_Z nejlepší proxy).
 
 import { state } from "./state.js";
-import { esc } from "./utils.js";
+import { esc, num } from "./utils.js";
+import { uiIcon } from "./uiicons.js";
 
 function cellStyle(dbz) {
   if (dbz >= 55) return { color: "#BF5AF2", label: "extrémní jádro" };
@@ -56,7 +57,7 @@ export function renderStormTracks() {
     });
     marker.bindPopup(`
       <div class="storm-popup">
-        <h4>${c.hail ? "⚠️ " : ""}${esc(st.label)} · ${c.dbz} dBZ</h4>
+        <h4>${c.hail ? uiIcon("warning") : ""}${esc(st.label)} · ${num(c.dbz)} dBZ</h4>
         <div class="storm-meta">plocha ~${c.area_km2} km² · táhne na ${dirLabel(c.dir_deg)} rychlostí ${c.speed_kmh} km/h</div>
         ${c.hail ? `<div class="storm-hail">Odrazivost ≥ 55 dBZ — možné krupobití</div>` : ""}
         <div class="storm-meta">Čárkovaná čára = predikovaná dráha jádra na příští hodinu.</div>

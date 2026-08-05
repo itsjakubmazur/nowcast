@@ -10,9 +10,9 @@
 // než jedno.
 
 import { state } from "./state.js";
-import { esc, haversine, ageMinutes } from "./utils.js";
+import { esc, num, haversine, ageMinutes } from "./utils.js";
 import { tilesForBounds, loadTile } from "./worldstations.js";
-import { chmiMarkerColor, renderChmiMarkers } from "./stations.js";
+import { chmiMarkerColor, renderChmiMarkers, popupRows, popupHead } from "./stations.js";
 import { thinByZoom, maxLabelsFor } from "./labelthin.js";
 
 const LS_KEY = "nowcast_temps_on";
@@ -105,12 +105,13 @@ export async function renderWorldTemps() {
     });
     const age = ageMinutes(s.time_utc);
     const m = L.marker([s.lat, s.lon], { icon, zIndexOffset: 20 })
-      .bindPopup(`<div class="wu-popup"><strong>${esc(s.name || s.id)}</strong>`
-        + `<span style="color:var(--muted);font-size:var(--fs-tiny)"> ● METAR</span><br>`
-        + `🌡️ ${esc(s.temp)} °C`
-        + (s.humidity != null ? ` &nbsp; 💧 ${esc(s.humidity)} %` : "")
-        + (s.wind_kmh != null ? `<br>🌬️ ${esc(s.wind_kmh)} km/h` : "")
-        + (age != null ? `<br><small style="color:var(--muted)">před ${age} min</small>` : "")
+      .bindPopup(`<div class="wu-popup">`
+        + popupHead(s.name || s.id, s.source === "ndbc" ? "bóje" : "METAR", "", age)
+        + popupRows([
+            ["thermometer", "Teplota", s.temp != null ? num(s.temp) + " °C" : null],
+            ["droplet", "Vlhkost", s.humidity != null ? s.humidity + " %" : null],
+            ["wind", "Vítr", s.wind_kmh != null ? Math.round(s.wind_kmh) + " km/h" : null],
+          ])
         + `</div>`)
       .addTo(state.map);
     markers.push(m);

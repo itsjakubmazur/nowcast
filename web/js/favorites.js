@@ -126,7 +126,11 @@ export function checkRainNotifications() {
 
   const snooze = JSON.parse(localStorage.getItem(NOTIF_SNOOZE_KEY) || "{}");
   const now = Date.now();
-  const WARN_COLORS = { YELLOW: "🟡", ORANGE: "🟠", RED: "🔴", yellow: "🟡", orange: "🟠", red: "🔴" };
+  // Stupeň výstrahy slovem, ne barevným kolečkem. Emoji 🟡🟠🔴 se v systémovém
+  // oznámení kreslí podle platformy a v aplikačním logu nešla obarvit podle
+  // motivu; slovo přečte i odečítač obrazovky.
+  const WARN_COLORS = { YELLOW: "žlutá", ORANGE: "oranžová", RED: "červená",
+    yellow: "žlutá", orange: "oranžová", red: "červená" };
 
   if (state.GRID.warnings && state.GRID.wmatch) {
     for (const f of favs) {
@@ -139,7 +143,7 @@ export function checkRainNotifications() {
         if (snooze[snoozeKey] && now - snooze[snoozeKey] < 60 * 60 * 1000) continue;
         const icon = WARN_COLORS[w.color];
         const msg = `${icon} ${w.event} u ${f.label} — platí do ${localHM(w.expires_utc)}`;
-        if (notifAllowed()) new Notification("⚠️ Výstraha ČHMÚ", { body: msg, icon: "icon.svg", tag: snoozeKey });
+        if (notifAllowed()) new Notification("Výstraha ČHMÚ", { body: msg, icon: "icon.svg", tag: snoozeKey });
         showToast(msg, { kind: "warn", timeoutMs: 8000 });
         logNotif(msg);
         snooze[snoozeKey] = now;
@@ -170,9 +174,9 @@ export function checkRainNotifications() {
       const intenz = precipDescr(as.peak).fut.toLowerCase();
       msg = `Za ${mins} min — ${intenz} (${as.peak} mm/h) u ${f.label}`;
     }
-    if (notifAllowed()) new Notification("🌧️ Meteo Nowcast", { body: msg, icon: "icon.svg", tag: snoozeKey });
-    showToast(`🌧️ ${msg}`, { timeoutMs: 8000 });
-    logNotif(`🌧️ ${msg}`);
+    if (notifAllowed()) new Notification("Meteo Nowcast", { body: msg, icon: "icon.svg", tag: snoozeKey });
+    showToast(msg, { timeoutMs: 8000 });
+    logNotif(msg);
     snooze[snoozeKey] = now;
     localStorage.setItem(NOTIF_SNOOZE_KEY, JSON.stringify(snooze));
     return;

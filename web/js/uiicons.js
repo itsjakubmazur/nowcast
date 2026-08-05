@@ -26,6 +26,31 @@ const P = {
   link: '<path d="M10 13a4 4 0 0 0 5.7 0l3-3a4 4 0 1 0-5.7-5.7L11.5 5.8"/><path d="M14 11a4 4 0 0 0-5.7 0l-3 3a4 4 0 1 0 5.7 5.7l1.5-1.5"/>',
   frame: '<rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M3 15l4.5-4.5 4 4 3-3L21 17"/>',
   compare: '<path d="M4 8h13l-3-3M20 16H7l3 3"/>',
+
+  // ── Aktivity dnes ──────────────────────────────────────────────────────
+  // Postavy jsou schválně jednoduché: v mřížce se kreslí 26 px, kde se
+  // z detailů stejně stane šmouha. Nese je silueta, ne kresba.
+  run: '<circle cx="15" cy="4.5" r="1.8"/><path d="M13.4 8.2 9.5 10l-1.2 3.6"/><path d="m13.4 8.2 3.1 2.4.9 3.9"/><path d="m11.4 13.2-.9 3.4L7 20"/><path d="m17.4 14.5 1.6 2.3M8.3 13.6 4.6 12"/>',
+  bike: '<circle cx="5.5" cy="16.5" r="3.5"/><circle cx="18.5" cy="16.5" r="3.5"/><path d="M5.5 16.5 10 8h4"/><path d="m10 8 5 8.5M8 16.5h7"/><circle cx="16.5" cy="4" r="1.5"/>',
+  // Konev se ve 20 px rozpadla na visací zámek s čárkou. Kapka nad klíčkem
+  // je čitelná i v této velikosti a říká totéž: zalévat, nebo nezalévat.
+  watering: '<path d="M12 2.2s2.4 2.9 2.4 4.4a2.4 2.4 0 0 1-4.8 0C9.6 5.1 12 2.2 12 2.2Z"/><path d="M12 21v-9.5"/><path d="M12 16c-3.2 0-5-1.8-5.2-5 3.4 0 5 1.7 5.2 5Z"/><path d="M12 19c3.2 0 5-1.8 5.2-5-3.4 0-5 1.7-5.2 5Z"/>',
+  laundry: '<path d="M8 3.5 5 5.2V9l2-.7V20h10V8.3l2 .7V5.2L16 3.5"/><path d="M8 3.5a4 4 0 0 0 8 0"/>',
+  // Lichoběžník s nožkami se četl jako pohár. Kotlový gril (mísa + rošt +
+  // nožky + dvě obláčky kouře) je jednoznačný.
+  grill: '<path d="M3.5 10.5h17"/><path d="M5 10.5a7 7 0 0 0 14 0"/><path d="m9 16.2-2 4.8M15 16.2l2 4.8"/><path d="M9 7.5c0-1.2 1.2-1.6 1.2-2.8M13.8 7.5c0-1.2 1.2-1.6 1.2-2.8"/>',
+  telescope: '<path d="m3.5 14.5 12-8 2.5 3.8-12 8z"/><path d="m18 10.3 2.2-1.4-2.5-3.8L15.5 6.5"/><path d="M8.5 15.5 11 21M8.5 15.5 6 21"/><path d="M4 18h5"/>',
+
+  // ── Drobnosti v textu ──────────────────────────────────────────────────
+  sparkle: '<path d="M12 3.5 13.6 9l5.4 1.6-5.4 1.6L12 17.5l-1.6-5.3L5 10.6 10.4 9z"/><path d="M18.5 15.5 19.2 18l2.3.7-2.3.7-.7 2.3-.7-2.3-2.3-.7 2.3-.7z"/>',
+  chart: '<path d="M4 4v16h16"/><path d="M8 16v-4M12 16V7M16 16v-6M20 16v-9"/>',
+  flame: '<path d="M12 21a5.5 5.5 0 0 0 5.5-5.5c0-4-3.5-5.5-3-9.5-2 1-3.5 3-3.5 5 0 1.5-1 2-1.5 1.2C9 11 8.8 10 9 9c-1.5 1.4-2.5 3.6-2.5 6.5A5.5 5.5 0 0 0 12 21Z"/>',
+  ice: '<path d="M12 2.5v19M4 7l16 10M20 7 4 17"/><path d="m9 4.2 3 2 3-2M9 19.8l3-2 3 2"/><path d="m4.6 11.4-.4 3.4M19.4 11.4l.4 3.4"/>',
+  warning: '<path d="M12 3.5 21.5 20h-19z"/><path d="M12 9.5v4.5M12 17h.01"/>',
+  mist: '<path d="M4 8h12M8 12h12M4 16h11"/>',
+  gust: '<path d="M3 8h10a2.5 2.5 0 1 0-2.5-2.5"/><path d="M3 12h14a2.5 2.5 0 1 1-2.5 2.5"/><path d="M3 16h8"/>',
+  moon: '<path d="M20 14.5A8.5 8.5 0 0 1 9.5 4 8.5 8.5 0 1 0 20 14.5Z"/>',
+  pause: '<path d="M9 5v14M15 5v14"/>',
 };
 
 export function uiIcon(name, cls = "uicon") {

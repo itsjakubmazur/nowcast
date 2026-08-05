@@ -5,6 +5,7 @@
 
 import { state } from "./state.js";
 import { num } from "./utils.js";
+import { uiIcon } from "./uiicons.js";
 
 const CACHE_KEY = "nowcast_climate_normals_v2"; // v2: + rekordy max/min
 const CACHE_TTL_MS = 30 * 24 * 3600 * 1000;
@@ -167,7 +168,7 @@ export async function renderDayInHistory(lat, lon, data) {
       <b>${num(rec.lo)} °C</b><span class="hist-year">${rec.loY}</span></div>
     ${normal != null ? `<div class="hist-row"><span class="hist-label">Průměr dne</span>
       <b>${num(normal)} °C</b><span class="hist-year">1991–2020</span></div>` : ""}
-    ${nearHi ? `<div class="hist-note">🔥 Dnešní maximum ${Math.round(todayMax)}° útočí na rekord!</div>` : ""}
-    ${nearLo && !nearHi ? `<div class="hist-note">🧊 Dnešní minimum ${Math.round(todayMin)}° se blíží rekordu chladu.</div>` : ""}`;
+    ${nearHi ? `<div class="hist-note">${uiIcon("flame")}Dnešní maximum ${Math.round(todayMax)}° útočí na rekord!</div>` : ""}
+    ${nearLo && !nearHi ? `<div class="hist-note">${uiIcon("ice")}Dnešní minimum ${Math.round(todayMin)}° se blíží rekordu chladu.</div>` : ""}`;
   panel.classList.add("show");
 }

@@ -403,15 +403,15 @@
     <label class="set-row">
       <span>Výchozí vrstva stanic</span>
       <select id="set-layer">
-        <option value="temp">🌡️ Teplota</option>
-        <option value="dewpoint">🌫️ Rosný bod</option>
-        <option value="humidity">💧 Vlhkost</option>
-        <option value="wind_kmh">🌬️ Vítr</option>
-        <option value="precip_1h">🌧️ Srážky/hod</option>
-        <option value="snow_cm">❄️ Sníh</option>
-        <option value="pressure">🔵 Tlak</option>
-        <option value="solar">☀️ Záření</option>
-        <option value="visibility_m">👁️ Viditelnost</option>
+        <option value="temp">Teplota</option>
+        <option value="dewpoint">Rosný bod</option>
+        <option value="humidity">Vlhkost</option>
+        <option value="wind_kmh">Vítr</option>
+        <option value="precip_1h">Srážky za hodinu</option>
+        <option value="snow_cm">Sníh</option>
+        <option value="pressure">Tlak</option>
+        <option value="solar">Záření</option>
+        <option value="visibility_m">Viditelnost</option>
       </select>
     </label>
     <label class="set-row">
@@ -452,7 +452,7 @@
 
 <!-- Storm bar — nejbližší aktivní srážkové/konvekční jádro (z vlastního nowcastu) -->
 <div id="storm-bar">
-  🌩️ Nejbližší jádro: <span id="storm-dist">—</span>
+  <span class="sb-k">Nejbližší jádro</span> <span id="storm-dist">—</span>
   <span id="storm-dir"></span>
   <span id="storm-trend" style="font-size:var(--fs-sm);margin-left:.3rem"></span>
 </div>

@@ -2,6 +2,8 @@
 // (pak se explicitní volba uloží a vždy vyhraje — viz app.css media query
 // vs. [data-theme] selektory).
 
+import { uiIcon } from "./uiicons.js";
+
 const THEME_KEY = "nowcast_theme"; // "dark" | "light" | absent = systémový
 
 function systemPrefersLight() {
@@ -31,7 +33,13 @@ export function initTheme() {
     else if (saved === "dark") document.documentElement.setAttribute("data-theme", "dark");
     else document.documentElement.removeAttribute("data-theme"); // systémový = CSS media query rozhodne
     const isLight = currentIsLight();
-    if (btn) btn.textContent = isLight ? "🌙" : "☀️";
+    // Glyf, ne emoji: ☀️/🌙 se na každé platformě kreslí jinak (a barevně)
+    // uprostřed řady jednobarevných ikon v topbaru.
+    if (btn) {
+      btn.innerHTML = uiIcon(isLight ? "moon" : "sun");
+      btn.title = isLight ? "Přepnout na tmavý motiv" : "Přepnout na světlý motiv";
+      btn.setAttribute("aria-label", btn.title);
+    }
     applyThemeColorMeta(isLight);
   }
   render();

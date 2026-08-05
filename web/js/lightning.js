@@ -171,10 +171,10 @@ function updateChip() {
   // jestli má uživatel notifikace vůbec povolené.
   if (near <= NOTIFY_KM && Date.now() - _lastNotify > NOTIFY_SNOOZE_MS) {
     _lastNotify = Date.now();
-    const msg = `⚡ Blesky ${Math.round(near)} km${approaching ? " a přibližují se" : ""} — bouřka nablízku.`;
+    const msg = `Blesky ${Math.round(near)} km${approaching ? " a přibližují se" : ""} — bouřka nablízku.`;
     try {
       if ("Notification" in window && Notification.permission === "granted") {
-        new Notification("⚡ Bouřka nablízku", { body: msg, icon: "icon.svg", tag: "lightning-near" });
+        new Notification("Bouřka nablízku", { body: msg, icon: "icon.svg", tag: "lightning-near" });
       }
     } catch { /* notifikace jsou bonus */ }
     window.dispatchEvent(new CustomEvent("nowcast:lightning-near", { detail: { km: Math.round(near), approaching } }));

@@ -5,6 +5,7 @@
 import { state } from "./state.js";
 import { esc, num, revealSwap, nowLocStr, haversine, ageMinutes } from "./utils.js";
 import { moonIconImg, wImg, wcIconSvg, mostSevere } from "./icons.js";
+import { uiIcon } from "./uiicons.js";
 import { computeNight } from "./stargaze.js";
 import { nearestFreshStation } from "./models.js";
 
@@ -267,15 +268,15 @@ export function renderActivities(fc, data) {
   const stars = clamp10(10 * (1 - nightCloud / 100) - ((state._moonIllum ?? 0.5) * 3));
 
   const items = [
-    ["🏃", "Běhání", run, `pocitově až ${Math.round(feelsMax)} °C, srážky ${probMax} %`],
-    ["🚴", "Kolo", bike, `nárazy až ${Math.round(gustMax)} km/h`],
-    ["🚿", "Zalévání", water, precSum > 1 ? `spadne ~${num(precSum)} mm — příroda zalije sama` : "beze srážek, zalij"],
-    ["👕", "Prádlo", laundry, `vlhkost ~${Math.round(humMean)} %`],
-    ["🔥", "Gril", grill, `večer srážky ${Math.round(mx(evening, "prob"))} %`],
-    ["🔭", "Hvězdy", stars, `oblačnost v noci ~${Math.round(nightCloud)} %`],
+    ["run", "Běhání", run, `pocitově až ${Math.round(feelsMax)} °C, srážky ${probMax} %`],
+    ["bike", "Kolo", bike, `nárazy až ${Math.round(gustMax)} km/h`],
+    ["watering", "Zalévání", water, precSum > 1 ? `spadne ~${num(precSum)} mm — příroda zalije sama` : "beze srážek, zalij"],
+    ["laundry", "Prádlo", laundry, `vlhkost ~${Math.round(humMean)} %`],
+    ["grill", "Gril", grill, `večer srážky ${Math.round(mx(evening, "prob"))} %`],
+    ["telescope", "Hvězdy", stars, `oblačnost v noci ~${Math.round(nightCloud)} %`],
   ];
-  revealSwap(grid, items.map(([e, n, s, why]) =>
-    `<span class="act" title="${esc(why)}"><span class="a-e">${e}</span><span class="a-n">${esc(n)}</span><span class="a-s ${scoreClass(s)}">${s}/10</span></span>`
+  revealSwap(grid, items.map(([icon, n, s, why]) =>
+    `<span class="act" title="${esc(why)}">${uiIcon(icon, "uicon a-e")}<span class="a-n">${esc(n)}</span><span class="a-s ${scoreClass(s)}">${s}/10</span></span>`
   ).join(""));
   panel.classList.add("show");
   void uvMax; void data;
@@ -385,7 +386,7 @@ export function renderAstro(data, fc) {
     <div class="astro-row"><span class="a-k">Zlatá h.</span><span class="a-v">${esc(addMin(set_, -45))}–${esc(set_)}</span><span class="a-d">ráno ${esc(rise)}–${esc(addMin(rise, 45))}</span></div>
     <div class="astro-row"><span class="a-k">Měsíc</span><span class="a-v">${moonIconImg(moon.frac).replace("wicon", "wicon winline")} ${esc(moon.name)}</span><span class="a-d">svit ${Math.round(moon.illum * 100)} %${sg?.moonRise ? ` · ↑${hm(sg.moonRise)}` : ""}${sg?.moonSet ? ` ↓${hm(sg.moonSet)}` : ""}</span></div>
     ${nightQ ? `<div class="astro-row"><span class="a-k">Noc</span><span class="a-v">pozorování: ${esc(nightQ)}</span><span class="a-d">oblačnost ~${Math.round(nightCloud)} %${nightHumMax >= 92 ? " · riziko mlhy" : ""}</span></div>` : ""}
-    <div class="astro-sub">✨ Pozorování dnes v noci</div>
+    <div class="astro-sub">${uiIcon("sparkle")}Pozorování dnes v noci</div>
     ${sg?.duskAstro && sg?.dawnAstro
       ? `<div class="astro-row"><span class="a-k">Astro noc</span><span class="a-v">${hm(sg.duskAstro)}–${hm(sg.dawnAstro)}</span><span class="a-d">slunce pod −18°</span></div>`
       : `<div class="astro-row"><span class="a-k">Astro noc</span><span class="a-v" style="color:var(--muted)">nenastává</span><span class="a-d">letní světlé noci</span></div>`}

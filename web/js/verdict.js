@@ -1,6 +1,7 @@
 import { state, WORKER_BASE } from "./state.js";
 import { wImg, wcLabel } from "./icons.js";
 import { haversine, localHM, esc, num } from "./utils.js";
+import { uiIcon } from "./uiicons.js";
 import { assessRainGlobal } from "./globalrain.js";
 
 // ── Geo lookup v GRID ─────────────────────────────────────────────────────────
@@ -631,7 +632,7 @@ export async function fetchAiVerdict(lat, lon, label) {
 export function renderVerdictText(chips, templateText, aiText) {
   const el = document.getElementById("verdict");
   const body = aiText
-    ? `<div class="verdict-ai-badge">✨ AI meteorolog</div><div class="verdict-text">${esc(aiText).replace(/\n\n/g, "<br><br>")}</div>`
+    ? `<div class="verdict-ai-badge">${uiIcon("sparkle")}AI meteorolog</div><div class="verdict-text">${esc(aiText).replace(/\n\n/g, "<br><br>")}</div>`
     : `<div class="verdict-text">${templateText}</div>`;
   el.innerHTML = body;
 
@@ -729,7 +730,7 @@ export function renderAccuracyLine() {
   const perLead = leads.length > 1
     ? ` · shoda ${leads.map(([t, l]) => `<b>${t}′ ${Math.round(l.hit_rate_pct)} %</b>`).join(" / ")}`
     : ` · shoda příchodu srážek <b>${l10.hit_rate_pct} %</b>`;
-  el.innerHTML = `📊 Přesnost nowcastu (${acc.window_days} dní): MAE <b>${num(l10.mae_mm_h, 2)} mm/h</b>${perLead}` +
+  el.innerHTML = `${uiIcon("chart")}Přesnost nowcastu (${acc.window_days} dní): MAE <b>${num(l10.mae_mm_h, 2)} mm/h</b>${perLead}` +
     ` <span style="opacity:.7">(n=${l10.n})</span>`;
   el.classList.add("show");
   el.title = acc.method || "";

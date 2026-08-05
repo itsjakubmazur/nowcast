@@ -15,6 +15,7 @@
 
 import { state } from "./state.js";
 import { esc, num } from "./utils.js";
+import { uiIcon } from "./uiicons.js";
 
 const STORM_WINDOW_MIN = 20;    // okno pro shlukování
 const CELL_DEG = 0.11;          // ~12 km — hrubší by slepilo dvě bouřky v jednu
@@ -168,7 +169,7 @@ export function renderStorms(strikes, nowMs = Date.now()) {
       }).addTo(state.map);
       const mins = Math.round(ageMin);
       circle.bindPopup?.(
-        `<div class="wu-popup"><strong>⚡ Bouřka — ${esc(lvl.label)}</strong><br>` +
+        `<div class="wu-popup"><div class="pop-head">${uiIcon("bolt")}<strong>Bouřka — ${esc(lvl.label)}</strong></div>` +
         `${st.count} úderů za ${STORM_WINDOW_MIN} min (${num(st.perMin)}/min)<br>` +
         `<small style="color:var(--muted)">poslední ${mins < 1 ? "právě teď" : `před ${mins} min`} · ` +
         `průměr ~${Math.round(st.radiusKm * 2)} km</small></div>`);
@@ -176,7 +177,7 @@ export function renderStorms(strikes, nowMs = Date.now()) {
     }
 
     // Číslo doprostřed — bez něj je z blobu jen barevná skvrna.
-    const html = `<div class="storm-badge" style="--sc:${lvl.color}">⚡ ${st.count}</div>`;
+    const html = `<div class="storm-badge" style="--sc:${lvl.color}">${uiIcon("bolt")}${st.count}</div>`;
     const icon = L.divIcon({ className: "", html, iconSize: [46, 22], iconAnchor: [23, 11] });
     const badge = L.marker([st.lat, st.lon], { icon, interactive: false, zIndexOffset: 500 })
       .addTo(state.map);

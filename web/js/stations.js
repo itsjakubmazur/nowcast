@@ -1,6 +1,35 @@
 import { state } from "./state.js";
 import { esc, num, ageMinutes, degToCompass, beaufortLabel } from "./utils.js";
 import { thinByZoom } from "./labelthin.js";
+import { uiIcon } from "./uiicons.js";
+
+/**
+ * Bublina stanice — JEDEN tvar pro všechny tři sítě.
+ *
+ * Byly tři: vlastní WU, ČHMÚ a světová METAR, každá psaná zvlášť. Lišily se
+ * pořadím údajů, počtem <br>, používáním &nbsp; jako mezerníku a hlavně
+ * emoji (🌡️ 💧 🌬️ 🔵 🌧️ ❄️ 👁️), která se na každé platformě kreslí jinak
+ * a barevně křičí uprostřed jinak monochromního UI. Klepnutím na dvě sousední
+ * stanice tak člověk dostal dvě různě vypadající bubliny o týchž veličinách.
+ *
+ * Teď se skládá z řádků {ikona, popisek, hodnota} — stejná ikonografie jako
+ * ovládání mapy a stejná gramatika jako dlaždice v kartě.
+ */
+export function popupRows(rows) {
+  const html = rows.filter(r => r && r[2] != null && r[2] !== "").map(([icon, k, v, extra]) =>
+    `<div class="pop-row">${uiIcon(icon, "uicon pop-i")}` +
+    `<span class="pop-k">${esc(k)}</span>` +
+    `<span class="pop-v">${esc(v)}${extra ? `<span class="pop-x">${esc(extra)}</span>` : ""}</span></div>`
+  ).join("");
+  return `<div class="pop-grid">${html}</div>`;
+}
+
+export function popupHead(name, tag, tagCls, age, extra) {
+  return `<div class="pop-head"><strong>${esc(name)}</strong>` +
+    (tag ? `<span class="pop-tag ${tagCls || ""}">${esc(tag)}</span>` : "") +
+    (age != null ? `<span class="pop-age">před ${age} min</span>` : "") +
+    (extra ? `<span class="pop-age">${esc(extra)}</span>` : "") + `</div>`;
+}
 
 // ── WU stanice (Weather Underground PWS) ─────────────────────────────────────
 
@@ -56,7 +85,7 @@ export async function openWuDetail(stationId) {
   ];
   box.innerHTML = `
     <button id="wu-detail-close">✕</button>
-    <h3>★ ${esc(s.name || s.id)}</h3>
+    <h3>${uiIcon("star")}${esc(s.name || s.id)}</h3>
     <div class="wu-detail-sub">${[loc, esc(s.id), esc(ageStr)].filter(Boolean).join(" · ")}</div>
     <div class="wu-detail-hero">
       <div class="wu-detail-temp">${s.temp != null ? esc(s.temp) + "°" : "—"}</div>
@@ -202,20 +231,20 @@ export function renderWuMarkers() {
 
     const windDir = s.wind_dir != null ? degToCompass(s.wind_dir) : "—";
     const age = s.time_utc ? ageMinutes(s.time_utc) : null;
-    const ageStr = age != null ? `<span style="color:var(--muted);font-size:var(--fs-tiny)"> před ${age} min</span>` : "";
 
     const popup = `
       <div class="wu-popup">
-        <strong>${esc(s.name || s.id)}</strong>
-        ${s.own ? '<span class="wu-own-badge"> ★ MOJE</span>' : ""}${ageStr}<br>
-        🌡️ ${s.temp != null ? esc(s.temp) + " °C" : "—"}
-        ${s.feels != null && Math.abs(s.feels - s.temp) >= 2 ? `<small style="color:var(--muted)">(pocit ${esc(s.feels)}°)</small>` : ""}<br>
-        💧 ${s.humidity != null ? esc(s.humidity) + " %" : "—"} &nbsp;
-        🌬️ ${s.wind_kmh != null ? esc(s.wind_kmh) + " km/h " + esc(windDir) : "—"}
-        ${s.gust_kmh > 0 ? `<small>(nárazy ${esc(s.gust_kmh)})</small>` : ""}<br>
-        🔵 ${s.pressure != null ? esc(s.pressure) + " hPa" : "—"} &nbsp;
-        🌧️ ${s.precip_rate != null ? esc(s.precip_rate) + " mm/h" : "—"}
-        <br><small style="color:var(--muted)">${esc(s.id)}</small>
+        ${popupHead(s.name || s.id, s.own ? "moje" : "WU", s.own ? "pop-own" : "", age)}
+        ${popupRows([
+          ["thermometer", "Teplota", s.temp != null ? num(s.temp) + " °C" : null,
+            s.feels != null && Math.abs(s.feels - s.temp) >= 2 ? `pocit ${num(s.feels)} °C` : ""],
+          ["droplet", "Vlhkost", s.humidity != null ? s.humidity + " %" : null],
+          ["wind", "Vítr", s.wind_kmh != null ? `${Math.round(s.wind_kmh)} km/h ${windDir}` : null,
+            s.gust_kmh > 0 ? `nárazy ${Math.round(s.gust_kmh)}` : ""],
+          ["gauge", "Tlak", s.pressure != null ? s.pressure + " hPa" : null],
+          ["rain", "Srážky", s.precip_rate != null ? num(s.precip_rate) + " mm/h" : null],
+        ])}
+        <div class="pop-id">${esc(s.id)}</div>
       </div>`;
 
     const marker = L.marker([s.lat, s.lon], { icon, zIndexOffset: s.own ? 1000 : 100 })
@@ -355,29 +384,30 @@ export function renderChmiMarkers() {
 
     const windDir = s.wind_dir != null ? degToCompass(s.wind_dir) : "—";
     const age = s.time_utc ? ageMinutes(s.time_utc) : null;
-    const ageStr = age != null ? `<span style="color:var(--muted);font-size:var(--fs-tiny)"> · před ${age} min</span>` : "";
     const stationId = s.id;
     const elev = s.elev != null ? ` · ${Math.round(s.elev)} m` : "";
 
     const popup = `
       <div class="wu-popup">
-        <strong>${esc(s.name || s.id)}</strong>
-        <span style="color:#10b981;font-size:var(--fs-tiny)"> ● ČHMÚ</span>${ageStr}${esc(elev)}<br>
-        🌡️ ${s.temp != null ? esc(s.temp) + " °C" : "—"} &nbsp;
-        💧 ${s.humidity != null ? esc(s.humidity) + " %" : "—"}
-        ${s.dewpoint != null ? "<small>ros. bod " + esc(num(s.dewpoint)) + " °C</small>" : ""}<br>
-        🌬️ ${s.wind_kmh != null ? esc(s.wind_kmh) + " km/h " + esc(windDir) : "—"}
-        ${s.gust_kmh != null ? `<small>(nárazy ${esc(s.gust_kmh)})</small>` : ""}<br>
-        🔵 ${s.pressure != null ? esc(s.pressure) + " hPa" : "—"} &nbsp;
-        🌧️ ${s.precip_1h != null ? esc(num(s.precip_1h)) + " mm/hod" : s.precip_10m != null ? esc(num(s.precip_10m)) + " mm/10min" : "—"}${s.precip_24h != null ? " &nbsp;<small>(24h: " + esc(num(s.precip_24h)) + " mm)</small>" : ""}<br>
-        ${s.snow_cm != null && s.snow_cm > 0 ? "❄️ Sníh: " + esc(Math.round(s.snow_cm)) + " cm &nbsp;" : ""}
-        ${s.visibility_m != null ? "👁️ " + esc(s.visibility_m >= 1000 ? num(s.visibility_m / 1000) + " km" : Math.round(s.visibility_m) + " m") : ""}
-        <br><small style="color:var(--muted)">${esc(s.id)}</small>
-        <br><button class="chmi-detail-btn" data-station-id="${esc(stationId)}"
-          style="margin-top:.4rem;padding:.35rem .7rem;font-size:var(--fs-body);cursor:pointer;min-height:32px;
-                 background:#10b981;color:#fff;border:none;border-radius:6px;">
-          Detaily →
-        </button>
+        ${popupHead(s.name || s.id, "ČHMÚ", "pop-chmi", age, elev.replace(/^ · /, ""))}
+        ${popupRows([
+          ["thermometer", "Teplota", s.temp != null ? num(s.temp) + " °C" : null],
+          ["mist", "Rosný bod", s.dewpoint != null ? num(s.dewpoint) + " °C" : null],
+          ["droplet", "Vlhkost", s.humidity != null ? s.humidity + " %" : null],
+          ["wind", "Vítr", s.wind_kmh != null ? `${Math.round(s.wind_kmh)} km/h ${windDir}` : null,
+            s.gust_kmh != null ? `nárazy ${Math.round(s.gust_kmh)}` : ""],
+          ["gauge", "Tlak", s.pressure != null ? s.pressure + " hPa" : null],
+          ["rain", "Srážky",
+            s.precip_1h != null ? num(s.precip_1h) + " mm/h"
+              : s.precip_10m != null ? num(s.precip_10m) + " mm/10 min" : null,
+            s.precip_24h != null ? `24 h: ${num(s.precip_24h)} mm` : ""],
+          ["snow", "Sníh", s.snow_cm > 0 ? Math.round(s.snow_cm) + " cm" : null],
+          ["eye", "Viditelnost", s.visibility_m != null
+            ? (s.visibility_m >= 1000 ? num(s.visibility_m / 1000) + " km" : Math.round(s.visibility_m) + " m")
+            : null],
+        ])}
+        <div class="pop-id">${esc(s.id)}</div>
+        <button class="chmi-detail-btn pop-btn" data-station-id="${esc(stationId)}">Detaily</button>
       </div>`;
 
     const marker = L.marker([s.lat, s.lon], { icon, zIndexOffset: 50 })
@@ -431,7 +461,7 @@ function sdCard(key, label, icon, color, unit, fmtFn, series) {
   const mx = Math.max(...valid);
   const pct = ((cur - mn) / (mx - mn || 1) * 100).toFixed(1);
   return `<div class="sd-card">
-    <div class="sd-card-lbl">${icon} ${esc(label)}</div>
+    <div class="sd-card-lbl">${uiIcon(icon)}${esc(label)}</div>
     <div class="sd-val">${esc(fmtFn(cur))}<span class="sd-val-unit">${esc(unit)}</span></div>
     <div class="sd-bar-track"><div class="sd-bar-fill" style="width:${pct}%;background:${color}"></div></div>
     <div class="sd-minmax"><span>MIN <b>${esc(fmtFn(mn))}</b></span><span>MAX <b>${esc(fmtFn(mx))}</b></span></div>
@@ -506,10 +536,10 @@ function _renderTabDnes(body, stationId) {
       <div class="sd-hero-row">
         ${tMax ? `<span>▲ <b>${esc(tMax)}°</b></span>` : ""}
         ${tMin ? `<span>▼ <b>${esc(tMin)}°</b></span>` : ""}
-        ${obs.humidity != null ? `<span>💧 <b>${esc(obs.humidity)} %</b></span>` : ""}
-        ${obs.wind_kmh != null ? `<span>🌬 <b>${esc(obs.wind_kmh)} km/h</b></span>` : ""}
-        ${obs.pressure != null ? `<span>⏱ <b>${esc(obs.pressure)} hPa</b></span>` : ""}
-        ${obs.precip_24h != null ? `<span>🌧 <b>${esc(obs.precip_24h)} mm/24h</b></span>` : ""}
+        ${obs.humidity != null ? `<span>${uiIcon("droplet")}<b>${esc(obs.humidity)} %</b></span>` : ""}
+        ${obs.wind_kmh != null ? `<span>${uiIcon("wind")}<b>${esc(obs.wind_kmh)} km/h</b></span>` : ""}
+        ${obs.pressure != null ? `<span>${uiIcon("gauge")}<b>${esc(obs.pressure)} hPa</b></span>` : ""}
+        ${obs.precip_24h != null ? `<span>${uiIcon("rain")}<b>${esc(obs.precip_24h)} mm/24 h</b></span>` : ""}
         ${age != null ? `<span style="margin-left:auto">před ${age} min</span>` : ""}
       </div>`;
     body.appendChild(hero);
@@ -518,16 +548,16 @@ function _renderTabDnes(body, stationId) {
   const fmt1 = v => num(v);
   const fmt0 = v => v != null ? Math.round(v) : "—";
   const cards = [
-    sdCard("temp", "Teplota", "🌡", "#f87171", "°C", fmt1, series),
-    sdCard("humidity", "Vlhkost", "💧", "#22c55e", "%", fmt0, series),
-    sdCard("dewpoint", "Rosný bod", "🌫", "#a78bfa", "°C", fmt1, series),
-    sdCard("pressure", "Tlak", "⏱", "#a855f7", "hPa", fmt0, series),
-    sdCard("wind_kmh", "Vítr", "🌬", "#06b6d4", "km/h", fmt0, series),
-    sdCard("gust_kmh", "Nárazy", "💨", "#38bdf8", "km/h", fmt0, series),
-    sdCard("precip_1h", "Srážky/hod", "🌧", "#3b82f6", "mm", fmt1, series),
-    sdCard("snow_cm", "Sníh", "❄", "#bae6fd", "cm", fmt0, series),
-    sdCard("solar", "Záření", "☀", "#f59e0b", "W/m²", fmt0, series),
-    sdCard("visibility_m", "Viditelnost", "👁", "#94a3b8", "m", fmt0, series),
+    sdCard("temp", "Teplota", "thermometer", "#f87171", "°C", fmt1, series),
+    sdCard("humidity", "Vlhkost", "droplet", "#22c55e", "%", fmt0, series),
+    sdCard("dewpoint", "Rosný bod", "mist", "#a78bfa", "°C", fmt1, series),
+    sdCard("pressure", "Tlak", "gauge", "#a855f7", "hPa", fmt0, series),
+    sdCard("wind_kmh", "Vítr", "wind", "#06b6d4", "km/h", fmt0, series),
+    sdCard("gust_kmh", "Nárazy", "gust", "#38bdf8", "km/h", fmt0, series),
+    sdCard("precip_1h", "Srážky/h", "rain", "#3b82f6", "mm", fmt1, series),
+    sdCard("snow_cm", "Sníh", "snow", "#bae6fd", "cm", fmt0, series),
+    sdCard("solar", "Záření", "sun", "#f59e0b", "W/m²", fmt0, series),
+    sdCard("visibility_m", "Viditelnost", "eye", "#94a3b8", "m", fmt0, series),
   ].filter(Boolean);
 
   if (cards.length) {
@@ -623,20 +653,19 @@ function _renderTabRekordy(body, stationId) {
     return;
   }
   const LABELS = {
-    temp_max: ["Nejvyšší teplota", "°C", "🌡️"], temp_min: ["Nejnižší teplota", "°C", "❄️"],
-    temp_avg: ["Průměrná teplota", "°C", "📊"], precip: ["Max. srážky za měsíc", "mm", "🌧️"],
-    gust_kmh: ["Max. náraz větru", "km/h", "💨"], snow_cm: ["Max. výška sněhu", "cm", "❄️"],
-    sunshine_h: ["Max. svit za měsíc", "h", "☀️"],
+    temp_max: ["Nejvyšší teplota", "°C", "flame"], temp_min: ["Nejnižší teplota", "°C", "ice"],
+    temp_avg: ["Průměrná teplota", "°C", "chart"], precip: ["Max. srážky za měsíc", "mm", "rain"],
+    gust_kmh: ["Max. náraz větru", "km/h", "gust"], snow_cm: ["Max. výška sněhu", "cm", "snow"],
+    sunshine_h: ["Max. svit za měsíc", "h", "sun"],
   };
-  let html = `<div style="display:grid;gap:.6rem;padding:.5rem 0">`;
+  // Stejná gramatika řádku jako v bublině stanice: ikona, popisek, hodnota.
+  let html = `<div class="pop-grid rec-grid">`;
   for (const [key, rec] of Object.entries(stats.records)) {
     const [label, unit, icon] = LABELS[key] || [key, "", ""];
-    const date = rec.date ? `<span style="color:var(--muted);font-size:var(--fs-tiny)">${esc(rec.date.slice(0, 10))}</span>` : "";
-    html += `<div style="display:flex;justify-content:space-between;align-items:baseline;
-               padding:.4rem .5rem;background:var(--bg);border-radius:6px;border:1px solid var(--border)">
-      <span>${icon} ${esc(label)}</span>
-      <span style="font-weight:700">${esc(rec.value)} ${esc(unit)} ${date}</span>
-    </div>`;
+    html += `<div class="pop-row rec-row">${uiIcon(icon, "uicon pop-i")}` +
+      `<span class="pop-k">${esc(label)}</span>` +
+      `<span class="pop-v">${esc(rec.value)} ${esc(unit)}` +
+      `${rec.date ? `<span class="pop-x">${esc(rec.date.slice(0, 10))}</span>` : ""}</span></div>`;
   }
   html += `</div>`;
   body.innerHTML = html;

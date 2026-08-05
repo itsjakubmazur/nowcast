@@ -123,14 +123,6 @@ export function debounce(fn, ms) {
   };
 }
 
-// Fáze měsíce — hrubý astronomický odhad (přesnost ~den, na ikonu stačí).
-const MOON_PHASES = ["🌑 Nov", "🌒 Dorůstající srpek", "🌓 První čtvrť", "🌔 Dorůstající měsíc",
-  "🌕 Úplněk", "🌖 Couvající měsíc", "🌗 Poslední čtvrť", "🌘 Couvající srpek"];
-export function moonPhase(date = new Date()) {
-  const synodic = 29.530588853;
-  const known = Date.UTC(2000, 0, 6, 18, 14); // referenční nov
-  const days = (date.getTime() - known) / 86400000;
-  const phase = ((days % synodic) + synodic) % synodic;
-  const idx = Math.floor((phase / synodic) * 8 + 0.5) % 8;
-  return { label: MOON_PHASES[idx], fraction: phase / synodic };
-}
+// Fáze měsíce tady BYLA, ale nikdo ji nevolal — počítá ji astro.js a kreslí
+// icons.js přes Meteocons. Zbyl z ní jen seznam emoji, který tiše kazil
+// jednotnou ikonografii, tak šla pryč.

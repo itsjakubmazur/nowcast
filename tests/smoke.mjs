@@ -772,6 +772,91 @@ async function main() {
     assertTrue(tiles.aqUnitSmaller, "jednotka je menší než hodnota i v dlaždicích ovzduší");
   }
 
+  // ── Nikde žádná emoji ────────────────────────────────────────────────────
+  // Appka má DVĚ legitimní ikonografie: barevné Meteocons pro stav počasí
+  // (img.wicon) a tenké jednobarevné glyfy pro ovládání (svg.uicon). Emoji
+  // byla třetí, nezvaná: kreslí se na každé platformě jinak, je barevná
+  // uprostřed monochromního UI a nedá se obarvit podle motivu.
+  //
+  // Typografické značky (šipky, ✕, ✓, ▲▼, ▶) emoji NEJSOU a zůstávají —
+  // jsou jednobarevné a chovají se jako písmo.
+  {
+    const found = await page.evaluate(() => {
+      // Extended_Pictographic je ta správná vlastnost — ✕ ✓ ↺ ↵ ★ ▲ ▼ pod ni
+      // nespadnou, protože to nejsou piktogramy, ale typografické značky.
+      // Šipky (U+2190–U+21FF) a geometrické tvary (U+25A0–U+25FF) se vyjímají
+      // ručně, stejně jako © a ®: Unicode je za piktogramy považuje, protože
+      // k nim existují emoji varianty,
+      // ale my je sázíme jako písmo a chovají se tak.
+      const RE = /(?=\p{Extended_Pictographic})[^\u00A9\u00AE\u2190-\u21FF\u25A0-\u25FF]/u;
+      const hits = [];
+      const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+      for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+        const p = n.parentElement;
+        if (!p || p.closest("script, style")) continue;
+        const m = n.nodeValue.match(RE);
+        if (m) hits.push(`${p.id || p.className || p.tagName}: ${m[0]}`);
+      }
+      return [...new Set(hits)];
+    });
+    assertTrue(found.length === 0,
+      `žádná emoji ve vykresleném UI (${found.slice(0, 5).join(" | ") || "0"})`);
+
+    // A totéž ve zdrojích, ať se nová emoji nedostane do větve, kterou
+    // fixtura zrovna nevykreslí (bouřky, upozornění, rekordy stanic…).
+    const srcHits = [];
+    const RE_SRC = /(?=\p{Extended_Pictographic})[^\u00A9\u00AE\u2190-\u21FF\u25A0-\u25FF]/u;
+    const files = ["web/index.html", ...fs.readdirSync(path.join(__dirname, "..", "web", "js"))
+      .filter(n => n.endsWith(".js")).map(n => `web/js/${n}`)];
+    for (const f of files) {
+      const t = fs.readFileSync(path.join(__dirname, "..", f), "utf8");
+      t.split("\n").forEach((line, i) => {
+        // Komentáře pryč — popisují i to, co se odstranilo ("dřív tu bylo 🔕").
+        const t2 = line.trim();
+        if (t2.startsWith("//") || t2.startsWith("*") || t2.startsWith("/*")) return;
+        const code = line.replace(/\/\/.*$/, "").replace(/<!--[\s\S]*?-->/g, "");
+        const m = code.match(RE_SRC);
+        if (m) srcHits.push(`${f}:${i + 1} ${m[0]}`);
+      });
+    }
+    assertTrue(srcHits.length === 0,
+      `žádná emoji ve zdrojích (${srcHits.slice(0, 5).join(" | ") || "0"})`);
+  }
+
+  // ── Každý název ikony musí v sadě existovat ──────────────────────────────
+  // uiIcon() u neznámého názvu vrátí prázdný řetězec. Překlep se tedy
+  // neprojeví chybou, ale TICHÝM zmizením ikony — a všimne si ho leda ten,
+  // kdo zrovna kouká na ten jeden panel. Test je jediná spolehlivá pojistka.
+  {
+    const src = fs.readFileSync(path.join(__dirname, "..", "web", "js", "uiicons.js"), "utf8");
+    const names = new Set();
+    for (const line of src.split("\n")) {
+      const m = line.match(/^\s*(?:'([a-zA-Z-]+)'|([a-zA-Z-]+))\s*:\s*'</);
+      if (m) names.add(m[1] || m[2]);
+    }
+    const used = new Map();
+    const files = ["web/index.html", ...fs.readdirSync(path.join(__dirname, "..", "web", "js"))
+      .filter(n => n.endsWith(".js")).map(n => `web/js/${n}`)];
+    for (const f of files) {
+      const t = fs.readFileSync(path.join(__dirname, "..", f), "utf8");
+      for (const m of t.matchAll(/uiIcon\(\s*"([a-zA-Z-]+)"/g)) used.set(m[1], f);
+      for (const m of t.matchAll(/data-icon="([a-zA-Z-]+)"/g)) used.set(m[1], f);
+    }
+    const missing = [...used].filter(([n]) => !names.has(n)).map(([n, f]) => `${n} (${f})`);
+    assertTrue(names.size > 20 && used.size > 10,
+      `sada ikon i jejich použití se načetly (${names.size} / ${used.size})`);
+    assertTrue(missing.length === 0,
+      `každý název ikony existuje v sadě (${missing.join(", ") || "0"})`);
+
+    // A že se opravdu vykreslily — prázdné <svg> by testem výš prošlo.
+    const drawn = await page.evaluate(() => {
+      const all = [...document.querySelectorAll("svg.uicon")];
+      return { n: all.length, prazdne: all.filter(s => !s.children.length).length };
+    });
+    assertTrue(drawn.n > 5 && drawn.prazdne === 0,
+      `glyfy se vykreslily a žádný není prázdný (${drawn.n}, prázdných ${drawn.prazdne})`);
+  }
+
   // ── Akce v kartě mají jeden tvar ─────────────────────────────────────────
   // Pět tlačítek dělá totéž (Porovnat, Uložit, Zapnout upozornění, Zkušební,
   // Sdílet/Embed) a každé mělo vlastní poloměr, velikost písma, barvu textu

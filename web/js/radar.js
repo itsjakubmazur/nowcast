@@ -1,6 +1,7 @@
 import { state, PLAY } from "./state.js";
 import { setRadarFrameUrl, setRadarOpacityBoth } from "./map.js";
-import { haversine, bearing, num } from "./utils.js";
+import { haversine, bearing, num, esc } from "./utils.js";
+import { uiIcon } from "./uiicons.js";
 import { isDarkTheme } from "./theme.js";
 import { showToast } from "./toast.js";
 
@@ -102,16 +103,34 @@ function scheduleNext(delayMs) {
   }, delayMs);
 }
 
+// Tlačítko světového režimu: ikona zůstává ikonou, mění se jen popisek vedle
+// ní. Dřív se přepisovalo přes textContent, což SVG glóbus smazalo a nahradilo
+// emoji 🌍 — stejná chyba, jakou tu už udělalo tlačítko polohy i obnovy.
+function setGlobalBtn(btn, label) {
+  if (!btn) return;
+  let lbl = btn.querySelector(".lbl");
+  if (!lbl) {
+    btn.textContent = "";
+    btn.insertAdjacentHTML("afterbegin", uiIcon("globe"));
+    lbl = document.createElement("span");
+    lbl.className = "lbl";
+    btn.appendChild(lbl);
+  }
+  lbl.textContent = label;
+}
+
 export function togglePlay(forcePlay) {
   state.playing = forcePlay !== undefined ? forcePlay : !state.playing;
   const btn = document.getElementById("btn-play");
   if (state.playing) {
-    btn.textContent = "⏸ Pauza";
+    btn.innerHTML = uiIcon("pause");
+    btn.title = "Pozastavit";
     btn.classList.add("active");
     scheduleNext(PLAY.intervalMs);
   } else {
     clearTimeout(state.playTimer);
-    btn.textContent = "▶ Play";
+    btn.textContent = "▶";
+    btn.title = "Přehrát";
     btn.classList.remove("active");
   }
 }
@@ -137,7 +156,7 @@ export async function toggleGlobalMode() {
     await loadRainViewerFrames();
   } else {
     btn.classList.remove("active");
-    btn.textContent = "🌍 Svět";
+    setGlobalBtn(btn, "Svět");
     destroyRainViewerFrames();
     if (state.MANIFEST) {
       setRadarOpacityBoth(state.radarOpacity);
@@ -148,7 +167,7 @@ export async function toggleGlobalMode() {
 
 async function loadRainViewerFrames() {
   const btn = document.getElementById("btn-global");
-  btn.textContent = "🌍 Načítám…";
+  setGlobalBtn(btn, "Načítám…");
 
   try {
     const res = await fetch(RAINVIEWER_API, { cache: "no-store" });
@@ -189,11 +208,11 @@ async function loadRainViewerFrames() {
     document.getElementById("t0-marker").style.left = t0pct + "%";
 
     showFrame(state.rvT0idx);
-    btn.textContent = "🌍 ČR";
+    setGlobalBtn(btn, "ČR");
     btn.classList.add("active");
   } catch (e) {
     state.globalMode = false;
-    btn.textContent = "🌍 Svět";
+    setGlobalBtn(btn, "Svět");
     btn.classList.remove("active");
     setRadarOpacityBoth(state.radarOpacity);
     console.error("RainViewer:", e);
@@ -555,5 +574,7 @@ export function updateRefreshTime(genDate) {
   const rel = ageMin < 1 ? "právě teď" : ageMin < 60 ? `před ${Math.round(ageMin)} min` : `před ${Math.round(ageMin / 60)} h`;
   el.textContent = `${hm} (${rel})`;
   el.className = ageMin <= 15 ? "age-ok" : ageMin <= 45 ? "age-warn" : "age-old";
-  if (ageMin > 45) el.textContent = "⚠ " + el.textContent;
+  // Varovný glyf ze stejné sady jako zbytek UI. Emoji ⚠ se navíc přidávala
+  // do textContent, takže se při každém překreslení mohla nasčítat.
+  if (ageMin > 45) el.innerHTML = uiIcon("warning") + esc(el.textContent);
 }

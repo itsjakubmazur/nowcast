@@ -150,7 +150,7 @@ export function renderOutlookWindows(minutely, fc) {
   } else {
     const rainStarts = tl.find(p => p.rate >= WET_RATE);
     if (!rainStarts) {
-      msg = `Beze srážek celých příštích 12 h — vyrazit můžeš kdykoli. ☀️`;
+      msg = "Beze srážek celých příštích 12 h — vyrazit můžeš kdykoli.";
     } else {
       const mins = Math.round((rainStarts.ms - now) / 60000);
       msg = `Sucho ještě ~<b>${mins >= 60 ? Math.round(mins / 60) + " h" : mins + " min"}</b>, `
