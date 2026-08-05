@@ -40,3 +40,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python pipeline/probe_pages.py
+
+      # Úplně na konci, protože tohle je teď nejčastější dotaz: opravdu jsou
+      # na webu dlaždice, které slibuje rejstřík, a ukládá se historie stanic?
+      - name: Světové dlaždice, stanice a historie
+        run: python pipeline/probe_tiles.py
