@@ -19,22 +19,26 @@ téhož dotazu.
 
 import json
 import sys
+import urllib.error
+import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 
-import requests
-
+# urllib, ne requests — sonda běží v probe-live.yml, kde se pipeline/
+# requirements.txt neinstaluje (je to jen prohlížeč + pár skriptů).
 PAGES = "https://itsjakubmazur.github.io/nowcast/data"
-TIMEOUT = (10, 30)
+TIMEOUT = 30
 SAMPLE = 40          # kolik dlaždic ověřit doopravdy (ne všech ~300)
-
-S = requests.Session()
-S.headers.update({"User-Agent": "nowcast-probe/1.0"})
 
 
 def get(path):
+    req = urllib.request.Request(f"{PAGES}/{path}",
+                                 headers={"User-Agent": "nowcast-probe/1.0"})
     try:
-        r = S.get(f"{PAGES}/{path}", timeout=TIMEOUT)
-        return r.status_code, (r.json() if r.ok and r.content else None)
+        with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
+            body = r.read()
+            return r.status, (json.loads(body) if body else None)
+    except urllib.error.HTTPError as e:
+        return e.code, None
     except Exception as e:
         return None, str(e)[:120]
 

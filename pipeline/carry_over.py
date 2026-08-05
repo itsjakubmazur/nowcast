@@ -25,6 +25,7 @@ Pouští se těsně před validací a uploadem artefaktu.
 
 import json
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -56,6 +57,20 @@ CARRY = {
     "chmi_aero.json": 24,
     "chmi_forecast.json": 24,
     "chmi_regional.json": 24 * 30,
+
+    # Tyhle chyběly, přestože je fast běh taky nevyrábí. Byly jen v cache
+    # Actions — a cache je přesně to, čemu tenhle modul nevěří (viz docstring).
+    # Při výpadku cache se publikovaly jako chybějící a appka o ně přišla.
+    #
+    # U wu_history.json to bylo nejhorší: další full běh si historii natahuje
+    # z Pages (load_wu_history), takže když tam nebyla, začal od nuly. Historie
+    # vlastních stanic se tím pravidelně mazala a nikdy nenarostla.
+    "wu_history.json": 24,
+    "chmi_series_index.json": 12,
+    "wind_grid.json": 6,
+    "chmi_fct.json": 6,
+    "echotop.json": 6,
+    "chmi_air_map.json": 6,
 }
 
 # Pole, ve kterých bývá čas vzniku. Různé moduly to pojmenovaly různě.
@@ -81,38 +96,108 @@ def age_hours(doc, now):
     return None
 
 
-def carry_tiles(now):
+def carry_dir(name, index_name="index.json", ids_from=None, workers=8):
     """
-    Světové dlaždice METAR jsou adresář, ne jeden soubor. Přenáší se jen
-    index — jednotlivé dlaždice si klient dotáhne líně a 404 na dlaždici
-    umí (gate přes index.json), takže nemá cenu tahat stovky souborů.
+    Přenese CELÝ adresář dlaždic z posledního nasazení.
+
+    Původně to přenášelo jen index a jednotlivé dlaždice nechávalo na kliento-
+    vi s tím, že 404 umí. Jenže klient index bere jako závaznou informaci
+    o tom, co existuje (právě proto, aby na neexistující dlaždice nesahal),
+    takže po fast běhu "věděl" o třech stovkách dlaždic a nedostal ani jednu.
+    Vrstva teplot pak byla prázdná — ne chybou frontendu, ale proto, že se
+    tam data nedostala.
+
+    Druhá, tišší chyba: rejstřík je pole OBJEKTŮ {"tile": "9_18", "count": 42},
+    ne pole řetězců. Smyčka ho procházela jako řetězce, takže se URL skládala
+    ze str(dict) a každý požadavek skončil 404. Přeneslo se tedy nula dlaždic
+    a v logu stálo poctivé "0/313", čehož si nikdo nevšiml.
     """
-    tiles_dir = DATA_DIR / "metar"
-    if (tiles_dir / "index.json").exists():
+    d = DATA_DIR / name
+    if (d / index_name).exists():
         return 0
     try:
-        r = SESSION.get(f"{PAGES}/metar/index.json", timeout=TIMEOUT)
+        r = SESSION.get(f"{PAGES}/{name}/{index_name}", timeout=TIMEOUT)
         if not r.ok:
             return 0
         idx = r.json()
-        ids = idx.get("tiles") or []
-        tiles_dir.mkdir(parents=True, exist_ok=True)
-        (tiles_dir / "index.json").write_text(json.dumps(idx, ensure_ascii=False,
-                                                         separators=(",", ":")))
-        got = 0
-        for tid in ids:
+        ids = [(t.get("tile") if isinstance(t, dict) else t)
+               for t in ((ids_from(idx) if ids_from else idx.get("tiles")) or [])]
+        ids = [i for i in ids if i]
+        d.mkdir(parents=True, exist_ok=True)
+        (d / index_name).write_text(json.dumps(idx, ensure_ascii=False,
+                                               separators=(",", ":")))
+
+        def one(tid):
             try:
-                rt = SESSION.get(f"{PAGES}/metar/{tid}.json", timeout=TIMEOUT)
+                rt = SESSION.get(f"{PAGES}/{name}/{tid}.json", timeout=TIMEOUT)
                 if rt.ok:
-                    (tiles_dir / f"{tid}.json").write_bytes(rt.content)
-                    got += 1
+                    (d / f"{tid}.json").write_bytes(rt.content)
+                    return True
             except Exception:
-                continue
-        print(f"  metar/: přeneseno {got}/{len(ids)} dlaždic")
+                pass
+            return False
+
+        # Sériově by tři stovky souborů trvaly déle než celý fast běh.
+        with ThreadPoolExecutor(max_workers=workers) as ex:
+            got = sum(1 for ok in ex.map(one, ids) if ok)
+
+        print(f"  {name}/: přeneseno {got}/{len(ids)}")
+        if ids and got == 0:
+            print(f"  {name}/: NEPŘENESLA SE ANI JEDNA — rejstřík slibuje "
+                  f"{len(ids)} položek, web nevrací žádnou", file=sys.stderr)
         return got
     except Exception as e:
-        print(f"  metar/: {str(e)[:120]}", file=sys.stderr)
+        print(f"  {name}/: {str(e)[:120]}", file=sys.stderr)
         return 0
+
+
+def carry_series():
+    """
+    Per-stanicové řady ČHMÚ. Index leží mimo adresář (chmi_series_index.json)
+    a stanice jsou v něm klíče slovníku, ne pole — proto vlastní funkce
+    a ne carry_dir.
+
+    Tohle je historie: když zmizí, nezmizí obrázek, ale měsíce měření.
+    """
+    idx_path = DATA_DIR / "chmi_series_index.json"
+    if idx_path.exists():
+        return 0
+    try:
+        r = SESSION.get(f"{PAGES}/chmi_series_index.json", timeout=TIMEOUT)
+        if not r.ok:
+            return 0
+        idx = r.json()
+        ids = list((idx.get("stations") or {}).keys())
+        idx_path.write_text(json.dumps(idx, ensure_ascii=False, separators=(",", ":")))
+        d = DATA_DIR / "chmi_series"
+        d.mkdir(parents=True, exist_ok=True)
+
+        def one(sid):
+            safe = sid.replace("/", "_")        # stejná sanitizace jako v chmi.py
+            try:
+                rt = SESSION.get(f"{PAGES}/chmi_series/{safe}.json", timeout=TIMEOUT)
+                if rt.ok:
+                    (d / f"{safe}.json").write_bytes(rt.content)
+                    return True
+            except Exception:
+                pass
+            return False
+
+        with ThreadPoolExecutor(max_workers=8) as ex:
+            got = sum(1 for ok in ex.map(one, ids) if ok)
+        print(f"  chmi_series/: přeneseno {got}/{len(ids)}")
+        if ids and got == 0:
+            print("  chmi_series/: NEPŘENESLA SE ANI JEDNA — historie stanic "
+                  "se po tomhle běhu z webu ztratí", file=sys.stderr)
+        return got
+    except Exception as e:
+        print(f"  chmi_series/: {str(e)[:120]}", file=sys.stderr)
+        return 0
+
+
+def carry_tiles(now):
+    """Adresáře, které fast běh nevyrábí: světové dlaždice a řady stanic."""
+    return carry_dir("metar") + carry_series()
 
 
 def main():

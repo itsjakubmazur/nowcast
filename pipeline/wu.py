@@ -137,24 +137,55 @@ def parse_obs(o: dict, own: bool = False) -> dict | None:
     }
 
 
+def _hist_size(doc) -> int:
+    return sum(len(s.get("series", [])) for s in (doc or {}).get("stations", {}).values())
+
+
 def load_wu_history() -> dict:
+    """
+    Historie se bere z toho zdroje, který jí má VÍC — ne z toho, který
+    odpoví první.
+
+    Dřív se brala z Pages a lokální kopie se použila jen tehdy, když Pages
+    vůbec neodpověděly. To mělo dva důsledky a oba mazaly data:
+
+      1. Když wu_history.json na Pages chyběl (fast běh ho nevyrobil a nebyl
+         v carry seznamu), fetch skončil 404 → historie začala od nuly
+         a předchozí měsíce se přepsaly prázdnem. Tohle je důvod, proč
+         historie vlastních stanic nikdy nenarostla.
+      2. Když cache obnovila plnou lokální kopii, ale na Pages ležela
+         zkrácená, vyhrála ta zkrácená.
+
+    Porovnání počtu záznamů obojí řeší: ať se stane cokoli, bere se ta větší.
+    Sloučit je nejde spolehlivě (obě strany mají stejné klíče s jinou délkou
+    řady), a větší z nich je vždycky nadmnožina té menší — obě rostou ze
+    stejného zdroje.
+    """
+    local_doc = None
     local = DATA_DIR / "wu_history.json"
+    if local.exists():
+        try:
+            local_doc = json.loads(local.read_text())
+        except Exception:
+            local_doc = None
+
+    pages_doc = None
     try:
         r = requests.get(f"{PAGES_BASE}/data/wu_history.json",
                          headers=HEADERS, timeout=10)
         if r.ok:
-            data = r.json()
-            total = sum(len(s.get("series", [])) for s in data.get("stations", {}).values())
-            print(f"  WU historie z Pages: {total} záznamů", file=sys.stderr)
-            return data
+            pages_doc = r.json()
     except Exception as e:
         print(f"  WU Pages historie nedostupná: {e}", file=sys.stderr)
-    if local.exists():
-        try:
-            return json.loads(local.read_text())
-        except Exception:
-            pass
-    return {"stations": {}}
+
+    n_local, n_pages = _hist_size(local_doc), _hist_size(pages_doc)
+    print(f"  WU historie: lokálně {n_local}, na Pages {n_pages} záznamů",
+          file=sys.stderr)
+    if n_pages == 0 and n_local == 0 and (pages_doc or local_doc) is None:
+        print("  WU historie: ZAČÍNÁM OD NULY — ani jeden zdroj nemá data",
+              file=sys.stderr)
+    best = local_doc if n_local >= n_pages else pages_doc
+    return best if best and best.get("stations") is not None else {"stations": {}}
 
 
 def append_wu_history(history: dict, stations: list, cutoff_dt: str) -> dict:

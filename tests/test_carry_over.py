@@ -8,11 +8,13 @@ appka by tvářila včerejší měření jako aktuální. Testy hlídají práv�
 Spouštění: python tests/test_carry_over.py
 """
 
+import re
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent / "pipeline"))
+ROOT = Path(__file__).parent.parent
+sys.path.insert(0, str(ROOT / "pipeline"))
 import carry_over as co  # noqa: E402
 
 FAILS = []
@@ -57,6 +59,39 @@ def main():
     # Soubory, kvůli kterým to celé vzniklo, tam MUSÍ být.
     for must in ("chmi_stations.json", "aladin.json", "metar_stations.json"):
         check(f"{must} je v seznamu k přenosu", must in co.CARRY)
+
+    # ── Co je v cache Actions, musí být i v CARRY ──────────────────────────
+    # Cache je přesně to, čemu tenhle modul nevěří (viz jeho docstring), takže
+    # každý soubor, který se z ní obnovuje, musí mít i záložní cestu. Šest
+    # souborů ji nemělo — mimo jiné wu_history.json, kvůli čemuž se historie
+    # vlastních stanic při každém výpadku cache mazala a začínala od nuly.
+    wf = (ROOT / ".github/workflows/nowcast.yml").read_text()
+    m = re.search(r"Restore station data.*?path: \|\n(.*?)\n\s+key:", wf, re.S)
+    check("krok Restore station data se v workflow našel", m is not None)
+    if m:
+        cached = [l.strip()[len("data/"):] for l in m.group(1).split("\n") if l.strip()]
+        # Adresáře řeší carry_dir/carry_series, ne slovník CARRY.
+        dirs = {"metar", "chmi_series"}
+        chybi = [c for c in cached if c not in dirs and c not in co.CARRY]
+        check(f"každý cachovaný soubor má i carry ({', '.join(chybi) or 'ok'})",
+              not chybi)
+
+    # ── Rejstřík dlaždic je pole OBJEKTŮ, ne řetězců ───────────────────────
+    # Na tomhle se carry_dir spálil: metar.py zapisuje {"tile": "9_18",
+    # "count": 42}, ale smyčka to četla jako řetězce, takže URL vycházela ze
+    # str(dict) a všech ~313 požadavků skončilo 404. V logu stálo "0/313"
+    # a nikdo si toho nevšiml, protože cache to většinou zamaskovala.
+    ids = [(t.get("tile") if isinstance(t, dict) else t)
+           for t in [{"tile": "9_18", "count": 42}, {"tile": "5_3", "count": 7}]]
+    check("z rejstříku se vytáhnou ID dlaždic, ne str(dict)",
+          ids == ["9_18", "5_3"])
+    src = (ROOT / "pipeline/carry_over.py").read_text()
+    check("carry_dir počítá s objekty v rejstříku",
+          't.get("tile") if isinstance(t, dict)' in src)
+    check("carry_series přenáší i řady stanic (historie)",
+          "def carry_series" in src and "chmi_series_index.json" in src)
+    check("nulový přenos se hlásí do stderr, ne mlčky",
+          "NEPŘENESLA SE ANI JEDNA" in src)
 
     print()
     if FAILS:
