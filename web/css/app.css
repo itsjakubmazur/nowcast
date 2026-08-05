@@ -869,13 +869,15 @@ button.glass-btn svg { width: 17px; height: 17px; display: block; }
    skrýval JS, prali by se o totéž a panel by problikával. Proto !important —
    tady je to jediná cesta, jak přebít inline styl z rendereru.
    ═══════════════════════════════════════════════════════════════════════ */
-body[data-sec="now"]   [data-sec]:not([data-sec~="now"]),
-body[data-sec="today"] [data-sec]:not([data-sec~="today"]),
-body[data-sec="week"]  [data-sec]:not([data-sec~="week"]),
-body[data-sec="data"]  [data-sec]:not([data-sec~="data"]) { display: none !important; }
-/* Navigace sama nese data-sec na tlačítkách — ta se filtrovat nesmí. */
-#secnav, #secnav button { display: revert !important; }
-
+/* Navigace NIC NESKRÝVÁ — jen skáče. Původně sekce filtrovaly obsah a byla
+   to chyba, kterou odhalilo první skutečné použití: stačí palcem trefit
+   spodní lištu a z appky zmizí nowcast, předpověď i týden. Vypadá to, že
+   přišla o polovinu funkcí, a nikde není vidět proč. Cena za "míň scrollování"
+   byla nepřijatelná, protože ten, kdo si toho nevšimne, přijde o data, kvůli
+   kterým appku otevřel.
+   Skok na sekci má stejný užitek (nemusíš rolovat přes všechno), ale nemůže
+   nic ztratit — všechno zůstává v jednom svitku, jen se k tomu dá dostat
+   jedním klepnutím. */
 #secnav {
   position: sticky; top: 0; z-index: 12;
   display: flex; gap: .2rem; padding: .25rem;

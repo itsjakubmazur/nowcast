@@ -136,15 +136,15 @@
 
 <!-- Levá floating karta -->
 <div id="left-card">
-  <!-- Navigace sekcí. Na mobilu je to spodní lišta (palec ji dosáhne),
-       na desktopu lepicí pruh v hlavě karty. Nic neskrývá natrvalo —
-       jen určuje, co je právě na řadě. -->
+  <!-- Navigace sekcí: SKÁČE, neskrývá. První verze filtrovala obsah a při
+       prvním skutečném použití se ukázalo, proč je to špatně — trefit palcem
+       spodní lištu znamenalo přijít o nowcast i předpověď, aniž by bylo vidět
+       proč. Teď jen ukazuje, kde jsi, a doveze tě jinam. -->
   <nav id="secnav" aria-label="Sekce">
     <button type="button" data-sec="now" aria-pressed="true">Teď</button>
     <button type="button" data-sec="today" aria-pressed="false">Dnes</button>
     <button type="button" data-sec="week" aria-pressed="false">Týden</button>
     <button type="button" data-sec="data" aria-pressed="false">Data</button>
-    <button type="button" data-sec="all" aria-pressed="false">Vše</button>
   </nav>
   <!-- Zásah bouřkou — nápadný banner, když predikovaná dráha buňky protne místo.
        Je první, aby při aktivní bouřce vyhrál; jinak je skrytý (display:none)

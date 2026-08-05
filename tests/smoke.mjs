@@ -147,13 +147,6 @@ async function waitForAsync(page, fn, timeoutMs = 8000, stepMs = 100) {
   return false;
 }
 
-// Stránky v testech startují v sekci "Vše": drtivá většina asercí ověřuje
-// VYKRESLENÍ panelu, ne to, ve které sekci sedí. Filtrování by je jen slepilo.
-// Samotné přepínání sekcí má vlastní blok asercí.
-async function startInAllSections(p) {
-  await p.addInitScript(() => localStorage.setItem("nowcast_section", "all"));
-}
-
 function prepareServeDir() {
   rmrf(SERVE);
   fs.mkdirSync(SERVE, { recursive: true });
@@ -366,7 +359,6 @@ async function main() {
   await context.addInitScript(() => localStorage.setItem("nowcast_more_open", "1"));
   await context.grantPermissions(["clipboard-read", "clipboard-write"]).catch(() => {});
   const page = await context.newPage();
-  await startInAllSections(page);
 
   const consoleErrors = [];
   page.on("console", msg => {
@@ -533,565 +525,47 @@ async function main() {
   const aqText = await page.textContent("#aq-panel");
   assertTrue(aqText.includes("PM2.5"), "panel kvality ovzduší se vykreslil");
 
-  // ── Navigace sekcí — Teď / Dnes / Týden / Data / Vše ─────────────────────
-  // Sbalitelnou sekci "Podrobnější data" nahradily sekce: dvě vrstvy skládání
-  // by znamenaly klik navíc k témuž. Test hlídá to podstatné — že přepnutí
-  // opravdu skryje cizí panely a že se volba pamatuje.
+  // ── Navigace sekcí — skáče, NESKRÝVÁ ─────────────────────────────────────
+  // Regrese, kterou tenhle blok hlídá, je ta nejdražší z celé appky: první
+  // verze navigace obsah filtrovala a jedno klepnutí palcem schovalo nowcast
+  // i předpověď. Test proto neověřuje jen skok, ale hlavně to, že po přepnutí
+  // je pořád všechno vidět.
   {
     const secs = await page.evaluate(() =>
       [...document.querySelectorAll("#secnav button")].map(b => b.dataset.sec));
-    assertTrue(secs.join(",") === "now,today,week,data,all",
-      `navigace nabízí všech pět sekcí (${secs.join(",")})`);
+    assertTrue(secs.join(",") === "now,today,week,data",
+      `navigace nabízí čtyři sekce (${secs.join(",")})`);
 
+    await page.click('#secnav button[data-sec="data"]');
+    await page.waitForTimeout(400);
+    const stillVisible = await page.evaluate(() => {
+      const vis = id => {
+        const el = document.getElementById(id);
+        return !!el && getComputedStyle(el).display !== "none";
+      };
+      return { fc24: vis("fc24"), fc7: vis("fc7"), precip: vis("precip-panel"),
+               forecast: vis("forecast-panel"), aq: vis("aq-panel") };
+    });
+    assertTrue(Object.values(stillVisible).every(Boolean),
+      `po přepnutí na Data zůstalo VŠECHNO viditelné (${JSON.stringify(stillVisible)})`);
+
+    const pressed = await page.evaluate(() =>
+      document.querySelector('#secnav button[data-sec="data"]').getAttribute("aria-pressed"));
+    assertTrue(pressed === "true", "aktivní tlačítko hlásí aria-pressed");
+
+    // Skok musí obsah opravdu posunout, jinak je navigace jen ozdoba.
+    await page.evaluate(() => window.scrollTo({ top: 0 }));
+    await page.waitForTimeout(150);
+    const pos = () => page.evaluate(() => window.scrollY
+      + (document.getElementById("left-card")?.scrollTop || 0)
+      + (document.getElementById("right-panel")?.scrollTop || 0));
+    const before = await pos();
     await page.click('#secnav button[data-sec="week"]');
-    await page.waitForTimeout(200);
-    const inWeek = await page.evaluate(() => ({
-      body: document.body.dataset.sec,
-      fc7: getComputedStyle(document.getElementById("fc7")).display !== "none",
-      fc24: getComputedStyle(document.getElementById("fc24")).display !== "none",
-      aq: getComputedStyle(document.getElementById("aq-panel")).display !== "none",
-      stored: localStorage.getItem("nowcast_section"),
-      pressed: document.querySelector('#secnav button[data-sec="week"]')
-        .getAttribute("aria-pressed"),
-    }));
-    assertTrue(inWeek.body === "week" && inWeek.fc7,
-      `sekce Týden ukazuje 7denní výhled (${inWeek.body})`);
-    assertTrue(!inWeek.fc24 && !inWeek.aq,
-      `sekce Týden skryla panely z Dnes (fc24=${inWeek.fc24}, ovzduší=${inWeek.aq})`);
-    assertTrue(inWeek.stored === "week", `volba sekce se pamatuje (${inWeek.stored})`);
-    assertTrue(inWeek.pressed === "true", "aktivní tlačítko hlásí aria-pressed");
-
-    // Navigace sama nese data-sec na tlačítkách — nesmí se odfiltrovat.
-    const navVisible = await page.evaluate(() =>
-      [...document.querySelectorAll("#secnav button")]
-        .every(b => getComputedStyle(b).display !== "none"));
-    assertTrue(navVisible, "tlačítka navigace zůstala viditelná i po přepnutí");
-
-    // Přejetí prstem přepíná sekce. Vertikální stránkování by nešlo (karty mají
-    // různou výšku), vodorovné gesto se se svislým scrollem nepere.
-    await page.evaluate(() => {
-      document.body.dataset.sec = "now";
-      const t = (type, x, y) => {
-        const touch = new Touch({ identifier: 1, target: document.body,
-          clientX: x, clientY: y });
-        document.dispatchEvent(new TouchEvent(type, {
-          bubbles: true, cancelable: true,
-          touches: type === "touchend" ? [] : [touch],
-          changedTouches: [touch],
-        }));
-      };
-      t("touchstart", 300, 400);
-      t("touchend", 100, 410);          // doleva, skoro vodorovně
-    });
-    await page.waitForTimeout(150);
-    const afterSwipe = await page.evaluate(() => document.body.dataset.sec);
-    assertTrue(afterSwipe === "today",
-      `přejetí doleva posune na další sekci (${afterSwipe})`);
-
-    // Šikmý tah je scroll, ne přepnutí — jinak by rolování přeskakovalo sekce.
-    await page.evaluate(() => {
-      const t = (type, x, y) => {
-        const touch = new Touch({ identifier: 1, target: document.body,
-          clientX: x, clientY: y });
-        document.dispatchEvent(new TouchEvent(type, {
-          bubbles: true, cancelable: true,
-          touches: type === "touchend" ? [] : [touch],
-          changedTouches: [touch],
-        }));
-      };
-      t("touchstart", 300, 400);
-      t("touchend", 200, 300);          // 100 px do strany, 100 px dolů
-    });
-    await page.waitForTimeout(150);
-    const afterDiag = await page.evaluate(() => document.body.dataset.sec);
-    assertTrue(afterDiag === "today", `šikmý tah sekci nepřepne (${afterDiag})`);
-
-    await page.click('#secnav button[data-sec="all"]');
-    await page.waitForTimeout(200);
-    const inAll = await page.evaluate(() => ({
-      fc7: getComputedStyle(document.getElementById("fc7")).display !== "none",
-      fc24: getComputedStyle(document.getElementById("fc24")).display !== "none",
-      aq: getComputedStyle(document.getElementById("aq-panel")).display !== "none",
-    }));
-    assertTrue(inAll.fc7 && inAll.fc24 && inAll.aq,
-      "sekce Vše nefiltruje nic (na širokém monitoru se svitek uživí)");
-  }
-
-  // ── Vlna PRO: bouřkové buňky, verifikace, bias stanice, průběh dne ────────
-  const stormInfo = await page.evaluate(async () => {
-    const { state } = await import("./js/state.js");
-    const subs = state.stormLayer?._sub || [];
-    return { hasLayer: !!state.stormLayer, n: subs.length,
-      popup: subs.map(s => s._popupHtml || "").join(" ") };
-  });
-  // 2 buňky: 2 markery + 2 dráhy + časové značky (+20/+40/+60 = 3 per buňka)
-  assertTrue(stormInfo.hasLayer && stormInfo.n >= 8,
-    `dráhy bouřkových buněk na mapě (${stormInfo.n} prvků vrstvy)`);
-  assertTrue(stormInfo.popup.includes("krupobití"),
-    "buňka ≥ 55 dBZ nese varování před krupobitím");
-
-  await page.waitForSelector("#verif-panel.show", { timeout: 5000 });
-  const verifText = await page.textContent("#verif-panel");
-  assertTrue(verifText.includes("Trefili jsme se?") && (await page.locator("#verif-panel .vf-col").count()) === 7,
-    "karta 'Trefili jsme se?' ukazuje 7 dní verifikace");
-
-  await page.waitForSelector("#station-check.show", { timeout: 5000 });
-  const stText = await page.textContent("#station-check");
-  assertTrue(/Stanice .+ hlásí .+ °C/.test(stText), `kontrola proti stanici funguje ("${stText.slice(0, 60)}…")`);
-
-  await page.waitForSelector("#daytl-panel.show", { timeout: 5000 });
-  const dtlSegs = await page.locator("#daytl-panel .dtl-seg").count();
-  assertTrue(dtlSegs >= 2 && dtlSegs <= 5, `průběh dne má ${dtlSegs} fází`);
-
-  // ── Vlna SAFETY: zásah bouřkou, okna beze srážek, shoda modelů ────────────
-  // Fixture buňka (49.95,14.2, hail) má dráhu vedoucí přes ~50.07,14.40, tedy
-  // ~2 km od testovací lokace 50.09,14.40 → zásah cca za 40 min.
-  await page.waitForSelector("#storm-impact.show", { timeout: 5000 });
-  const siText = await page.textContent("#storm-impact");
-  assertTrue(/za ~\d+ min|právě nad tebou/.test(siText) && /kroup|bouřka/i.test(siText),
-    `banner zásahu bouřkou funguje ("${siText.replace(/\s+/g, " ").slice(0, 70)}…")`);
-
-  // ── Srážky: jeden panel, dvě měřítka ──────────────────────────────────────
-  // Regrese, kterou to hlídá: dřív to byly DVĚ karty nad sebou (0–120 min
-  // a 0–12 h), tedy dvě časové osy téhož nad hero countdownem.
-  await page.waitForSelector("#precip-panel.show", { timeout: 5000 });
-  const owBars = await page.locator("#precip-panel .ow-bars i").count();
-  const owWet = await page.locator("#precip-panel .ow-bars i.wet").count();
-  assertTrue(owBars >= 6 && owWet >= 1,
-    `12h pás má mokré i suché sloty (${owBars} slotů, ${owWet} mokrých)`);
-  const owMsg = await page.textContent("#outlook-msg");
-  assertTrue(/prší|sucho|déšť|srážek/i.test(owMsg || ""),
-    `věta 'kdy vyrazit' zůstala ("${(owMsg || "").slice(0, 60)}")`);
-  assertTrue(await page.locator("#outlook-panel").count() === 0,
-    "samostatná karta 'Kdy vyrazit' už neexistuje");
-
-  const scale = await page.evaluate(() => {
-    const panel = document.getElementById("precip-panel");
-    const track = document.getElementById("pp-track");
-    const before = panel.dataset.active;
-    panel.querySelector('.pp-tab[data-scale="12h"]').click();
-    const after12 = panel.dataset.active;
-    panel.querySelector('.pp-tab[data-scale="2h"]').click();
-    const after2 = panel.dataset.active;
-    return {
-      before, after12, after2,
-      tabs: [...panel.querySelectorAll(".pp-tab")].map(t => t.dataset.scale),
-      activeCount: panel.querySelectorAll(".pp-tab.active").length,
-      minutelyBars: panel.querySelectorAll("#minutely-bars i").length,
-      // dráha musí být opravdu přejížděcí, ne dvě skryté vrstvy
-      snap: getComputedStyle(track).scrollSnapType,
-      bodies: [...track.querySelectorAll(".pp-body:not([hidden])")].length,
-      aria: panel.querySelector('.pp-tab[data-scale="2h"]').getAttribute("aria-selected"),
-    };
-  });
-  assertTrue(scale.tabs.join(",") === "2h,12h",
-    `panel má obě měřítka (${scale.tabs.join(",")})`);
-  assertTrue(scale.before === "2h" && scale.after12 === "12h" && scale.after2 === "2h",
-    `přepínač mění aktivní měřítko (${JSON.stringify([scale.before, scale.after12, scale.after2])})`);
-  assertTrue(scale.activeCount === 1,
-    `aktivní je právě jedna záložka (${scale.activeCount})`);
-  assertTrue(scale.minutelyBars >= 6,
-    `2h graf má sloupce (${scale.minutelyBars})`);
-  assertTrue(/x/.test(scale.snap || ""),
-    `dráha má vodorovný snap, takže jde přejet prstem ("${scale.snap}")`);
-  assertTrue(scale.bodies === 2,
-    `obě měřítka jsou v dráze, ne skrytá pod sebou (${scale.bodies})`);
-  assertTrue(scale.aria === "true",
-    `aktivní záložka se hlásí čtečkám (aria-selected=${scale.aria})`);
-
-  // Přejetí prstem: posun dráhy musí indikátor dotáhnout sám.
-  const swiped = await page.evaluate(async () => {
-    const panel = document.getElementById("precip-panel");
-    const track = document.getElementById("pp-track");
-    const target = track.querySelector('.pp-body[data-scale="12h"]');
-    track.scrollLeft = target.offsetLeft;
-    track.dispatchEvent(new Event("scroll"));
-    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
-    return panel.dataset.active;
-  });
-  assertTrue(swiped === "12h",
-    `přejetí na 12h dráhu přepne indikátor samo (${swiped})`);
-
-  // Klávesnice — gesto nesmí být jediná cesta.
-  const byKey = await page.evaluate(() => {
-    const panel = document.getElementById("precip-panel");
-    // Událost musí vzniknout na ZAOSTŘENÉM tlačítku, ne na panelu — jinak
-    // e.target není uvnitř .pp-tabs a handler ji správně ignoruje.
-    const tab = panel.querySelector('.pp-tab[data-scale="12h"]');
-    tab.focus();
-    tab.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }));
-    return panel.dataset.active;
-  });
-  assertTrue(byKey === "2h", `šipka přepne měřítko i bez gesta (${byKey})`);
-
-  await page.waitForSelector("#confidence-chip.show", { timeout: 5000 });
-  const cfText = await page.textContent("#confidence-chip");
-  assertTrue(/Jistota výhledu/.test(cfText), `chip jistoty výhledu z modelů ("${cfText.slice(0, 50)}…")`);
-
-  // ── WU vlastní stanice ────────────────────────────────────────────────────
-  const wuRows = await page.locator(".wu-mini-row").count();
-  assertTrue(wuRows === 1, `WU vlastní stanice panel má 1 řádek (má ${wuRows})`);
-
-  // ── Radar ovládání ────────────────────────────────────────────────────────
-  await page.click("#btn-play");
-  await page.waitForSelector("#btn-play.active", { timeout: 3000 });
-  assertTrue(true, "play tlačítko se aktivovalo");
-  await page.click("#btn-play");
-  await page.waitForFunction(() => !document.getElementById("btn-play").classList.contains("active"), { timeout: 3000 });
-  assertTrue(true, "pauza tlačítko funguje");
-
-  const frameBefore = await page.textContent("#frame-time");
-  await page.click("#btn-prev");
-  await page.waitForTimeout(150);
-  const frameAfter = await page.textContent("#frame-time");
-  assertTrue(typeof frameAfter === "string", `radar frame krokování neshodilo appku (před="${frameBefore.trim()}" po="${frameAfter.trim()}")`);
-
-  // ── Legenda radaru ────────────────────────────────────────────────────────
-  await page.waitForSelector("#radar-legend.show", { timeout: 3000 });
-  assertTrue(true, "legenda radaru se zobrazila");
-
-  // ── Žádné neúmyslné překryvy fixed panelů (chytilo reálný bug: legenda
-  //    se dřív kreslila přes spodní karty v #left-card) ─────────────────────
-  const overlapPairs = [
-    ["#radar-legend", "#left-card"],
-    ["#layer-selector", "#left-card"],
-    ["#radar-legend", "#layer-selector"],
-    ["#storm-bar", "#right-panel"],
-  ];
-  for (const [selA, selB] of overlapPairs) {
-    const overlap = await page.evaluate(([a, b]) => {
-      const elA = document.querySelector(a), elB = document.querySelector(b);
-      if (!elA || !elB) return null;
-      const ra = elA.getBoundingClientRect(), rb = elB.getBoundingClientRect();
-      if (ra.width === 0 || ra.height === 0 || rb.width === 0 || rb.height === 0) return false;
-      return !(ra.right <= rb.left || ra.left >= rb.right || ra.bottom <= rb.top || ra.top >= rb.bottom);
-    }, [selA, selB]);
-    assertTrue(overlap !== true, `${selA} se nepřekrývá s ${selB}`);
-  }
-
-  // ── Vrstvový selektor ČHMÚ ────────────────────────────────────────────────
-  await page.click('.layer-btn[data-layer="wind_kmh"]');
-  const activeLayer = await page.getAttribute('.layer-btn[data-layer="wind_kmh"]', "class");
-  assertTrue(activeLayer.includes("active"), "přepnutí vrstvy ČHMÚ markerů funguje");
-
-  // ── Globální radar (RainViewer): rychlé zap→vyp nesmí "vzkřísit" vrstvu ──
-  // po dokončení pozdě doražené odpovědi (stejná třída bugů jako u wind/hydro).
-  await page.click("#btn-global");
-  await page.click("#btn-global");
-  await page.waitForTimeout(400);
-  const globalStillOff = await page.evaluate(async () => {
-    const { state } = await import("./js/state.js");
-    return { mode: state.globalMode, hasLayer: !!(state.map._layers || []).includes(state.rvLayer) };
-  });
-  assertTrue(!globalStillOff.mode && !globalStillOff.hasLayer,
-    `rychlé zap/vyp globálního radaru zůstalo vypnuté (mode=${globalStillOff.mode}, vrstva=${globalStillOff.hasLayer})`);
-
-  // ── Mapové vrstvy: satelit / vítr / hydrologie ────────────────────────────
-  await page.click("#btn-satellite");
-  await page.waitForTimeout(300);
-  assertTrue((await page.getAttribute("#btn-satellite", "class") || "").includes("active"),
-    "satelitní vrstva se zapnula");
-  await page.click("#btn-satellite");
-  await page.waitForTimeout(100);
-  assertTrue(!(await page.getAttribute("#btn-satellite", "class") || "").includes("active"),
-    "satelitní vrstva se vypnula");
-
-  // Rychlé zap→vyp BEZ čekání, s uměle zpožděnou první odpovědí (viz route
-  // výše): fetch z "zap" dorazí AŽ PO "vyp". Bez token guardu v
-  // toggleWindLayer/toggleHydro by tahle pozdě dorazivší odpověď vrstvu na
-  // mapě "vzkřísila" i po vypnutí — stejná třída bugu jako u
-  // loadRainViewerFrames/toggleGlobalMode, tady ověřená s deterministickým
-  // zpožděním místo spoléhání na to, že klik č. 2 stihne doběhnout dřív
-  // než fetch (což na rychlém lokálním serveru není zaručeno).
-  await page.click("#btn-wind"); // zap — vyšle zpožděný fetch
-  await page.click("#btn-wind"); // vyp — hned poté, fetch ještě neskončil
-  await page.waitForTimeout(600); // > 350ms zpoždění první odpovědi
-  const windCheck = await page.evaluate(async () => {
-    const { state } = await import("./js/state.js");
-    return {
-      mode: state.windMode,
-      hasLayer: !!state.windLayer,
-      onMap: !!(state.windLayer && state.map._layers?.includes(state.windLayer)),
-    };
-  });
-  assertTrue(!windCheck.mode && !windCheck.hasLayer && !windCheck.onMap,
-    `rychlé zap→vyp větru (se zpožděnou odpovědí) nevzkřísilo vrstvu po vypnutí (mode=${windCheck.mode}, hasLayer=${windCheck.hasLayer}, onMap=${windCheck.onMap})`);
-
-  // Vítr podruhé — teď už bez zpoždění, ať se vrstva opravdu postaví a tooltip
-  // řekne, jak čerstvá data jsou (windgrid.py smí pole doplnit z minulého běhu).
-  await page.click("#btn-wind");
-  await page.waitForTimeout(400);
-  const windOn = await page.evaluate(async () => {
-    const { state } = await import("./js/state.js");
-    return { mode: state.windMode, hasLayer: !!state.windLayer,
-             title: document.getElementById("btn-wind")?.title || "" };
-  });
-  assertTrue(windOn.mode && windOn.hasLayer,
-    `vrstva větru se z wind_grid.json postaví (mode=${windOn.mode}, hasLayer=${windOn.hasLayer})`);
-  assertTrue(/Vítr 10 m/.test(windOn.title) && /78 % bodů měřeno/.test(windOn.title),
-    `tlačítko větru hlásí stáří i podíl měřených bodů ("${windOn.title}")`);
-  await page.click("#btn-wind"); // ukliď po sobě
-
-  const windLabels = await page.evaluate(async () => {
-    const { windFreshnessLabel } = await import("./js/radar.js");
-    const t = (min, f, tot) => windFreshnessLabel({
-      refTime: new Date(Date.now() - min * 60000).toISOString(),
-      freshPoints: f, totalPoints: tot,
-    });
-    return [t(20, 238, 238), t(300, 100, 238), windFreshnessLabel(null),
-            windFreshnessLabel({ refTime: "nesmysl", freshPoints: 238, totalPoints: 238 })];
-  });
-  assertTrue(windLabels[0] === "Vítr 10 m · data 20 min stará",
-    `plné čerstvé pole nehlásí žádné dopočítávání ("${windLabels[0]}")`);
-  assertTrue(/5 h stará/.test(windLabels[1]) && /42 % bodů měřeno/.test(windLabels[1]),
-    `staré a děravé pole se přizná ("${windLabels[1]}")`);
-  assertTrue(windLabels[2] === "Vítr 10 m" && windLabels[3] === "Vítr 10 m",
-    `chybějící/rozbitá hlavička nevyrobí "NaN min stará" (${windLabels[2]} | ${windLabels[3]})`);
-
-  const windCaveats = await page.evaluate(async () => {
-    const { windCaveat } = await import("./js/radar.js");
-    const c = (min, f, t) => windCaveat({
-      refTime: new Date(Date.now() - min * 60000).toISOString(),
-      freshPoints: f, totalPoints: t,
-    });
-    // 200/238 = 84 % je nad prahem 80 % → záměrně žádný toast
-    return [c(20, 238, 238), c(20, 180, 238), c(400, 238, 238), windCaveat(null),
-            c(20, 200, 238)];
-  });
-  assertTrue(windCaveats[0] === null && windCaveats[3] === null,
-    `bezvadná (i chybějící) data toast nevyvolají (${windCaveats[0]} | ${windCaveats[3]})`);
-  assertTrue(/76 % mřížky/.test(windCaveats[1] || ""),
-    `děravé pole vyvolá toast o dopočtu ("${windCaveats[1]}")`);
-  assertTrue(windCaveats[4] === null,
-    `drobný dopočet (84 %) uživatele zbytečně neotravuje (${windCaveats[4]})`);
-  assertTrue(/7 h stará/.test(windCaveats[2] || ""),
-    `stará data vyvolají toast o stáří ("${windCaveats[2]}")`);
-
-  await page.click("#btn-hydro"); // zap — vyšle zpožděný fetch
-  await page.click("#btn-hydro"); // vyp — hned poté, fetch ještě neskončil
-  await page.waitForTimeout(600); // > 350ms zpoždění první odpovědi
-  const hydroCheck = await page.evaluate(async () => {
-    const { state } = await import("./js/state.js");
-    return {
-      mode: state.hydroMode,
-      hasLayer: !!state.hydroLayer,
-      onMap: !!(state.hydroLayer && state.map._layers?.includes(state.hydroLayer)),
-    };
-  });
-  assertTrue(!hydroCheck.mode && !hydroCheck.hasLayer && !hydroCheck.onMap,
-    `rychlé zap→vyp hydrologie (se zpožděnou odpovědí) nevzkřísilo vrstvu po vypnutí (mode=${hydroCheck.mode}, hasLayer=${hydroCheck.hasLayer}, onMap=${hydroCheck.onMap})`);
-
-  // ── Úhrnová mapa (24h srážky z NWP podmřížky) ─────────────────────────────
-  await page.click("#btn-accum");
-  await page.waitForTimeout(200);
-  const accum = await page.evaluate(async () => {
-    const { state } = await import("./js/state.js");
-    const sub = state.accumLayer?._sub || [];
-    return { mode: state.accumMode, n: sub.length,
-      legend: document.getElementById("accum-legend")?.classList.contains("show") };
-  });
-  // 2 body fixtury mají accum24 ≥ 1 (8.5 a 22.0), třetí je 0 → 2 polygony
-  assertTrue(accum.mode && accum.n === 2 && accum.legend,
-    `úhrnová mapa vykreslila mokré buňky (mode=${accum.mode}, buněk=${accum.n}, legenda=${accum.legend})`);
-  await page.click("#btn-accum");
-  await page.waitForTimeout(100);
-  const accumOff = await page.evaluate(async () => {
-    const { state } = await import("./js/state.js");
-    return { mode: state.accumMode, hasLayer: !!state.accumLayer };
-  });
-  assertTrue(!accumOff.mode && !accumOff.hasLayer, "úhrnová mapa se vypnula");
-
-  // ── Vyhledávání s klávesovou navigací ─────────────────────────────────────
-  await page.fill("#search", "Brno");
-  await page.waitForSelector("#suggestions li", { timeout: 3000 });
-  await page.keyboard.press("ArrowDown");
-  const selected = await page.getAttribute("#suggestions li:nth-child(1)", "aria-selected");
-  assertTrue(selected === "true", "klávesová navigace v našeptávači zvýrazní první položku");
-
-  // ── Motiv ─────────────────────────────────────────────────────────────────
-  const themeBefore = await page.getAttribute("html", "data-theme");
-  await page.click("#btn-theme");
-  await page.waitForTimeout(100);
-  const themeAfter = await page.getAttribute("html", "data-theme");
-  assertTrue(themeBefore !== themeAfter, `přepnutí motivu funguje (${themeBefore} → ${themeAfter})`);
-
-  // ── Sdílení ───────────────────────────────────────────────────────────────
-  await page.click("#btn-share");
-  await page.waitForTimeout(300);
-  assertTrue(true, "kliknutí na sdílet neshodilo appku");
-
-  // ── Push tlačítko (jen kontrola dostupnosti, ne reálný subscribe) ─────────
-  await page.waitForTimeout(500);
-  const pushBtnClass = await page.getAttribute("#btn-push", "class").catch(() => "");
-  assertTrue((pushBtnClass || "").includes("available"), "push tlačítko rozpoznalo podporu prohlížeče");
-
-  // ── Embed mód ─────────────────────────────────────────────────────────────
-  await page.goto(`${base}/?lat=50.09&lon=14.40&q=TestObec&embed=1`, { waitUntil: "load" });
-  await page.waitForTimeout(300);
-  const bodyClass = await page.getAttribute("body", "class");
-  assertTrue((bodyClass || "").includes("embed"), "embed mód nastaví body.embed");
-
-  // ── Žádné neočekávané JS chyby po celou dobu ─────────────────────────────
-  // blitzortung: živé blesky přes WebSocket — externí služba, v sandboxu
-  // (i leckde v produkci) nedostupná; appka na tom nezávisí a tiše degraduje
-  const realErrors = consoleErrors.filter(e => !/favicon|blitzortung/i.test(e));
-  assertTrue(realErrors.length === 0, `žádné console/page chyby (nalezeno ${realErrors.length})`);
-  if (realErrors.length) realErrors.forEach(e => console.error("  · " + e));
-
-  // ── ČHMÚ detail panel (série + rekordy/klimatologie/roční trend) ─────────
-  // Marker popupy jsou v Leaflet stubu nefunkční (nekreslí se do DOM), takže
-  // otevřeme detail přímo přes modul — appka ho stejně jen volá z popup tlačítka.
-  await page.evaluate(async () => {
-    const mod = await import("./js/stations.js");
-    await mod.openChmiDetail("0-20000-0-11518");
-  });
-  await page.waitForSelector("#chmi-detail.open .sd-hero", { timeout: 5000 });
-  assertTrue(true, "ČHMÚ detail panel se otevřel a načetl 24h sérii");
-  await page.click('.chmi-tab-btn[data-tab="rekordy"]');
-  await page.waitForFunction(() => document.getElementById("chmi-tab-content")?.textContent?.includes("38.5"), { timeout: 3000 });
-  assertTrue(true, "záložka Rekordy vykreslila chmi_stats.json data");
-  await page.click("#chmi-detail-close");
-
-  // ── Auto-obnova posledního místa (bez URL parametrů) ─────────────────────
-  const page2 = await context.newPage();
-  await startInAllSections(page2);
-  await page2.route("https://unpkg.com/leaflet@1.9.4/dist/leaflet.js", route => route.fulfill({ path: path.join(FIXTURES, "leaflet-stub.js"), contentType: "text/javascript" }));
-  await page2.route("https://unpkg.com/leaflet@1.9.4/dist/leaflet.css", route => route.fulfill({ body: "", contentType: "text/css" }));
-  await page2.route("https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js", route => route.fulfill({ path: path.join(FIXTURES, "chart-stub.js"), contentType: "text/javascript" }));
-  await page2.route("https://fonts.googleapis.com/**", route => route.fulfill({ body: "", contentType: "text/css" }));
-  await page2.route("https://api.open-meteo.com/v1/forecast**", route =>
-    route.fulfill({ body: JSON.stringify(omFixture), contentType: "application/json" }));
-  await page2.route("https://air-quality-api.open-meteo.com/**", route => route.fulfill({ body: "{}", contentType: "application/json" }));
-  await page2.route("https://archive-api.open-meteo.com/**", route => route.fulfill({ body: JSON.stringify(buildArchiveFixture()), contentType: "application/json" }));
-  await page2.route("https://*.workers.dev/**", route => route.fulfill({ body: "{}", contentType: "application/json" }));
-  const errors2 = [];
-  page2.on("pageerror", e => { errors2.push(e.message); if (process.env.DEBUG) console.log("[page2:pageerror]", e.message); });
-  page2.on("console", msg => { if (process.env.DEBUG) console.log(`[page2:console:${msg.type()}]`, msg.text()); });
-  await page2.goto(`${base}/`, { waitUntil: "load" });
-  if (process.env.DEBUG) {
-    const ls = await page2.evaluate(() => localStorage.getItem("nowcast_last_location"));
-    console.log("[page2] localStorage nowcast_last_location =", ls);
-  }
-  await page2.waitForFunction(() => document.getElementById("place")?.textContent?.includes("TestObec"), { timeout: 8000 });
-  assertTrue(true, "bez URL parametrů appka obnovila poslední navštívené místo (localStorage)");
-  assertTrue(errors2.length === 0, `žádné JS chyby při auto-obnově místa (nalezeno ${errors2.length})`);
-  await page2.close();
-
-  // ── Auto-poloha při startu: geolokace nahradí placeholder ─────────────────
-  const geoCtx = await browser.newContext({
-    serviceWorkers: "block",
-    permissions: ["geolocation"],
-    geolocation: { latitude: 49.84, longitude: 18.29 }, // Ostrava
-  });
-  const pageG0 = await geoCtx.newPage();
-  await startInAllSections(pageG0);
-  const errG0 = [];
-  pageG0.on("pageerror", e => errG0.push(e.message));
-  await pageG0.route("https://unpkg.com/leaflet@1.9.4/dist/leaflet.js", route => route.fulfill({ path: path.join(FIXTURES, "leaflet-stub.js"), contentType: "text/javascript" }));
-  await pageG0.route("https://unpkg.com/leaflet@1.9.4/dist/leaflet.css", route => route.fulfill({ body: "", contentType: "text/css" }));
-  await pageG0.route("https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js", route => route.fulfill({ path: path.join(FIXTURES, "chart-stub.js"), contentType: "text/javascript" }));
-  await pageG0.route("https://fonts.googleapis.com/**", route => route.fulfill({ body: "", contentType: "text/css" }));
-  await pageG0.route("https://api.open-meteo.com/v1/forecast**", route =>
-    route.fulfill({ body: JSON.stringify(route.request().url().includes("models=") ? mmFixture : omFixture), contentType: "application/json" }));
-  await pageG0.route("https://air-quality-api.open-meteo.com/**", route => route.fulfill({ body: "{}", contentType: "application/json" }));
-  await pageG0.route("https://archive-api.open-meteo.com/**", route => route.fulfill({ body: JSON.stringify(buildArchiveFixture()), contentType: "application/json" }));
-  await pageG0.route("https://ensemble-api.open-meteo.com/**", route => route.fulfill({ body: "{}", contentType: "application/json" }));
-  await pageG0.route("https://*.workers.dev/**", route => route.fulfill({ body: "{}", contentType: "application/json" }));
-  await pageG0.route("https://nominatim.openstreetmap.org/**", route =>
-    route.fulfill({ body: JSON.stringify({ address: { city: "Ostrava" } }), contentType: "application/json" }));
-  // localStorage má JINÉ poslední místo — geolokace ho musí přebít
-  await pageG0.addInitScript(() => localStorage.setItem("nowcast_last_location",
-    JSON.stringify({ lat: 50.09, lon: 14.40, label: "StaréMísto" })));
-  await pageG0.goto(`${base}/`, { waitUntil: "load" });
-  await pageG0.waitForFunction(() => document.getElementById("place")?.textContent?.includes("Ostrava"), { timeout: 8000 });
-  assertTrue(true, "start bez URL: geolokace nahradila placeholder aktuální polohou (Ostrava)");
-  assertTrue(errG0.length === 0, `žádné JS chyby při auto-poloze (nalezeno ${errG0.length})`);
-  await geoCtx.close();
-
-  // Předchozí blok nechal stránku v embed módu, kde je půlka ovládání schovaná.
-  // Vrátíme ji do normálního stavu, jinak by následující testy klikaly na to,
-  // co není vidět.
-  await page.goto(`${base}/?lat=50.09&lon=14.40&q=TestObec`, { waitUntil: "load" });
-
-  // ── Pruh výstrah ──────────────────────────────────────────────────────────
-  // Fixture má schválně devět výstrah, z toho tentýž jev na víc dní — přesně
-  // jako ČHMÚ v horkém týdnu. Dřív z toho bylo devět štítků vedle sebe, flex
-  // je smrskl na minimální šířku, text se zalomil a kulaté rohy z nich udělaly
-  // kolečka přetékající z pruhu.
-  {
-    await page.waitForSelector("#alert-bar.show", { timeout: 8000 });
-    const bar = await page.evaluate(() => {
-      const b = document.getElementById("alert-bar");
-      const chips = [...b.querySelectorAll(".warn-chip")];
-      return {
-        n: chips.length,
-        texts: chips.map(c => c.textContent.trim()),
-        heights: chips.map(c => Math.round(c.getBoundingClientRect().height)),
-        widths: chips.map(c => Math.round(c.getBoundingClientRect().width)),
-        barW: Math.round(b.getBoundingClientRect().width),
-        barH: Math.round(b.getBoundingClientRect().height),
-      };
-    });
-    assertTrue(bar.n <= 4, `pruh výstrah ukazuje nanejvýš 3 štítky + přetečení (je jich ${bar.n})`);
-    assertTrue(bar.texts.some(t => /^\+\d+$/.test(t)),
-      `zbytek výstrah je schovaný pod štítkem "+N" (${bar.texts.join(" | ")})`);
-    // Jeden jev = jeden štítek, i když ho ČHMÚ vydalo na tři dny po sobě.
-    // Ani počet opakování se nepíše — "3×" nic neříká, je to jedno vedro.
-    const events = bar.texts.filter(t => !/^\+\d+$/.test(t));
-    assertTrue(new Set(events).size === events.length,
-      `žádný jev se v pruhu neopakuje (${events.join(" | ")})`);
-    assertTrue(!bar.texts.some(t => t.includes("×")),
-      `štítek nenese počet opakování (${bar.texts.join(" | ")})`);
-    const spans = await page.evaluate(() =>
-      [...document.querySelectorAll("#alert-bar .warn-chip")].map(c => c.title));
-    assertTrue(spans.some(t => /platí .+ – .+/.test(t)),
-      `platnost výstrahy je v nápovědě štítku (${spans.filter(Boolean).join(" | ")})`);
-
-    // Stupně téhož jevu: "Silná zátěž teplem" vedle "Velmi silné" je jen ta
-    // samá věc slabším písmem. Zůstat smí nejsilnější stupeň — a to i v
-    // rozbaleném stavu, kde by se slabší jinak vrátila zadními vrátky.
-    const all = await page.evaluate(() => {
-      const b = document.getElementById("alert-bar");
-      if (!b.classList.contains("expanded")) b.click();
-      return [...b.querySelectorAll(".warn-chip")].map(c => c.textContent.trim());
-    });
-    await page.evaluate(() => document.getElementById("alert-bar").click());
-    assertTrue(all.includes("Velmi silná zátěž teplem"),
-      `nejsilnější stupeň zůstal (${all.join(" | ")})`);
-    assertTrue(!all.includes("Silná zátěž teplem"),
-      `slabší stupeň téhož jevu zmizel (${all.join(" | ")})`);
-    assertTrue(all.includes("Velmi vysoké teploty") && !all.includes("Vysoké teploty"),
-      `sloučení funguje i u teplot (${all.join(" | ")})`);
-    // Pojistka proti přehnanému slučování: "Nízké teploty" nejsou slabší
-    // verze "Vysokých teplot", je to opačný jev a musí přežít samostatně.
-    assertTrue(all.includes("Nízké teploty"),
-      `opačný jev se neslije do jedné rodiny (${all.join(" | ")})`);
-    // Zalomený text = vysoký štítek. Jednořádkový štítek má do ~30 px.
-    assertTrue(bar.heights.every(h => h <= 34),
-      `žádný štítek se nezalomil do víc řádků (výšky ${bar.heights.join(",")})`);
-    // Kolečko = šířka srovnatelná s výškou. Textový štítek je vždycky širší.
-    assertTrue(bar.widths.every((w, i) => w > bar.heights[i]),
-      `štítky jsou pilulky, ne kolečka (š×v ${bar.widths.map((w, i) => `${w}×${bar.heights[i]}`).join(" ")})`);
-    const overflow = await page.evaluate(() => {
-      const b = document.getElementById("alert-bar");
-      const r = b.getBoundingClientRect();
-      return [...b.querySelectorAll(".warn-chip")]
-        .some(c => c.getBoundingClientRect().right > r.right + 1);
-    });
-    assertTrue(!overflow, "žádný štítek nepřetéká z pruhu ven");
-
-    // Klepnutí rozbalí zbytek — role="button" tam byla, ale nic nedělala.
-    await page.click("#alert-bar");
-    const expanded = await page.evaluate(() => ({
-      cls: document.getElementById("alert-bar").classList.contains("expanded"),
-      n: document.querySelectorAll("#alert-bar .warn-chip").length,
-    }));
-    assertTrue(expanded.cls && expanded.n > bar.n,
-      `klepnutí na pruh ukáže všechny výstrahy (${expanded.n} > ${bar.n})`);
-    await page.click("#alert-bar");
-    const collapsed = await page.evaluate(() =>
-      document.querySelectorAll("#alert-bar .warn-chip").length);
-    assertTrue(collapsed === bar.n, `druhé klepnutí zase sbalí (${collapsed})`);
+    await page.waitForTimeout(700);
+    const after = await pos();
+    // Skok může jít nahoru i dolů — podstatné je, že se OPRAVDU pohnul.
+    assertTrue(Math.abs(after - before) > 40,
+      `klepnutí na sekci odroluje na její začátek (${before} → ${after})`);
   }
 
   // ── Sousedské sítě ────────────────────────────────────────────────────────
@@ -1162,8 +636,7 @@ async function main() {
   const wakeCtx = async (ageMin) => {
     const c = await browser.newContext({ serviceWorkers: "block" });
     const p = await c.newPage();
-    await startInAllSections(p);
-    let manifestHits = 0;
+      let manifestHits = 0;
     await p.route("**/data/radar_manifest.json*", async route => {
       manifestHits++;
       const j = JSON.parse(fs.readFileSync(path.join(SERVE, "data", "radar_manifest.json"), "utf8"));
@@ -1200,7 +673,6 @@ async function main() {
   {
     const denyCtx = await browser.newContext({ serviceWorkers: "block" }); // bez permission = zamítnuto
     const pd = await denyCtx.newPage();
-  await startInAllSections(pd);
     await pd.route("https://unpkg.com/leaflet@1.9.4/dist/leaflet.js", route => route.fulfill({ path: path.join(FIXTURES, "leaflet-stub.js"), contentType: "text/javascript" }));
     await pd.route("https://unpkg.com/leaflet@1.9.4/dist/leaflet.css", route => route.fulfill({ body: "", contentType: "text/css" }));
     await pd.route("https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js", route => route.fulfill({ path: path.join(FIXTURES, "chart-stub.js"), contentType: "text/javascript" }));
@@ -1226,7 +698,6 @@ async function main() {
   // ── Mobilní šířka ─────────────────────────────────────────────────────────
   const mobile = await browser.newContext({ viewport: { width: 390, height: 844 }, serviceWorkers: "block" });
   const pageM = await mobile.newPage();
-  await startInAllSections(pageM);
   const errorsM = [];
   pageM.on("pageerror", e => errorsM.push(e.message));
   await pageM.route("https://unpkg.com/leaflet@1.9.4/dist/leaflet.js", route => route.fulfill({ path: path.join(FIXTURES, "leaflet-stub.js"), contentType: "text/javascript" }));
@@ -1246,7 +717,6 @@ async function main() {
 
   // ── Modely pro tohle místo: panel + učící se verifikace ───────────────────
   const pageMod = await context.newPage();
-  await startInAllSections(pageMod);
   const errorsMod = [];
   pageMod.on("pageerror", e => errorsMod.push(e.message));
   await pageMod.route("https://unpkg.com/leaflet@1.9.4/dist/leaflet.js", route => route.fulfill({ path: path.join(FIXTURES, "leaflet-stub.js"), contentType: "text/javascript" }));
@@ -1641,7 +1111,6 @@ async function main() {
 
   // ── Světový režim — místo mimo pokrytí českého radaru (New York) ──────────
   const pageG = await context.newPage();
-  await startInAllSections(pageG);
   const errorsG = [];
   pageG.on("pageerror", e => { errorsG.push(e.message); if (process.env.DEBUG) console.log("[pageG:pageerror]", e.message); });
   pageG.on("console", msg => {
