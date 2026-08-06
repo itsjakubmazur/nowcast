@@ -31,25 +31,21 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # JEDEN job, ne dva. Deploy na Pages byl samostatný job, takže každý běh
-  # žádal o DVA runnery a mezi nimi tahal data přes artefakt. Na free tieru
-  # veřejného repa je runner nedostatkové zboží: 6. 8. 2026 čekal job
-  # 92684866262 přesně 15:01 s runner_id 0 a pak ho GitHub zrušil, o půl
-  # hodiny dřív job 92681019806 úplně stejně. Dvě žádosti místo jedné jsou
-  # v takové situaci dvakrát tolik příležitostí uvíznout — a artefakt navíc.
+  # POZOR na pokušení sloučit tenhle job s deployem do jednoho, ať běh žádá
+  # o jeden runner místo dvou. Zkusil jsem to 6. 8. 2026 a je to horší:
+  # prostředí github-pages pouští jeden deployment naráz, takže job, který
+  # ho deklaruje, čeká ve stavu "waiting", DOKUD předchozí deployment
+  # neskončí. Sloučený job tím čeká celý — deset minut výpočtů uvízne za
+  # frontou na publikaci. Ve dvou jobech čeká jen ten deploy, a data se
+  # mezitím spočítají.
   run-pipeline:
     runs-on: ubuntu-latest
     # Strop, aby zaseknutý běh neblokoval frontu. Zdravý full běh je po
     # odlehčení ~5 minut, s pomalými crawlery na :00 a :30 ~10 — dvacet je
     # rezerva, ne cíl.
     timeout-minutes: 20
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url || steps.deployment_retry.outputs.page_url }}
     permissions:
       contents: write   # potřeba pro commit-back pipeline/state/ (verify.py historie)
-      pages: write      # deploy na Pages jede v tomhle jobu, ne ve vlastním
-      id-token: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -314,6 +310,13 @@ jobs:
       - name: Validate publikovaná data (poslední pojistka před deployem)
         run: python pipeline/validate.py
 
+      - name: Upload data artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: nowcast-data-${{ github.run_id }}
+          path: data/
+          retention-days: 1
+
       - name: Copy data into web/
         run: |
           mkdir -p web/data
@@ -364,10 +367,39 @@ jobs:
             sleep $((i * 3))
           done
 
-      # ── Deploy na Pages ──────────────────────────────────────────────────
-      # Dřív samostatný job; přesunuto sem, aby běh žádal o jeden runner
-      # místo dvou (viz komentář u run-pipeline). Odpadl tím i artefakt,
-      # kterým se data/ přenášela mezi joby.
+  deploy-pages:
+    needs: run-pipeline
+    runs-on: ubuntu-latest
+    # Deploye se stohovaly: actions/deploy-pages čeká, až Pages deployment
+    # doběhne, a po deseti minutách to vzdá — v logu je krok "Deploy to GitHub
+    # Pages" dlouhý přesně 10:06 a červený. Prostředí github-pages pustí jen
+    # jeden deployment naráz, takže při běhu po pěti minutách stačí jedno
+    # zdržení a fronta se přenese do dalšího běhu.
+    #
+    # Vlastní skupina s cancel-in-progress to řeže na správném místě: čekající
+    # deploy ustoupí novějšímu. Zahodit ho nic nestojí — publikuje se celý
+    # adresář data/, takže novější deploy nese všechno, co nesl ten zrušený,
+    # a k tomu čerstvější radar.
+    concurrency:
+      group: pages
+      cancel-in-progress: true
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url || steps.deployment_retry.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download data artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: nowcast-data-${{ github.run_id }}
+          path: web/data/
+
       - name: Setup Pages
         uses: actions/configure-pages@v5
 
@@ -384,16 +416,11 @@ jobs:
       #
       # Token, kterým se deploy autentizuje, byl podepsaný klíčem, který
       # ověřovací endpoint GitHubu neznal — rotace klíčů na jejich straně.
-      # Náš běh přitom celý prošel, takže o data se přišlo jen kvůli tomu
+      # Pipeline přitom celá prošla, takže o data se přišlo jen kvůli tomu
       # poslednímu kroku a web zůstal viset na starých.
       #
       # Proti přechodné nekonzistenci pomáhá jediné: požádat o token znovu
-      # o chvíli později. Druhý pokus stojí pár vteřin a jede ve stejném
-      # jobu, takže nesháníme dalšího runnera.
-      #
-      # Strop 8 minut je proti opačnému případu: actions/deploy-pages čeká na
-      # dokončení deploymentu a sám to vzdá až po deseti, což je víc, než kolik
-      # má trvat celý běh.
+      # o chvíli později.
       - name: Deploy to GitHub Pages
         id: deployment
         timeout-minutes: 8
