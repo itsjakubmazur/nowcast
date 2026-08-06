@@ -2,8 +2,20 @@ name: Nowcast pipeline
 
 on:
   schedule:
-    # GitHub free tier cron je nespolehlivý — primárně triggerujeme přes cron-job.org → workflow_dispatch
-    - cron: '*/10 * * * *'
+    # ZÁCHRANNÁ SÍŤ, ne hlavní spouštěč. Primárně triggeruje cron-job.org přes
+    # workflow_dispatch; GitHub cron na free tieru chodí nespolehlivě a pozdě.
+    #
+    # Bývalo tu */10, což se ukázalo jako aktivní škoda. Skupina concurrency
+    # drží nejvýš JEDEN čekající běh a každý nový trigger ten čekající ZRUŠÍ —
+    # i když jeho job už stojí ve frontě na runnera. Když se runner shání
+    # deset patnáct minut a trigger chodí po pěti, čekající běh se nikdy
+    # nedočká: pokaždé ho sejme mladší. Přesně to bylo vidět 6. 8. 2026, kdy
+    # job 92681019806 čekal patnáct minut s runner_id 0 a pak byl zrušen.
+    #
+    # Půlhodinová záloha se s pětiminutovým externím cronem pere šestkrát méně
+    # a pořád splní, k čemu tu je — nastartovat pipeline, když externí cron
+    # umře.
+    - cron: '*/30 * * * *'
   workflow_dispatch:  # trigger z externího cronu (cron-job.org) nebo ruční spuštění
     inputs:
       mode:
