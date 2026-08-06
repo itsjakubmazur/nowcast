@@ -493,15 +493,24 @@ button.glass-btn svg { width: 17px; height: 17px; display: block; }
   gap: .5rem; margin-bottom: .4rem; white-space: nowrap;
 }
 .minutely-label #minutely-src { font-size: var(--fs-micro); font-weight: 500; text-transform: none; letter-spacing: 0; overflow: hidden; text-overflow: ellipsis; }
-.minutely-bars { display: flex; align-items: flex-end; gap: 3px; height: 46px; }
-.minutely-bars i {
-  flex: 1; border-radius: 4px 4px 2px 2px; background: var(--blue);
+/* ── Sloupce srážek — JEDNA gramatika pro 2 h i 12 h ───────────────────────
+   Dřív měla každá záložka vlastní: 2 h sloupce s výškou podle intenzity,
+   12 h plochou stuhu, kde intenzitu nesl jen tón. Byly to původně dvě karty
+   nad sebou, takže dávalo smysl je odlišit; jako dvě záložky JEDNOHO panelu
+   ale nejsou nikdy vidět naráz a rozdíl už jen nutí učit se dvakrát totéž.
+   Viz precipbars.js. */
+.pbars { display: flex; align-items: flex-end; gap: 2px; height: 46px; }
+.pbars i {
+  flex: 1; min-width: 0; border-radius: 4px 4px 2px 2px; background: var(--blue);
   min-height: 3px; opacity: .92;
 }
-.minutely-bars i.dry { background: var(--muted); opacity: .22; height: 3px !important; }
+/* Suchý slot je tenký patník, ne prázdno — prázdno se čte jako chybějící data. */
+.pbars i.dry { background: var(--muted); opacity: .22; height: 3px; }
+/* Nejbližší doporučené suché okno (jen 12h měřítko) */
+.pbars i.dry-good { background: var(--green); opacity: .6; height: 5px; }
 /* "možná" sloupec: deterministicky sucho, ale ensemble dává nezanedbatelnou P(déšť) */
-.minutely-bars i.maybe { background: var(--blue); opacity: .3; }
-.minutely-axis {
+.pbars i.maybe { background: var(--blue); opacity: .3; }
+.pp-axis {
   display: flex; justify-content: space-between;
   font-size: var(--fs-micro); font-weight: 600; color: var(--muted);
   font-variant-numeric: tabular-nums; margin-top: .3rem;
@@ -779,9 +788,7 @@ button.glass-btn svg { width: 17px; height: 17px; display: block; }
   padding: .5rem;
 }
 #right-panel::-webkit-scrollbar { display: none; }
-#right-panel .fc24,
 #right-panel .fc7,
-#right-panel .meteo-block,
 #right-panel .aq-panel,
 #right-panel #astro-panel,
 #right-panel #history-panel {
@@ -791,11 +798,6 @@ button.glass-btn svg { width: 17px; height: 17px; display: block; }
   border: none;
 }
 
-.fc24 {
-  border-radius: var(--r-card);
-  padding: .8rem .9rem .7rem;
-  display: none;
-}
 /* ══ HLAVIČKA PANELU — jeden tvar pro všechny ═════════════════════════════
    Tenhle zápis (verzálky, prostrkání, šedá, malé) měl skoro každý panel, ale
    ne všechny: "Průběh dne" a "Trefili jsme se?" se sázely jako věta tučně
@@ -806,7 +808,7 @@ button.glass-btn svg { width: 17px; height: 17px; display: block; }
    .pp-title, .settings-log-title, .legend-title). Čtyři kopie znamenají, že
    se při příští úpravě rozejdou — tak jako se rozešly tyhle dvě výjimky.
    ═══════════════════════════════════════════════════════════════════════ */
-.fc24-title, .fc7-title, .aq-title, .meteo-title, .astro-title,
+.fc7-title, .aq-title, .meteo-title, .astro-title,
 .mdl-title, .pp-title, .settings-log-title, #radar-legend .legend-title,
 #verif-panel .vf-title {
   font-size: var(--fs-tiny); font-weight: 700; color: var(--muted);
@@ -814,7 +816,7 @@ button.glass-btn svg { width: 17px; height: 17px; display: block; }
   margin-bottom: .55rem; overflow: hidden;
   display: flex; align-items: center; gap: .35rem; white-space: nowrap;
 }
-.fc24-title span, .fc7-title span { overflow: hidden; text-overflow: ellipsis; }
+.fc7-title span { overflow: hidden; text-overflow: ellipsis; }
 /* Doplňková věta v hlavičce nekřičí s ní — nese ji malá písmena a normální
    řez, jinak by z hlavičky byly dva soupeřící bloky verzálek. */
 .vf-sub, .aq-title-days {
@@ -822,17 +824,9 @@ button.glass-btn svg { width: 17px; height: 17px; display: block; }
   color: var(--muted); font-size: var(--fs-tiny);
 }
 
-/* Meteogram */
-.meteo-block {
-  border-radius: var(--r-card);
-  padding: .8rem .9rem .55rem;
-  display: none;
-}
-.meteo-block.show { display: block; }
-#meteo-canvas-wrap { position: relative; width: 100%; height: 180px; }
-#meteo-canvas-wrap canvas { width: 100% !important; height: 180px !important; }
-
-/* Záložky meteogramu — Přehled / Srážky / Vítr / Tlak */
+/* Záložky meteogramu — Přehled / Srážky / Vítr / Tlak / Ensemble.
+   Meteogram sám už není samostatný panel: bydlí v rozbaleném dni (.fc7d-*),
+   protože kreslil přesně ty hodiny, které detail dne stejně ukazuje. */
 .meteo-head { display: flex; align-items: center; justify-content: space-between;
   gap: .3rem .5rem; flex-wrap: wrap; } /* na úzkém panelu taby spadnou pod titulek */
 .meteo-head .meteo-title { margin-bottom: .55rem; }
@@ -842,63 +836,11 @@ button.glass-btn svg { width: 17px; height: 17px; display: block; }
 .meteo-toggle { font-size: var(--fs-tiny); color: var(--muted); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
 .meteo-note { font-size: var(--fs-tiny); color: var(--muted); margin-top: .3rem; }
 
-.fc24-scroll {
-  display: flex; gap: 0; overflow-x: auto; scrollbar-width: thin;
-  padding-bottom: 2px;
-}
-.fc24-scroll::-webkit-scrollbar { height: 3px; }
-.fc24-scroll::-webkit-scrollbar-thumb { background: var(--rowline); border-radius: 2px; }
-.fc24-col {
-  flex: 0 0 auto; min-width: 60px; max-width: 74px;
-  text-align: center; padding: .3rem .18rem .35rem;
-  overflow: hidden; position: relative;
-}
-/* Pruhování místo linek. Linka mezi sloupci je čára navíc v už tak hustém
-   pruhu; střídavý podklad udělá totéž a zmizí, jakmile se na něj člověk
-   přestane dívat. */
-/* --rowline, ne natvrdo bílá: token má obě varianty, takže pruh je vždycky
-   ODLIŠNÝ od podkladu. Bílá na 4,5 % ve světlém motivu skoro mizí — stejná
-   chyba, jaká úplně schovala suchý konec pásu ve 12h výhledu. */
-.fc24-alt { background: var(--rowline); }
-[data-theme="light"] .fc24-alt { background: rgba(14,26,43,.035); }
-@media (prefers-color-scheme: light) {
-  :root:not([data-theme]) .fc24-alt { background: rgba(14,26,43,.035); }
-}
-/* Noc je vidět na první pohled, ne až po přečtení času. */
-.fc24-night::before {
-  content: ""; position: absolute; inset: 0; pointer-events: none;
-  background: rgba(10,20,45,.34);
-}
-[data-theme="light"] .fc24-night::before { background: rgba(14,26,43,.05); }
-@media (prefers-color-scheme: light) {
-  :root:not([data-theme]) .fc24-night::before { background: rgba(14,26,43,.05); }
-}
-.fc24-col > * { position: relative; z-index: 1; }
-.fc24-wind {
-  font-size: var(--fs-micro); color: var(--muted); font-variant-numeric: tabular-nums;
-  margin-top: .1rem; white-space: nowrap;
-}
-.fc24-arrow { display: inline-block; margin-right: .12rem; line-height: 1; }
-/* Proužek srážek: výška hodinového úhrnu proti maximu v pruhu. Číslo pod ním
-   říká kolik, proužek říká kdy — dohromady se to čte bez počítání. */
-.fc24-bar { height: 3px; border-radius: 2px; background: var(--rowline); margin: .25rem .35rem .1rem; }
-.fc24-bar i { display: block; height: 100%; border-radius: 2px; background: var(--blue); }
-.fc24-col.fc24-block { min-width: 82px; max-width: 98px; }
-.fc24-time    { font-size: var(--fs-tiny); color: var(--muted); margin-bottom: .15rem; font-variant-numeric: tabular-nums; }
-.fc24-icon    { font-size: var(--fs-xl); line-height: 1.2; }
-.fc24-icon svg, .fc24-icon img { width: 30px; height: 30px; }
 .wc-emoji     { font-style: normal; line-height: 1; }
-.fc24-temp    { font-size: var(--fs-body); font-weight: 700; margin-top: .12rem; color: var(--text); font-variant-numeric: tabular-nums; }
 .uv-low    { color: var(--green); }
 .uv-mod    { color: var(--orange); }
 .uv-high   { color: var(--red); }
 .uv-vhigh  { color: var(--purple); }
-.fc24-range { font-size: var(--fs-sm); color: var(--muted); }
-.fc24-sub   { font-size: var(--fs-tiny); color: var(--muted); margin-top: .12rem;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
-.fc24-prec  { color: var(--blue); min-height: 1.1em; }
-.fc24-sep   { flex: 0 0 1px; align-self: stretch; background: var(--rowline); margin: 0 2px; display: flex; align-items: center; justify-content: center; }
-.fc24-sep-label { writing-mode: vertical-rl; font-size: var(--fs-micro); color: var(--muted); white-space: nowrap; opacity: .5; }
 
 .fc7 {
   border-radius: var(--r-card);
@@ -955,9 +897,17 @@ button.glass-btn svg { width: 17px; height: 17px; display: block; }
   from { opacity: 0; transform: translateY(-6px); }
   to   { opacity: 1; transform: none; }
 }
-.fc7d-head {
+.fc7d-head { margin-bottom: .45rem; }
+.fc7d-title {
   font-size: var(--fs-micro); font-weight: 800; letter-spacing: .09em;
-  text-transform: uppercase; color: var(--muted); margin-bottom: .45rem;
+  text-transform: uppercase; color: var(--muted);
+}
+/* Shrnutí dne jedním řádkem — teploty, úhrn, nárazy, UV, východ/západ.
+   Nese to, co dřív bylo roztroušené mezi proužek "Dnes" a hlavičku
+   meteogramu; bez něj by detail začínal rovnou grafy. */
+.fc7d-meta {
+  font-size: var(--fs-tiny); color: var(--text); opacity: .85;
+  margin-top: .15rem; font-variant-numeric: tabular-nums;
 }
 
 /* Fáze dne — stejná gramatika jako v proužku "Dnes". */
@@ -983,17 +933,34 @@ button.glass-btn svg { width: 17px; height: 17px; display: block; }
 }
 .fc7d-hours::-webkit-scrollbar { display: none; }
 .fc7d-hour {
-  flex: 0 0 auto; width: 34px; text-align: center;
+  flex: 0 0 auto; width: 42px; text-align: center;
   display: flex; flex-direction: column; align-items: center; gap: .1rem;
 }
 .fc7d-hour:nth-child(even) { background: var(--rowline); border-radius: var(--r-mini); }
+/* Noc je vidět na první pohled, ne až po přečtení času. */
+.fc7d-hour.fc7d-night { box-shadow: inset 0 0 0 100px rgba(10, 20, 45, .28); border-radius: var(--r-mini); }
+[data-theme="light"] .fc7d-hour.fc7d-night { box-shadow: inset 0 0 0 100px rgba(14, 26, 43, .05); }
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) .fc7d-hour.fc7d-night { box-shadow: inset 0 0 0 100px rgba(14, 26, 43, .05); }
+}
 .fc7d-ht { font-size: var(--fs-micro); color: var(--muted); font-variant-numeric: tabular-nums; }
 .fc7d-hi .wicon { width: 20px; height: 20px; }
 .fc7d-hv { font-size: var(--fs-micro); font-weight: 700; font-variant-numeric: tabular-nums; }
-.fc7d-hb { width: 60%; height: 16px; display: flex; align-items: flex-end; }
+/* Vítr u každé hodiny — šipka ukazuje, KAM fouká. */
+.fc7d-hw {
+  font-size: var(--fs-micro); color: var(--muted); white-space: nowrap;
+  font-variant-numeric: tabular-nums; min-height: 1em;
+}
+.fc7d-arrow { display: inline-block; margin-right: .1rem; line-height: 1; }
+.fc7d-hb { width: 60%; height: 14px; display: flex; align-items: flex-end; }
 .fc7d-hb i { width: 100%; background: var(--blue); border-radius: 2px; display: block; }
+.fc7d-hp { font-size: var(--fs-micro); color: var(--blue); font-weight: 700; min-height: 1em; }
 
-.fc7d-chart { height: 130px; position: relative; }
+/* Graf dostal výšku po zrušeném meteogramu — na 130 px se legenda s pěti
+   datovými řadami tlačila do křivky. */
+.fc7d-chart { height: 180px; position: relative; }
+.fc7d-chart canvas { width: 100% !important; height: 180px !important; }
+#fc7-detail .meteo-head { margin-top: .2rem; }
 
 .fc7-today {
   background: color-mix(in srgb, var(--accent) 9%, transparent);
@@ -1854,39 +1821,6 @@ button.ctrl.active {
 #confidence-chip.low  .cf-dot { background: var(--red); }
 #confidence-chip b { font-weight: 700; }
 
-/* ── Kdy vyrazit — 12h okna beze srážek ─────────────────────────────────── */
-/* 12h pruh uvnitř společného panelu — plochý, ať se neplete se sloupcovým
-   2h grafem ve vedlejší záložce. Intenzita se nese tónem, ne výškou. */
-/* ── Pás 12h výhledu ────────────────────────────────────────────────────────
-   Tři chyby najednou, a ta nejhorší nebyla vidět jako chyba:
-
-   1. `.dry` mělo natvrdo rgba(255,255,255,.09) — bílou na 9 %. Ve tmavém
-      motivu to je decentní šeď, ve světlém BÍLÁ NA BÍLÉ. Pět z šestnácti
-      úseků tak ve dne zmizelo a pás vypadal, že končí v 68 % šířky. Vypadalo
-      to jako chybějící data, přitom tam data byla. Proto --rowline, který
-      má obě varianty.
-
-   2. Dráha měla zaoblený obal (overflow:hidden), ale úseky uvnitř byly
-      hranaté a oddělené mezerou. Zaoblil se tím jen levý konec — vpravo
-      poslední úsek na obal nedosáhl, takže pás byl zaoblený z jedné strany
-      a useknutý z druhé.
-
-   3. Mezery mezi úseky dělaly z plynulého času řadu přihrádek. Čas ale
-      přihrádky nemá; tady jde o to, KDY prší a KDY ne, ne o šestnáct
-      nezávislých políček.
-
-   Řešení všeho tří: souvislá stuha bez mezer se zaoblenými konci. Barvy
-   drží hranice mezi úseky samy. */
-.ow-bars {
-  display: flex; gap: 0; height: 14px;
-  border-radius: var(--r-pill); overflow: hidden;
-  background: var(--rowline);
-}
-.ow-bars i { flex: 1; min-width: 0; display: block; }
-.ow-bars i.wet { background: var(--blue); }
-.ow-bars i.dry { background: var(--rowline); }
-.ow-bars i.dry-good { background: var(--green); }
-.ow-axis { display: flex; justify-content: space-between; font-size: var(--fs-micro); color: var(--muted); margin-top: .2rem; }
 
 /* ── Blesky: trend + blízko ─────────────────────────────────────────────── */
 #lightning-trend { font-size: var(--fs-sm); font-weight: 600; }
@@ -1983,7 +1917,7 @@ button.ctrl.active {
 #models-panel .mdl-title { margin-bottom: .35rem; }   /* zápis dědí z hlavičkového bloku */
 /* Podtitul hlavičky se smí zalomit. S nowrap se ořezával uprostřed slova
    ("7 MODELŮ · DNES MAX / SRÁŽ…") a chybějící část nešlo nijak zobrazit. */
-.mdl-title, .fc24-title, .fc7-title { flex-wrap: wrap; white-space: normal; }
+.mdl-title, .fc7-title { flex-wrap: wrap; white-space: normal; }
 .mdl-sub { font-weight: 400; text-transform: none; letter-spacing: 0; }
 #models-panel .mdl-sub { font-weight: 500; color: var(--muted); font-size: var(--fs-tiny); }
 #models-panel .mdl-head, #models-panel .mdl-row {

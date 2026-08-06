@@ -1,4 +1,4 @@
-const CACHE_VERSION = "v11";
+const CACHE_VERSION = "v12";
 const STATIC_CACHE = `nowcast-static-${CACHE_VERSION}`;
 const DATA_CACHE = `nowcast-data-${CACHE_VERSION}`;
 
@@ -39,6 +39,15 @@ const STATIC_ASSETS = [
   "./js/accum.js",
   "./js/uiicons.js",
   "./js/sections.js",
+  // Doplněno dodatečně — tyhle moduly v seznamu chyběly, takže je offline
+  // režim nikdy neměl a app se bez sítě zastavila na prvním importu.
+  "./js/chmidata.js",
+  "./js/labelthin.js",
+  "./js/motion.js",
+  "./js/precipbars.js",
+  "./js/storms.js",
+  "./js/worldstations.js",
+  "./js/worldtemp.js",
   "./fonts/Figtree.woff2",
   "./icon.svg",
   "./icons/icon-192.png",

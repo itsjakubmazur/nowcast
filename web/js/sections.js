@@ -14,14 +14,21 @@
 // nic ztratit. Všechno zůstává v jednom svitku a navigace jen ukazuje, kde
 // právě jsi, a dovede tě jinam.
 
+import { openDayDetail, toggleDayDetail } from "./forecast.js";
+import { locDateStr } from "./utils.js";
+
 const SECTIONS = ["now", "today", "week", "data"];
 
 // První panel každé sekce = cíl skoku. Pořadí uvnitř pole je pořadí
 // preference: když první panel zrovna nemá data a je schovaný, skáče se na
 // další v řadě.
+// "Dnes" a "Týden" míří do TÉHOŽ panelu, ale na jiné místo: týden na jeho
+// hlavičku (přehled sedmi řádků), dnešek na rozbalený detail dneška pod
+// prvním řádkem. Po sloučení proužku "Dnes" a meteogramu do detailu dne je
+// tohle jediné, kde hodinová předpověď žije.
 const ANCHORS = {
   now: ["precip-panel", "forecast-panel", "storm-impact"],
-  today: ["fc24", "meteo-block", "aq-panel"],
+  today: ["fc7-detail", "fc7", "aq-panel"],
   week: ["fc7", "history-panel", "normal-panel"],
   data: ["blend-card", "models-panel", "push-status"],
 };
@@ -75,6 +82,9 @@ function scrollerOf(el) {
 }
 
 function jumpTo(sec) {
+  // Klepnutí na "Dnes" musí dnešek doopravdy UKÁZAT — když je rozbalený
+  // jiný den, přepni ho, jinak by segment odskočil na cizí neděli.
+  if (sec === "today" && openDayDetail() !== locDateStr()) toggleDayDetail(locDateStr());
   const el = anchorFor(sec);
   if (!el) return;
   const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
@@ -106,11 +116,16 @@ function spy() {
   // Ve dvou sloupcích je stejně vidět obojí naráz, takže se ptát nemusíme.
   if (!window.matchMedia?.("(max-width: 768px)")?.matches) return;
   const line = window.innerHeight * 0.35;   // "čtecí linka" v horní třetině
-  let current = SECTIONS[0];
+  // Vybírá se podle SKUTEČNÉ pozice kotvy, ne podle pořadí v SECTIONS.
+  // Kotvy "dnes" (detail dne) a "týden" (hlavička panelu) leží v jednom
+  // panelu a v opačném pořadí, než v jakém jsou tlačítka — pořadí v poli
+  // by tady ukazovalo vedle.
+  let current = SECTIONS[0], best = -Infinity;
   for (const sec of SECTIONS) {
     const el = anchorFor(sec);
     if (!el) continue;
-    if (el.getBoundingClientRect().top <= line) current = sec;
+    const top = el.getBoundingClientRect().top;
+    if (top <= line && top > best) { best = top; current = sec; }
   }
   markActive(current);
 }

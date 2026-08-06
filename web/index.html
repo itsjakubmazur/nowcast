@@ -194,13 +194,15 @@
          Nativní scroll-snap, ne vlastní drag — má setrvačnost, gumový doraz
          i chování podle systému zdarma a funguje i trackpadem a klávesnicí. -->
     <div class="pp-track" id="pp-track">
+      <!-- Obě měřítka kreslí stejnou gramatikou (.pbars/.pp-axis) — viz
+           precipbars.js. Liší se jen zdrojem dat a délkou okna. -->
       <div class="pp-body" data-scale="2h">
-        <div class="minutely-bars" id="minutely-bars"></div>
-        <div class="minutely-axis"><span>teď</span><span>+30</span><span>+60</span><span>+90</span><span>+120</span></div>
+        <div class="pbars" id="minutely-bars"></div>
+        <div class="pp-axis" id="minutely-axis"></div>
       </div>
       <div class="pp-body" data-scale="12h">
-        <div class="ow-bars" id="ow-bars"></div>
-        <div class="ow-axis" id="ow-axis"></div>
+        <div class="pbars" id="ow-bars"></div>
+        <div class="pp-axis" id="ow-axis"></div>
       </div>
     </div>
     <!-- Druhý názor: publikovaná extrapolace ČHMÚ (COTREC). Je to výpověď
@@ -275,26 +277,10 @@
 
 <!-- Pravý floating panel -->
 <div id="right-panel">
-  <div class="fc24" id="fc24" data-sec="today">
-    <!-- Nadpis nese vybraný den: proužek dřív ukazoval vždycky "24 hodin"
-         od teď, teď ho řídí výběr v týdenním přehledu. -->
-    <div class="fc24-title"><span id="fc24-day">Dnes</span> — <span id="fc24-place">—</span></div>
-    <div class="fc24-scroll" id="fc24-scroll"></div>
-  </div>
-  <!-- Průběh dne — den jako příběh po fázích -->
-  <div class="meteo-block" id="meteo-block" data-sec="today">
-    <div class="meteo-head">
-      <div class="meteo-title">Meteogram</div>
-      <div class="meteo-tabs" id="meteo-tabs">
-        <button class="mtab active" data-mode="overview">Přehled</button>
-        <button class="mtab" data-mode="precip">Srážky</button>
-        <button class="mtab" data-mode="wind">Vítr</button>
-        <button class="mtab" data-mode="pressure">Tlak</button>
-        <button class="mtab" data-mode="ensemble" title="Ensemble ICON — vějíř 40 členů">Ens.</button>
-      </div>
-    </div>
-    <div id="meteo-canvas-wrap"></div>
-  </div>
+  <!-- JEDINÝ panel předpovědi. Proužek "Dnes" a samostatný meteogram tu
+       stávaly nad ním a počítaly se z týchž hodin — po rozkliku dne v týdnu
+       to byly tytéž hodnoty potřetí. Dnešek je teď prostě první rozbalený
+       den; detail nese hodiny, fáze i přepínatelný graf. -->
   <div class="fc7" id="fc7" data-sec="week" style="display:none">
     <div class="fc7-title">7 dní — <span id="fc7-place">—</span></div>
     <div class="fc7-grid" id="fc7-grid"></div>

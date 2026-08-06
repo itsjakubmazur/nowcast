@@ -8,6 +8,7 @@ import { moonIconImg, wImg, wcIconSvg, mostSevere } from "./icons.js";
 import { uiIcon } from "./uiicons.js";
 import { computeNight } from "./stargaze.js";
 import { nearestFreshStation } from "./models.js";
+import { precipBarsHtml, precipAxisHtml, WET_RATE } from "./precipbars.js";
 
 function locMonth() {
   return +new Date().toLocaleString("sv-SE", { timeZone: state.tz }).slice(5, 7);
@@ -208,23 +209,14 @@ export function renderMinutely(ptId, minutely) {
   // Když je celých 120 minut sucho, graf nic neříká — countdown karta
   // ("Nejbližší 2 h bez srážek") to komunikuje líp. Ukazuj jen když prší,
   // NEBO když ensemble vidí aspoň 30% šanci (deterministicky sucho ≠ jistota).
-  if (Math.max(...known) < 0.05 && maxProb < 30) { markPrecipBody("2h", false); return; }
-  const maxV = Math.max(...known, 1.5);
-  revealSwap(barsEl, vals.map((v, i) => {
-    const p = probAt(i);
-    const pStr = p != null ? ` · P ${p} %` : "";
-    if (v == null || v < 0.05) {
-      // deterministicky sucho — ale s dostatečnou P(déšť) ukaž "možná" sloupec
-      if (p != null && p >= 30) {
-        const h = Math.max(10, Math.round(p / 100 * 45));
-        return `<i class="maybe" style="height:${h}%" title="možné srážky${pStr}"></i>`;
-      }
-      return `<i class="dry"${p != null ? ` title="P ${p} %"` : ""}></i>`;
-    }
-    const h = Math.max(12, Math.round(v / maxV * 100));
-    const op = p != null ? Math.max(0.45, p / 100).toFixed(2) : null;
-    return `<i style="height:${h}%${op ? `;opacity:${op}` : ""}" title="${num(v)} mm/h${pStr}"></i>`;
-  }).join(""));
+  if (Math.max(...known) < WET_RATE && maxProb < 30) { markPrecipBody("2h", false); return; }
+
+  // Sloupce i osa jsou společné s 12h záložkou — viz precipbars.js.
+  const t0 = Date.now();
+  const slots = vals.map((v, i) => ({ rate: v, prob: probAt(i), ms: t0 + i * 10 * 60000 }));
+  revealSwap(barsEl, precipBarsHtml(slots));
+  const axisEl = document.getElementById("minutely-axis");
+  if (axisEl) axisEl.innerHTML = precipAxisHtml(slots.map(s => s.ms));
   if (srcEl) {
     srcEl.textContent = prob ? `${src} · ens.` : src;
     srcEl.title = prob ? `Průhlednost sloupců = P(déšť) z ensemble ${state.GRID.prob_members || 7} členů perturbované advekce` : "";

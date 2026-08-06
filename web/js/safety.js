@@ -9,6 +9,7 @@ import { state } from "./state.js";
 import { haversine, esc, localHM, num } from "./utils.js";
 import { uiIcon } from "./uiicons.js";
 import { markPrecipBody } from "./extras.js";
+import { precipBarsHtml, precipAxisHtml, WET_RATE } from "./precipbars.js";
 import { assessRain, nearestPt } from "./verdict.js";
 
 // ── 1) Zásah bouřkou ────────────────────────────────────────────────────────
@@ -69,7 +70,7 @@ export function renderStormImpact(lat, lon) {
 }
 
 // ── 2) Kdy vyrazit — 12h pás srážek + nejbližší suché okno ───────────────────
-const WET_RATE = 0.15;       // mm/h — od kdy je slot "mokrý"
+// Práh "mokrého" slotu je společný s 2h záložkou (viz precipbars.js).
 const MIN_DRY_MIN = 45;      // kratší okno nemá smysl nabízet
 
 // Postaví timeline srážek (mm/h) po 30 min na příštích ~12 h: minutely_15 na
@@ -158,23 +159,16 @@ export function renderOutlookWindows(minutely, fc) {
     }
   }
 
-  // Plochý časový PRUH (ne sloupce — ať se to nepletlo s minutovým grafem
-  // srážek nad ním): každý segment = slot, mokrý modrý / suchý tlumený /
-  // nejbližší dobré okno zeleně. Intenzita jen tónem, ne výškou.
-  const maxRate = Math.max(...tl.map(p => p.rate), 1);
-  const bars = tl.map(p => {
-    const wet = p.rate >= WET_RATE;
-    const inGood = nextGood && p.ms >= nextGood[0] && p.ms < nextGood[1];
-    const cls = wet ? "wet" : inGood ? "dry-good" : "dry";
-    const op = wet ? (0.5 + 0.5 * Math.min(p.rate / maxRate, 1)).toFixed(2) : "";
-    return `<i class="${cls}"${op ? ` style="opacity:${op}"` : ""} title="${localHM(new Date(p.ms).toISOString())} · ${num(p.rate)} mm/h"></i>`;
-  }).join("");
-
-  const ticks = [0, Math.floor(tl.length / 2), tl.length - 1]
-    .map(i => `<span>${localHM(new Date(tl[i].ms).toISOString())}</span>`).join("");
+  // Stejné sloupce jako 2h záložka — viz precipbars.js. Navíc jen zelený
+  // patník u slotů, které padnou do nejbližšího doporučeného suchého okna.
+  const bars = precipBarsHtml(tl.map(p => ({
+    rate: p.rate,
+    ms: p.ms,
+    good: !!(nextGood && p.ms >= nextGood[0] && p.ms < nextGood[1]),
+  })));
 
   msgEl.innerHTML = msg;
   barsEl.innerHTML = bars;
-  if (axisEl) axisEl.innerHTML = ticks;
+  if (axisEl) axisEl.innerHTML = precipAxisHtml(tl.map(p => p.ms));
   markPrecipBody("12h", true);
 }

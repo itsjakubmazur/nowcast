@@ -38,7 +38,7 @@ export const state = {
   globalMode: false, rvFrames: [], rvT0idx: 0, rvLayer: null,
 
   currentLat: null, currentLon: null, currentLabel: null,
-  fc24Ctrl: null, verdictCtrl: null,
+  fcCtrl: null, verdictCtrl: null,
 
   // Světový režim: místo mimo pokrytí českého radaru → RainViewer + model.
   // tz = časová zóna vybraného místa (z Open-Meteo timezone=auto) — všechny

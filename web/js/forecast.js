@@ -17,7 +17,7 @@ function dayLabel(dateStr) {
 
 function _nn(v, def = 0) { return v != null ? v : def; }
 
-export function parseFc24(data) {
+export function parseHourly(data) {
   const nowLoc = nowLocStr();
   const h = data.hourly || {};
   const times = h.time || [];
@@ -132,7 +132,7 @@ function viewFields(all, nowIso, dateStr) {
   };
 }
 
-/** Pohled na jeden den — stejný tvar jako parseFc24, jiný výřez. */
+/** Pohled na jeden den — stejný tvar jako parseHourly, jiný výřez. */
 export function forecastView(fc, dateStr) {
   if (!fc?.all?.length) return fc;
   return { ...fc, ...viewFields(fc.all, fc.nowIso, dateStr) };
@@ -289,20 +289,43 @@ function degCompass(deg) {
   return dirs[Math.round(deg / 22.5) % 16];
 }
 
-// ── Rozklik dne v týdnu ─────────────────────────────────────────────────────
-// První verze přepínala HORNÍ proužek: klepneš na neděli dole a hodinový
-// přehled i meteogram se přepnou nahoře — jenže ty jsou o dvě obrazovky výš,
-// takže výsledek vlastního kliknutí nebyl vidět a muselo se rolovat zpátky.
-// Akce a její efekt musí být na jednom místě.
+// ── Rozklik dne v týdnu = JEDINÝ pohled na předpověď ────────────────────────
 //
-// Detail se proto rozbaluje PŘÍMO POD ŘÁDKEM. Horní proužek zůstává natrvalo
-// dnešek, což mimochodem řeší i past, kterou jsem si sám vyrobil: nemůže
-// nastat stav "vybraná neděle nahoře, ale graf kreslí dnešek", protože každý
-// rozbalený den má vlastní graf.
+// Dvě zjednodušení po sobě, obě vynucená vlastním používáním.
+//
+// 1. Detail dne se rozbaluje PŘÍMO POD ŘÁDKEM. První verze přepínala horní
+//    proužek: klepneš na neděli dole a hodiny s meteogramem se přepnou o dvě
+//    obrazovky výš, takže výsledek vlastního kliknutí nebyl vidět.
+//
+// 2. Proužek "Dnes" a samostatný meteogram ZMIZELY. Když detail dne umí
+//    hodiny, fáze i přepínatelný graf, jsou to nad ním jen tytéž hodnoty
+//    potřetí — dnešek je prostě první rozbalený den. Detail proto musel
+//    převzít všechno, co uměly: vítr u každé hodiny, záložky Přehled /
+//    Srážky / Vítr / Tlak / Ensemble, noční pásmo a rozptyl modelů.
+//
+// Dnešek je rozbalený hned po načtení, takže se nowcastem pořád začíná bez
+// jediného klepnutí.
 let _fc = null;          // poslední rozparsovaná předpověď (má .all)
 let _fcLabel = "";
+let _daily = null;       // daily blok Open-Meteo (východ/západ, UV, úhrny)
 let _openDay = null;     // rozbalený den (YYYY-MM-DD) nebo null
 let _dayChart = null;
+let _dayMode = "overview";   // záložka grafu — drží se napříč dny i překreslením
+
+// Rozptyl modelů a ensemble se stahují asynchronně a platí pro celou
+// předpověď, ne pro jeden den. Klíčem je ISO čas hodiny, takže se dají
+// promítnout do libovolného denního výřezu.
+let _spread = null;      // Map(iso → { ic, ec, gf })
+let _ensH = null;        // Map(iso → { p10..p90, prec50, prec90 }) + _ensMembers
+let _ensMembers = 0;
+
+const DAY_TABS = [
+  ["overview", "Přehled", ""],
+  ["precip", "Srážky", ""],
+  ["wind", "Vítr", ""],
+  ["pressure", "Tlak", ""],
+  ["ensemble", "Ens.", "ICON ensemble — vějíř 40 členů"],
+];
 
 export function openDayDetail() { return _openDay; }
 
@@ -315,6 +338,32 @@ function closeDayDetail() {
     el.setAttribute("aria-expanded", "false");
   });
   _openDay = null;
+}
+
+/** Shrnutí dne do jednoho řádku pod nadpisem detailu. */
+function dayMetaLine(dateStr, hodiny) {
+  const i = (_daily?.time || []).indexOf(dateStr);
+  const bits = [];
+  const temps = hodiny.map(h => h.tempRaw).filter(v => v != null);
+  if (temps.length) {
+    const lo = Math.round(Math.min(...temps)), hi = Math.round(Math.max(...temps));
+    bits.push(lo === hi ? `${hi} °C` : `${lo}–${hi} °C`);
+  }
+  const sum = hodiny.reduce((a, h) => a + (h.precip || 0), 0);
+  const prob = Math.max(0, ...hodiny.map(h => h.prob || 0));
+  if (sum >= 0.1) bits.push(`${num(sum)} mm${prob ? ` · ${prob} %` : ""}`);
+  else if (prob >= 20) bits.push(`${prob} % srážek`);
+  else bits.push("beze srážek");
+  const gust = Math.max(0, ...hodiny.map(h => h.gust || 0));
+  if (gust >= 35) bits.push(`nárazy ${Math.round(gust)} km/h`);
+  if (i >= 0) {
+    const uv = _daily.uv_index_max?.[i];
+    if (uv != null && uv >= 3) bits.push(`UV ${Math.round(uv)}`);
+    const rise = _daily.sunrise?.[i]?.slice(11, 16);
+    const set_ = _daily.sunset?.[i]?.slice(11, 16);
+    if (rise && set_) bits.push(`den ${rise}–${set_}`);
+  }
+  return bits.join(" · ");
 }
 
 export function toggleDayDetail(dateStr) {
@@ -337,9 +386,18 @@ export function toggleDayDetail(dateStr) {
   box.className = "fc7-detail";
   const faze = dayPhases(hodiny);
   const maxP = Math.max(0.4, ...hodiny.map(h => h.precip || 0));
+  // Noc má tmavší podklad, ať je vidět bez čtení času (dřív to uměl proužek
+  // "Dnes" přes .fc24-night). Hranice bere východ/západ TOHO dne.
+  const di = (_daily?.time || []).indexOf(dateStr);
+  const rise = di >= 0 ? _daily.sunrise?.[di]?.slice(11, 16) : null;
+  const set_ = di >= 0 ? _daily.sunset?.[di]?.slice(11, 16) : null;
+  const jeNoc = t => rise && set_ ? (t < rise || t >= set_) : false;
 
   box.innerHTML = `
-    <div class="fc7d-head">${esc(dayLabel(dateStr))}</div>
+    <div class="fc7d-head">
+      <div class="fc7d-title">${esc(dayLabel(dateStr))}</div>
+      <div class="fc7d-meta">${esc(dayMetaLine(dateStr, hodiny))}</div>
+    </div>
     <div class="fc7d-phases">${faze.map(f => `
       <div class="fc7d-phase" title="${esc(f.name)} ${esc(f.from)}–${esc(f.to)}">
         <div class="fc7d-pname">${esc(f.short || f.name)}</div>
@@ -349,132 +407,302 @@ export function toggleDayDetail(dateStr) {
         <div class="fc7d-pprec">${f.precip > 0
           ? `${num(f.precip)} mm` : f.prob >= 15 ? `${f.prob} %` : ""}</div>
       </div>`).join("")}</div>
-    <div class="fc7d-hours">${hodiny.map(h => `
-      <div class="fc7d-hour">
+    <div class="fc7d-hours">${hodiny.map(h => {
+      // Šipka ukazuje, KAM vítr fouká (meteorologický směr + 180°) — "odkud"
+      // si člověk musí přepočítat v hlavě a stejně to splete.
+      const vitr = h.wind != null
+        ? `<span class="fc7d-arrow" style="transform:rotate(${(h.wind_dir ?? 0) + 180}deg)">↑</span>${h.wind}`
+        : "";
+      const srazky = h.precip > 0 ? `${num(h.precip)} mm` : h.prob >= 25 ? `${h.prob} %` : "";
+      return `
+      <div class="fc7d-hour${jeNoc(h.t) ? " fc7d-night" : ""}">
         <div class="fc7d-ht">${esc(h.t.slice(0, 2))}</div>
         <div class="fc7d-hi">${wcIconSvg(h.wc, parseInt(h.t, 10))}</div>
         <div class="fc7d-hv">${h.temp != null ? h.temp + "°" : "—"}</div>
+        <div class="fc7d-hw">${vitr}</div>
         <div class="fc7d-hb"><i style="height:${h.precip > 0
           ? Math.max(10, Math.round(h.precip / maxP * 100)) : 0}%"></i></div>
-      </div>`).join("")}</div>
+        <div class="fc7d-hp">${esc(srazky)}</div>
+      </div>`;
+    }).join("")}</div>
+    <div class="meteo-head">
+      <div class="meteo-title">Meteogram</div>
+      <div class="meteo-tabs" id="fc7d-tabs">${DAY_TABS.map(([m, lbl, tip]) => `
+        <button type="button" class="mtab${m === _dayMode ? " active" : ""}" data-mode="${m}"${
+          tip ? ` title="${esc(tip)}"` : ""}>${esc(lbl)}</button>`).join("")}</div>
+    </div>
     <div class="fc7d-chart"><canvas id="fc7d-canvas"></canvas></div>`;
 
   row.insertAdjacentElement("afterend", box);
+
+  box.querySelector("#fc7d-tabs")?.addEventListener("click", e => {
+    const btn = e.target.closest(".mtab");
+    if (!btn || btn.dataset.mode === _dayMode) return;
+    _dayMode = btn.dataset.mode;
+    box.querySelectorAll(".mtab").forEach(b => b.classList.toggle("active", b === btn));
+    drawDayChart(hodiny);
+  });
+
   drawDayChart(hodiny);
   // Rozbalení nesmí utéct pod spodní lištu sekcí — když se detail nevejde,
-  // dorovnej pohled tak, aby byl vidět celý.
-  requestAnimationFrame(() => {
-    const r = box.getBoundingClientRect();
-    const spodek = window.innerHeight - 90;
-    if (r.bottom > spodek) {
-      const o = Math.min(r.top - 80, r.bottom - spodek);
-      if (o > 0) window.scrollBy({ top: o, behavior: reducedMotion() ? "auto" : "smooth" });
-    }
+  // dorovnej pohled tak, aby byl vidět celý. Při automatickém otevření
+  // dneška po načtení se ale scrollovat NESMÍ: uživatel by přišel o nowcast
+  // nahoře, aniž by o něco požádal.
+  if (_userOpened) {
+    requestAnimationFrame(() => {
+      const r = box.getBoundingClientRect();
+      const spodek = window.innerHeight - 90;
+      if (r.bottom > spodek) {
+        const o = Math.min(r.top - 80, r.bottom - spodek);
+        if (o > 0) window.scrollBy({ top: o, behavior: reducedMotion() ? "auto" : "smooth" });
+      }
+    });
+  }
+}
+
+// Rozliší klepnutí od automatického otevření dneška po načtení.
+let _userOpened = false;
+function userToggleDay(dateStr) {
+  _userOpened = true;
+  try { toggleDayDetail(dateStr); } finally { _userOpened = false; }
+}
+
+// ── Graf dne — datasety podle záložky ───────────────────────────────────────
+// Pochází z bývalého meteogramu; parametrem jsou hodiny JEDNOHO dne, takže
+// tentýž kód obslouží dnešek i příští neděli.
+function dayModeConfig(hourly, textColor, gridColor) {
+  const precip = hourly.map(h => h.precip ?? 0);
+  const prob = hourly.map(h => h.prob ?? 0);
+  const pct = { position: "right", min: 0, max: 100, grid: { display: false },
+    ticks: { color: textColor, font: { size: 10 }, callback: v => v + " %" } };
+
+  if (_dayMode === "precip") {
+    const snow = hourly.map(h => h.snow ?? 0);
+    const hasSnow = snow.some(v => v > 0);
+    const precipColors = precip.map(v => v > 0 ? "rgba(79,142,247,.75)" : "rgba(79,142,247,.15)");
+    return {
+      datasets: [
+        { type: "bar", label: "Srážky (mm)", data: precip, backgroundColor: precipColors,
+          yAxisID: "y", order: 2, barPercentage: 0.9, categoryPercentage: 1 },
+        ...(hasSnow ? [{ type: "bar", label: "Sníh (cm)", data: snow,
+          backgroundColor: "rgba(172,196,255,.8)", yAxisID: "y", order: 3,
+          barPercentage: 0.55, categoryPercentage: 1 }] : []),
+        { type: "line", label: "Pravděpodobnost (%)", data: prob, borderColor: "#5AC8FA",
+          backgroundColor: "transparent", borderWidth: 1.6, borderDash: [5, 3],
+          pointRadius: 0, tension: 0.3, yAxisID: "y1", order: 1 },
+      ],
+      scales: {
+        y: { position: "left", beginAtZero: true, suggestedMax: 3, grid: { color: gridColor },
+          ticks: { color: textColor, font: { size: 10 }, callback: v => v + " mm" } },
+        y1: pct,
+      },
+    };
+  }
+
+  if (_dayMode === "wind") {
+    return {
+      datasets: [
+        { type: "line", label: "Vítr (km/h)", data: hourly.map(h => h.wind ?? null),
+          borderColor: "#06b6d4", backgroundColor: "rgba(6,182,212,.09)", fill: true,
+          borderWidth: 2, pointRadius: 0, tension: 0.35, yAxisID: "y", order: 1 },
+        { type: "line", label: "Nárazy (km/h)", data: hourly.map(h => h.gust ?? null),
+          borderColor: "#0A84FF", backgroundColor: "transparent", borderWidth: 1.4,
+          borderDash: [4, 3], pointRadius: 0, tension: 0.35, yAxisID: "y", order: 2 },
+      ],
+      scales: {
+        y: { position: "left", beginAtZero: true, grid: { color: gridColor },
+          ticks: { color: textColor, font: { size: 10 }, callback: v => v + " km/h" } },
+      },
+    };
+  }
+
+  if (_dayMode === "pressure") {
+    return {
+      datasets: [
+        { type: "line", label: "Tlak (hPa)", data: hourly.map(h => h.pressure ?? null),
+          borderColor: "#BF5AF2", backgroundColor: "transparent", borderWidth: 2,
+          pointRadius: 0, tension: 0.35, yAxisID: "y", order: 1 },
+        { type: "line", label: "Vlhkost (%)", data: hourly.map(h => h.humidity ?? null),
+          borderColor: "#22c55e", backgroundColor: "transparent", borderWidth: 1.4,
+          pointRadius: 0, tension: 0.35, yAxisID: "y1", order: 2 },
+        { type: "line", label: "Oblačnost (%)", data: hourly.map(h => h.cloud ?? null),
+          borderColor: "#8b93ab", backgroundColor: "rgba(139,147,171,.10)", fill: true,
+          borderWidth: 1.1, pointRadius: 0, tension: 0.35, yAxisID: "y1", order: 3 },
+      ],
+      scales: {
+        y: { position: "left", grid: { color: gridColor },
+          ticks: { color: textColor, font: { size: 10 }, callback: v => v + " hPa" } },
+        y1: pct,
+      },
+    };
+  }
+
+  if (_dayMode === "ensemble") {
+    const q = k => hourly.map(h => _ensH?.get(h.iso)?.[k] ?? null);
+    if (!_ensH) return null;   // ještě se stahuje / není k dispozici
+    return {
+      datasets: [
+        // vějíř: 10–90 % (světlé) a 25–75 % (sytější) pásmo + medián
+        { type: "line", label: "_p90", data: q("p90"), borderWidth: 0, pointRadius: 0,
+          tension: 0.35, yAxisID: "y", fill: "+1", backgroundColor: "rgba(10,132,255,.10)", order: 6 },
+        { type: "line", label: "_p75", data: q("p75"), borderWidth: 0, pointRadius: 0,
+          tension: 0.35, yAxisID: "y", fill: "+1", backgroundColor: "rgba(10,132,255,.20)", order: 5 },
+        { type: "line", label: "_p25", data: q("p25"), borderWidth: 0, pointRadius: 0,
+          tension: 0.35, yAxisID: "y", fill: "+1", backgroundColor: "rgba(10,132,255,.10)", order: 4 },
+        { type: "line", label: "_p10", data: q("p10"), borderWidth: 0, pointRadius: 0,
+          tension: 0.35, yAxisID: "y", order: 3 },
+        { type: "line", label: `Medián teploty (${_ensMembers} členů)`, data: q("p50"),
+          borderColor: "#0A84FF", backgroundColor: "transparent", borderWidth: 2.2,
+          pointRadius: 0, tension: 0.35, yAxisID: "y", order: 1 },
+        { type: "bar", label: "Srážky medián (mm)", data: q("prec50"),
+          backgroundColor: "rgba(79,142,247,.55)", yAxisID: "y1", order: 7,
+          barPercentage: 0.9, categoryPercentage: 1 },
+        { type: "line", label: "Srážky 90. percentil", data: q("prec90"),
+          borderColor: "#5AC8FA", backgroundColor: "transparent", borderWidth: 1.2,
+          borderDash: [3, 3], pointRadius: 0, tension: 0.3, yAxisID: "y1", order: 2 },
+      ],
+      scales: {
+        y: { position: "left", grid: { color: gridColor },
+          ticks: { color: textColor, font: { size: 10 }, callback: v => v + "°" } },
+        y1: { position: "right", grid: { display: false }, beginAtZero: true, suggestedMax: 5,
+          ticks: { color: textColor, font: { size: 10 } } },
+      },
+    };
+  }
+
+  // "overview" — teplota, pocitová, srážky, nárazy + případné pásmo modelů
+  const precipColors = precip.map((v, i) => {
+    const p = prob[i] || 0;
+    return `rgba(79,142,247,${v > 0 ? Math.max(0.35, Math.min(p / 100, 1)) : 0.15})`;
   });
+  const datasets = [
+    { type: "bar", label: "Srážky (mm)", data: precip, backgroundColor: precipColors,
+      yAxisID: "y1", order: 3, barPercentage: 0.9, categoryPercentage: 1 },
+    { type: "line", label: "Teplota (°C)", data: hourly.map(h => h.tempRaw ?? null),
+      borderColor: "#fb923c", backgroundColor: "transparent", borderWidth: 2.2,
+      pointRadius: 0, tension: 0.35, yAxisID: "y", order: 1, spanGaps: true },
+    { type: "line", label: "Pocitová (°C)", data: hourly.map(h => h.feelsRaw ?? null),
+      borderColor: "#fb923c", backgroundColor: "transparent", borderWidth: 1.3,
+      borderDash: [4, 3], pointRadius: 0, tension: 0.35, yAxisID: "y", order: 2 },
+    { type: "line", label: "Nárazy větru (km/h)", data: hourly.map(h => h.gust ?? null),
+      borderColor: "#06b6d4", backgroundColor: "transparent", borderWidth: 1.3,
+      pointRadius: 0, borderDash: [1, 3], tension: 0.2, yAxisID: "y2", order: 4 },
+  ];
+  datasets.push(...spreadDatasets(hourly));
+  return {
+    datasets,
+    scales: {
+      y: { position: "left", grid: { color: gridColor },
+        ticks: { color: textColor, font: { size: 10 }, callback: v => v + "°" } },
+      y1: { position: "right", grid: { display: false }, beginAtZero: true, suggestedMax: 5,
+        ticks: { color: textColor, font: { size: 10 } } },
+      y2: { display: false },
+    },
+  };
+}
+
+/** Pásmo nejistoty ICON/ECMWF/GFS pro hodiny daného dne — prázdné, dokud nedorazí. */
+function spreadDatasets(hourly) {
+  if (!_spread || !hourly.some(h => _spread.has(h.iso))) return [];
+  const g = k => hourly.map(h => _spread.get(h.iso)?.[k] ?? null);
+  const ec = g("ec"), gf = g("gf"), ic = g("ic");
+  const band = fn => hourly.map((h, i) => {
+    const vals = [h.tempRaw, ic[i], ec[i], gf[i]].filter(v => v != null);
+    return vals.length ? fn(...vals) : null;
+  });
+  return [
+    { type: "line", label: "ECMWF (°C)", data: ec, borderColor: "#30B0C7",
+      backgroundColor: "transparent", borderWidth: 1.1, borderDash: [4, 4],
+      pointRadius: 0, tension: 0.35, yAxisID: "y", order: 5 },
+    { type: "line", label: "GFS (°C)", data: gf, borderColor: "#BF5AF2",
+      backgroundColor: "transparent", borderWidth: 1.1, borderDash: [4, 4],
+      pointRadius: 0, tension: 0.35, yAxisID: "y", order: 6 },
+    { type: "line", label: "rozptyl modelů", data: band(Math.max), borderWidth: 0,
+      pointRadius: 0, tension: 0.35, yAxisID: "y", order: 7,
+      fill: "+1", backgroundColor: "rgba(10,132,255,.10)" },
+    { type: "line", label: "_bandmin", data: band(Math.min), borderWidth: 0,
+      pointRadius: 0, tension: 0.35, yAxisID: "y", order: 8 },
+  ];
 }
 
 function drawDayChart(hodiny) {
   const cv = document.getElementById("fc7d-canvas");
-  if (!cv || typeof Chart === "undefined") return;
-  const isDark = document.documentElement.getAttribute("data-theme") !== "light";
-  const grid = isDark ? "rgba(255,255,255,.08)" : "rgba(0,0,0,.07)";
-  const txt = isDark ? "#8b909a" : "#6b7280";
-  _dayChart = new Chart(cv, {
-    data: {
-      labels: hodiny.map(h => h.t.slice(0, 5)),
-      datasets: [
-        { type: "line", label: "Teplota", data: hodiny.map(h => h.tempRaw ?? null),
-          borderColor: "#f59e0b", backgroundColor: "transparent", borderWidth: 2,
-          pointRadius: 0, tension: .35, yAxisID: "y", spanGaps: true },
-        { type: "bar", label: "Srážky", data: hodiny.map(h => h.precip ?? 0),
-          backgroundColor: "#3b82f6aa", borderWidth: 0, yAxisID: "y1" },
-      ],
+  if (!cv) return;
+  // Chart.js se načítá s defer — kdyby fetch dat výjimečně předběhl CDN,
+  // zkus to znovu, až doběhne load (jinak by graf zůstal prázdný).
+  if (typeof Chart === "undefined") {
+    window.addEventListener("load", () => { if (_openDay) drawDayChart(hodiny); }, { once: true });
+    return;
+  }
+  _dayChart?.destroy();
+  _dayChart = null;
+
+  const isDark = isDarkTheme();
+  const grid = isDark ? "rgba(255,255,255,.07)" : "rgba(0,0,0,.06)";
+  const txt = isDark ? "#8b93ab" : "#56606f";
+
+  const note = document.getElementById("fc7d-note");
+  note?.remove();
+  const cfg = dayModeConfig(hodiny, txt, grid);
+  if (!cfg) {
+    // Ensemble ještě není stažený — řekni to místo prázdného plátna.
+    cv.parentElement?.insertAdjacentHTML("beforebegin",
+      `<div class="meteo-note" id="fc7d-note">Vějíř ensemble se načítá…</div>`);
+    return;
+  }
+
+  const labels = hodiny.map(h => h.t);
+  const i = (_daily?.time || []).indexOf(_openDay);
+  const sunrise = i >= 0 ? _daily.sunrise?.[i]?.slice(11, 16) : null;
+  const sunset = i >= 0 ? _daily.sunset?.[i]?.slice(11, 16) : null;
+
+  // Noční pásmo — šedý obdélník mimo východ/západ TOHO dne.
+  const nightPlugin = {
+    id: "nightBand",
+    beforeDraw(chart) {
+      if (!sunrise || !sunset) return;
+      const { ctx, chartArea, scales } = chart;
+      const xScale = scales.x;
+      ctx.save();
+      ctx.fillStyle = isDark ? "rgba(0,0,0,.18)" : "rgba(0,0,0,.05)";
+      labels.forEach((t, k) => {
+        if (t < sunrise || t >= sunset) {
+          const w = xScale.width / labels.length;
+          ctx.fillRect(xScale.getPixelForValue(k) - w / 2, chartArea.top, w, chartArea.height);
+        }
+      });
+      ctx.restore();
     },
+  };
+
+  _dayChart = new Chart(cv, {
+    data: { labels, datasets: cfg.datasets },
+    plugins: [nightPlugin],
     options: {
-      animation: chartAnim("den-" + _openDay), responsive: true, maintainAspectRatio: false,
+      animation: chartAnim(`den-${_openDay}-${_dayMode}`),
+      responsive: true, maintainAspectRatio: false,
       interaction: { mode: "index", intersect: false },
-      plugins: { legend: { display: false } },
+      plugins: {
+        legend: { display: true, position: "top", labels: {
+          color: txt, font: { size: 10 }, boxWidth: 10, padding: 8,
+          filter: item => !item.text.startsWith("_"),   // pomocné hrany pásem
+        } },
+        tooltip: { mode: "index", intersect: false },
+      },
       scales: {
-        x: { ticks: { maxTicksLimit: 8, color: txt, font: { size: 9 } }, grid: { color: grid } },
-        y: { position: "left", ticks: { color: txt, font: { size: 9 } }, grid: { color: grid } },
-        y1: { position: "right", beginAtZero: true, ticks: { color: txt, font: { size: 9 } },
-              grid: { display: false } },
+        x: { grid: { display: false },
+          ticks: { color: txt, font: { size: 10 }, maxTicksLimit: 8 } },
+        ...cfg.scales,
       },
     },
   });
 }
 
-export function renderFc24(fc, label) {
-  const el = document.getElementById("fc24");
-  const scroll = document.getElementById("fc24-scroll");
-  document.getElementById("fc24-place").textContent = label || "—";
-  // Nadpis musí říct, který den je vidět — jinak se po kliknutí na čtvrtek
-  // nedá poznat, jestli se něco přepnulo.
-  const titleEl = document.getElementById("fc24-day");
-  if (titleEl) titleEl.textContent = "Dnes";
-  if (fc.all) { _fc = fc; _fcLabel = label || _fcLabel; }
-  // Fade-out skeletonu → fade-in skutečného obsahu (viz revealSwap v utils.js,
-  // tady je to natvrdo protože se staví přes appendChild, ne přes jeden innerHTML).
-  scroll.classList.add("fade-swap");
-  scroll.style.opacity = "0";
-  scroll.innerHTML = "";
-
-  // Sloupce se oddělují PRUHOVÁNÍM, ne linkami: střídavý podklad ohraničí
-  // hodinu bez jediné čáry navíc, a noc dostane tmavší pás. Díky tomu se do
-  // stejné šířky vejde i vítr a proužek srážek — dřív se sem nevešly, protože
-  // sloupec bez ohraničení splýval se sousedním a text přetékal.
-  const hourlyMax = Math.max(0.4, ...fc.hourly.map(h => h.precip || 0));
-  fc.hourly.forEach((h, i) => {
-    const col = document.createElement("div");
-    const hh = parseInt(h.t, 10);
-    const night = Number.isFinite(hh) && (hh >= 21 || hh < 5);
-    col.className = "fc24-col" + (i % 2 ? " fc24-alt" : "") + (night ? " fc24-night" : "");
-    // Vítr: šipka ukazuje, KAM vítr fouká (meteorologický směr + 180°),
-    // protože "odkud" si člověk musí přepočítat v hlavě a stejně to splete.
-    const windStr = h.wind != null
-      ? `<span class="fc24-arrow" style="transform:rotate(${(h.wind_dir ?? 0) + 180}deg)">↑</span>${h.wind}`
-      : "";
-    const barPct = h.precip > 0 ? Math.max(12, Math.round(h.precip / hourlyMax * 100)) : 0;
-    const precLabel = h.precip > 0 ? `${num(h.precip)} mm` : h.prob >= 25 ? `${h.prob} %` : "";
-    col.innerHTML = `
-      <div class="fc24-time">${esc(h.t)}</div>
-      <div class="fc24-icon">${wcIconSvg(h.wc, hh)}</div>
-      <div class="fc24-temp">${h.temp != null ? h.temp + "°" : "—"}</div>
-      <div class="fc24-wind">${windStr}</div>
-      <div class="fc24-bar"><i style="width:${barPct}%"></i></div>
-      <div class="fc24-sub fc24-prec">${esc(precLabel)}</div>`;
-    scroll.appendChild(col);
-  });
-
-  const phases = fc.phases || [];
-  if (fc.hourly.length && phases.length) {
-    const sep = document.createElement("div");
-    sep.className = "fc24-sep";
-    scroll.appendChild(sep);
-  }
-
-  // Zbytek dne po fázích. Dřív to byla samostatná karta "Průběh dne" se
-  // stejným výpočtem — viz dayPhases().
-  for (const b of phases) {
-    const col = document.createElement("div");
-    col.className = "fc24-col fc24-block";
-    const tRange = b.tmin != null
-      ? (b.tmin === b.tmax ? `${b.tmax}°` : `${b.tmin}–${b.tmax}°`) : "—";
-    const precStr = b.precip > 0
-      ? `${b.prob} % ${num(b.precip)} mm`
-      : b.prob >= 15 ? `${b.prob} %` : "";
-    col.innerHTML = `
-      <div class="fc24-time">${esc(b.name)}</div>
-      <div class="fc24-icon">${wcIconSvg(b.wc, b.hr)}</div>
-      <div class="fc24-range">${esc(tRange)}</div>
-      <div class="fc24-sub fc24-hours">${esc(b.from)}–${esc(b.to)}</div>
-      <div class="fc24-sub fc24-prec">${esc(precStr)}</div>`;
-    scroll.appendChild(col);
-  }
-
-  el.style.display = "block";
-  void scroll.offsetWidth;
-  requestAnimationFrame(() => { scroll.style.opacity = "1"; });
+/** Překreslí otevřený den — po doplnění asynchronních dat (rozptyl, ensemble). */
+function redrawOpenDay() {
+  if (!_openDay || !_fc) return;
+  const hodiny = forecastView(_fc, _openDay).hourlyFull || [];
+  if (hodiny.length) drawDayChart(hodiny);
 }
 
 const CZ_DAYS = ["Ne", "Po", "Út", "St", "Čt", "Pá", "So"];
@@ -499,18 +727,23 @@ function paintRanges(grid, d) {
   });
 }
 
-export function renderFc7(data, label) {
+export function renderFc7(data, label, fc) {
   const el = document.getElementById("fc7");
   const grid = document.getElementById("fc7-grid");
   const d = data.daily || {};
   const dates = d.time || [];
   if (!dates.length) { el.style.display = "none"; return; }
 
+  if (fc?.all) { _fc = fc; _fcLabel = label || _fcLabel; }
+  _daily = d;
   document.getElementById("fc7-place").textContent = label || "—";
   grid.classList.add("fade-swap");
   grid.style.opacity = "0";
   // Překreslení týdne zahodí i rozbalený detail — jeho DOM je uvnitř mřížky.
-  // Bez tohohle by v _openDay zůstal den, jehož panel už neexistuje.
+  // Bez tohohle by v _openDay zůstal den, jehož panel už neexistuje. Který
+  // den byl otevřený, si ale zapamatuj: obnova dat co 5 minut by jinak
+  // rozečtenou neděli zavřela pod rukama.
+  const drzDen = _openDay;
   closeDayDetail();
   grid.innerHTML = "";
   const todayStr = locDateStr();
@@ -569,13 +802,20 @@ export function renderFc7(data, label) {
     grid.dataset.wired = "1";
     const pick = t => {
       const row = t.closest?.(".fc7-day");
-      if (row?.dataset.date) toggleDayDetail(row.dataset.date);
+      if (row?.dataset.date) userToggleDay(row.dataset.date);
     };
     grid.addEventListener("click", e => pick(e.target));
     grid.addEventListener("keydown", e => {
       if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(e.target); }
     });
   }
+
+  // Dnešek je rozbalený hned — po zrušení horního proužku je tohle jediné
+  // místo, kde se hodinová předpověď dá vidět, a nemá smysl na ni čekat
+  // s klikáním. Otevře se ten den, který byl otevřený před překreslením.
+  const cil = (drzDen && dates.includes(drzDen)) ? drzDen
+    : (dates.includes(todayStr) ? todayStr : dates[0]);
+  if (_fc) toggleDayDetail(cil);
 
   el.style.display = "block";
   void grid.offsetWidth;
@@ -591,6 +831,13 @@ export function renderFc7(data, label) {
 // při rychlém překreslení (auto-refresh, znovuvybrání místa) mohly běžet dvě
 // naráz a KAŽDÁ si připsala vlastní řádek — v kartě pak stálo dvakrát totéž.
 let _ensToken = 0;
+
+function quantile(sorted, q) {
+  if (!sorted.length) return null;
+  const pos = (sorted.length - 1) * q;
+  const lo = Math.floor(pos), hi = Math.ceil(pos);
+  return sorted[lo] + (sorted[hi] - sorted[lo]) * (pos - lo);
+}
 
 export async function addEnsembleFan(lat, lon, data) {
   const grid = document.getElementById("fc7-grid");
@@ -657,334 +904,35 @@ export async function addEnsembleFan(lat, lon, data) {
       div.innerHTML = `<span>rozptyl ${lo}–${hi}°</span>${wetStr}`;
       col.appendChild(div);
     });
+
+    // Z TÉHOŽ stažení spočítej i hodinové kvantily pro záložku Ensemble
+    // v detailu dne. Dřív to byl druhý fetch (40 členů, 2 dny) spouštěný
+    // klepnutím na záložku — stejná data, jen pro kratší horizont a znovu
+    // po drátě. Takhle vějíř funguje pro všech 7 dní a stahuje se jednou.
+    const precKeys = memberKeys.map(k => k.replace("temperature_2m", "precipitation"));
+    const perHour = new Map();
+    for (let i = 0; i < times.length; i++) {
+      const temps = memberKeys.map(k => h[k]?.[i]).filter(v => v != null).sort((a, b) => a - b);
+      const precs = precKeys.map(k => h[k]?.[i]).filter(v => v != null).sort((a, b) => a - b);
+      if (!temps.length) continue;
+      perHour.set(times[i], {
+        p10: quantile(temps, 0.1), p25: quantile(temps, 0.25), p50: quantile(temps, 0.5),
+        p75: quantile(temps, 0.75), p90: quantile(temps, 0.9),
+        prec50: quantile(precs, 0.5), prec90: quantile(precs, 0.9),
+      });
+    }
+    _ensH = perHour.size ? perHour : null;
+    _ensMembers = memberKeys.length;
+    if (_dayMode === "ensemble") redrawOpenDay();
   } catch { /* vějíř je bonus — bez něj fc7 funguje dál */ }
 }
 
-// ── Meteogram — přepínatelný graf (Přehled / Srážky / Vítr / Tlak) ──────────
-let _meteoChart = null;
-let _meteoData = null;   // { fc, daily } posledního vykresleného místa
-let _meteoMode = "overview";
-let _meteoSpread = null; // { ec, gf, bandMax, bandMin } zarovnané na hourlyFull
-let _meteoTabsWired = false;
-
-function wireMeteoTabs() {
-  if (_meteoTabsWired) return;
-  const tabs = document.getElementById("meteo-tabs");
-  if (!tabs) return;
-  _meteoTabsWired = true;
-  tabs.addEventListener("click", e => {
-    const btn = e.target.closest(".mtab");
-    if (!btn || btn.dataset.mode === _meteoMode) return;
-    _meteoMode = btn.dataset.mode;
-    tabs.querySelectorAll(".mtab").forEach(b => b.classList.toggle("active", b === btn));
-    if (!_meteoData) return;
-    if (_meteoMode === "ensemble" && !_meteoEnsemble) loadEnsemble();
-    else drawMeteoChart(false);
-  });
-}
-
-export function renderMeteogram(fc, daily) {
-  const wrap = document.getElementById("meteo-block");
-  const hourly = fc.hourlyFull || fc.hourly;
-  if (!hourly.length) { wrap.classList.remove("show"); return; }
-  _meteoData = { fc, daily };
-  // Meteogram je natrvalo dnešek. Rozbalený den v týdnu má vlastní graf,
-  // takže nemůže nastat "vybraná neděle, ale graf kreslí dnešek".
-  _meteoSpread = null;   // nové místo = staré pásmo modelů neplatí
-  _meteoEnsemble = null; // ensemble se pro nové místo stáhne líně při kliku
-  wireMeteoTabs();
-  wrap.classList.add("show");
-  if (_meteoMode === "ensemble") loadEnsemble();
-  else drawMeteoChart(true);
-}
-
-// ── Ensemble vějíř — ICON-EPS členy z Open-Meteo ensemble API ───────────────
-// Stahuje se líně až při kliknutí na záložku (40 členů = větší odpověď).
-let _meteoEnsemble = null; // { p10, p25, p50, p75, p90, prec50, prec90 } zarovnané na hourlyFull
-
-function quantile(sorted, q) {
-  if (!sorted.length) return null;
-  const pos = (sorted.length - 1) * q;
-  const lo = Math.floor(pos), hi = Math.ceil(pos);
-  return sorted[lo] + (sorted[hi] - sorted[lo]) * (pos - lo);
-}
-
-async function loadEnsemble() {
-  const canvasWrap = document.getElementById("meteo-canvas-wrap");
-  const fc = _meteoData?.fc;
-  const lat = state.currentLat, lon = state.currentLon;
-  if (!fc || lat == null) return;
-  if (canvasWrap) canvasWrap.innerHTML = `<span class="skel" style="width:100%;height:100%;border-radius:12px"></span>`;
-  try {
-    const url = `https://ensemble-api.open-meteo.com/v1/ensemble?latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}`
-      + `&hourly=temperature_2m,precipitation&models=icon_seamless&forecast_days=2&timezone=auto`;
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 15000);
-    const r = await fetch(url, { signal: ctrl.signal });
-    clearTimeout(timer);
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    const data = await r.json();
-    const h = data.hourly || {};
-    const tempKeys = Object.keys(h).filter(k => k.startsWith("temperature_2m"));
-    const precKeys = Object.keys(h).filter(k => k.startsWith("precipitation"));
-    if (tempKeys.length < 5) throw new Error("málo členů");
-    const idxByTime = new Map((h.time || []).map((t, i) => [t, i]));
-    const hourly = fc.hourlyFull || [];
-
-    const agg = { p10: [], p25: [], p50: [], p75: [], p90: [], prec50: [], prec90: [] };
-    for (const x of hourly) {
-      const j = idxByTime.get(x.iso);
-      if (j == null) { for (const k of Object.keys(agg)) agg[k].push(null); continue; }
-      const temps = tempKeys.map(k => h[k]?.[j]).filter(v => v != null).sort((a, b) => a - b);
-      const precs = precKeys.map(k => h[k]?.[j]).filter(v => v != null).sort((a, b) => a - b);
-      agg.p10.push(quantile(temps, 0.1)); agg.p25.push(quantile(temps, 0.25));
-      agg.p50.push(quantile(temps, 0.5)); agg.p75.push(quantile(temps, 0.75));
-      agg.p90.push(quantile(temps, 0.9));
-      agg.prec50.push(quantile(precs, 0.5)); agg.prec90.push(quantile(precs, 0.9));
-    }
-    agg.nMembers = tempKeys.length;
-    // mezitím mohl uživatel přepnout místo nebo záložku
-    if (_meteoData?.fc !== fc) return;
-    _meteoEnsemble = agg;
-    if (_meteoMode === "ensemble") drawMeteoChart(false);
-  } catch (e) {
-    console.warn("Ensemble:", e);
-    if (_meteoMode === "ensemble" && canvasWrap) {
-      canvasWrap.innerHTML = `<div class="meteo-note" style="padding:2rem 0;text-align:center">Ensemble data se nepodařilo načíst.</div>`;
-    }
-  }
-}
-
-// Datasety pro jednotlivé záložky. Každá vrací { datasets, scales }.
-function meteoModeConfig(hourly, textColor, gridColor) {
-  const precip = hourly.map(h => h.precip ?? 0);
-  const prob = hourly.map(h => h.prob ?? 0);
-  const pct = { position: "right", min: 0, max: 100, ticks: { color: textColor, font: { size: 10 }, callback: v => v + " %" }, grid: { display: false } };
-
-  if (_meteoMode === "precip") {
-    const snow = hourly.map(h => h.snow ?? 0);
-    const hasSnow = snow.some(v => v > 0);
-    const precipColors = precip.map(v => v > 0 ? "rgba(79,142,247,.75)" : "rgba(79,142,247,.15)");
-    return {
-      datasets: [
-        { type: "bar", label: "Srážky (mm)", data: precip, backgroundColor: precipColors,
-          yAxisID: "y", order: 2, barPercentage: 0.9, categoryPercentage: 1 },
-        ...(hasSnow ? [{ type: "bar", label: "Sníh (cm)", data: snow,
-          backgroundColor: "rgba(172,196,255,.8)", yAxisID: "y", order: 3,
-          barPercentage: 0.55, categoryPercentage: 1 }] : []),
-        { type: "line", label: "Pravděpodobnost (%)", data: prob, borderColor: "#5AC8FA",
-          backgroundColor: "transparent", borderWidth: 1.6, borderDash: [5, 3],
-          pointRadius: 0, tension: 0.3, yAxisID: "y1", order: 1 },
-      ],
-      scales: {
-        y: { position: "left", beginAtZero: true, suggestedMax: 3, ticks: { color: textColor, font: { size: 10 }, callback: v => v + " mm" }, grid: { color: gridColor } },
-        y1: pct,
-      },
-    };
-  }
-
-  if (_meteoMode === "wind") {
-    const wind = hourly.map(h => h.wind ?? null);
-    const gusts = hourly.map(h => h.gust ?? null);
-    return {
-      datasets: [
-        { type: "line", label: "Vítr (km/h)", data: wind, borderColor: "#06b6d4",
-          backgroundColor: "rgba(6,182,212,.09)", fill: true, borderWidth: 2,
-          pointRadius: 0, tension: 0.35, yAxisID: "y", order: 1 },
-        { type: "line", label: "Nárazy (km/h)", data: gusts, borderColor: "#0A84FF",
-          backgroundColor: "transparent", borderWidth: 1.4, borderDash: [4, 3],
-          pointRadius: 0, tension: 0.35, yAxisID: "y", order: 2 },
-      ],
-      scales: {
-        y: { position: "left", beginAtZero: true, ticks: { color: textColor, font: { size: 10 }, callback: v => v + " km/h" }, grid: { color: gridColor } },
-      },
-    };
-  }
-
-  if (_meteoMode === "pressure") {
-    const pres = hourly.map(h => h.pressure ?? null);
-    const hum = hourly.map(h => h.humidity ?? null);
-    const cloud = hourly.map(h => h.cloud ?? null);
-    return {
-      datasets: [
-        { type: "line", label: "Tlak (hPa)", data: pres, borderColor: "#BF5AF2",
-          backgroundColor: "transparent", borderWidth: 2, pointRadius: 0,
-          tension: 0.35, yAxisID: "y", order: 1 },
-        { type: "line", label: "Vlhkost (%)", data: hum, borderColor: "#22c55e",
-          backgroundColor: "transparent", borderWidth: 1.4, pointRadius: 0,
-          tension: 0.35, yAxisID: "y1", order: 2 },
-        { type: "line", label: "Oblačnost (%)", data: cloud, borderColor: "#8b93ab",
-          backgroundColor: "rgba(139,147,171,.10)", fill: true, borderWidth: 1.1,
-          pointRadius: 0, tension: 0.35, yAxisID: "y1", order: 3 },
-      ],
-      scales: {
-        y: { position: "left", ticks: { color: textColor, font: { size: 10 }, callback: v => v + " hPa" }, grid: { color: gridColor } },
-        y1: pct,
-      },
-    };
-  }
-
-  if (_meteoMode === "ensemble" && _meteoEnsemble) {
-    const e = _meteoEnsemble;
-    return {
-      datasets: [
-        // vějíř: 10–90 % (světlé) a 25–75 % (sytější) pásmo + medián
-        { type: "line", label: "_p90", data: e.p90, borderWidth: 0, pointRadius: 0,
-          tension: 0.35, yAxisID: "y", fill: "+1", backgroundColor: "rgba(10,132,255,.10)", order: 6 },
-        { type: "line", label: "_p75", data: e.p75, borderWidth: 0, pointRadius: 0,
-          tension: 0.35, yAxisID: "y", fill: "+1", backgroundColor: "rgba(10,132,255,.20)", order: 5 },
-        { type: "line", label: "_p25", data: e.p25, borderWidth: 0, pointRadius: 0,
-          tension: 0.35, yAxisID: "y", fill: "+1", backgroundColor: "rgba(10,132,255,.10)", order: 4 },
-        { type: "line", label: "_p10", data: e.p10, borderWidth: 0, pointRadius: 0,
-          tension: 0.35, yAxisID: "y", order: 3 },
-        { type: "line", label: `Medián teploty (${e.nMembers} členů)`, data: e.p50,
-          borderColor: "#0A84FF", backgroundColor: "transparent", borderWidth: 2.2,
-          pointRadius: 0, tension: 0.35, yAxisID: "y", order: 1 },
-        { type: "bar", label: "Srážky medián (mm)", data: e.prec50,
-          backgroundColor: "rgba(79,142,247,.55)", yAxisID: "y1", order: 7,
-          barPercentage: 0.9, categoryPercentage: 1 },
-        { type: "line", label: "Srážky 90. percentil", data: e.prec90,
-          borderColor: "#5AC8FA", backgroundColor: "transparent", borderWidth: 1.2,
-          borderDash: [3, 3], pointRadius: 0, tension: 0.3, yAxisID: "y1", order: 2 },
-      ],
-      scales: {
-        y: { position: "left", ticks: { color: textColor, font: { size: 10 }, callback: v => v + "°" }, grid: { color: gridColor } },
-        y1: { position: "right", ticks: { color: textColor, font: { size: 10 } }, grid: { display: false }, beginAtZero: true, suggestedMax: 5 },
-      },
-    };
-  }
-
-  // "overview" — původní kombinovaný graf + případné pásmo modelů
-  const temps = hourly.map(h => h.tempRaw ?? null);
-  const feelsArr = hourly.map(h => h.feelsRaw ?? null);
-  const gusts = hourly.map(h => h.gust ?? null);
-  const precipColors = precip.map((v, i) => {
-    const p = prob[i] || 0;
-    const alpha = v > 0 ? Math.max(0.35, Math.min(p / 100, 1)) : 0.15;
-    return `rgba(79,142,247,${alpha})`;
-  });
-  const datasets = [
-    { type: "bar", label: "Srážky (mm)", data: precip,
-      backgroundColor: precipColors, yAxisID: "y1", order: 3,
-      barPercentage: 0.9, categoryPercentage: 1 },
-    { type: "line", label: "Teplota (°C)", data: temps,
-      borderColor: "#fb923c", backgroundColor: "transparent",
-      borderWidth: 2.2, pointRadius: 0, tension: 0.35, yAxisID: "y", order: 1 },
-    { type: "line", label: "Pocitová (°C)", data: feelsArr,
-      borderColor: "#fb923c", backgroundColor: "transparent",
-      borderWidth: 1.3, borderDash: [4, 3], pointRadius: 0, tension: 0.35, yAxisID: "y", order: 2 },
-    { type: "line", label: "Nárazy větru (km/h)", data: gusts,
-      borderColor: "#06b6d4", backgroundColor: "transparent",
-      borderWidth: 1.3, pointRadius: 0, borderDash: [1, 3], tension: 0.2, yAxisID: "y2", order: 4 },
-  ];
-  if (_meteoSpread) datasets.push(...spreadDatasets(_meteoSpread));
-  return {
-    datasets,
-    scales: {
-      y: { position: "left", ticks: { color: textColor, font: { size: 10 }, callback: v => v + "°" }, grid: { color: gridColor } },
-      y1: { position: "right", ticks: { color: textColor, font: { size: 10 } }, grid: { display: false }, beginAtZero: true, suggestedMax: 5 },
-      y2: { display: false },
-    },
-  };
-}
-
-function spreadDatasets(sp) {
-  return [
-    { type: "line", label: "ECMWF (°C)", data: sp.ec, borderColor: "#30B0C7",
-      backgroundColor: "transparent", borderWidth: 1.1, borderDash: [4, 4],
-      pointRadius: 0, tension: 0.35, yAxisID: "y", order: 5 },
-    { type: "line", label: "GFS (°C)", data: sp.gf, borderColor: "#BF5AF2",
-      backgroundColor: "transparent", borderWidth: 1.1, borderDash: [4, 4],
-      pointRadius: 0, tension: 0.35, yAxisID: "y", order: 6 },
-    { type: "line", label: "rozptyl modelů", data: sp.bandMax, borderWidth: 0,
-      pointRadius: 0, tension: 0.35, yAxisID: "y", order: 7,
-      fill: "+1", backgroundColor: "rgba(10,132,255,.10)" },
-    { type: "line", label: "_bandmin", data: sp.bandMin, borderWidth: 0,
-      pointRadius: 0, tension: 0.35, yAxisID: "y", order: 8 },
-  ];
-}
-
-function drawMeteoChart(withFade) {
-  // Chart.js se načítá s defer — kdyby fetch dat výjimečně předběhl CDN,
-  // zkus to znovu až doběhne load (jinak by meteogram zůstal prázdný).
-  if (typeof Chart === "undefined") {
-    window.addEventListener("load", () => { if (_meteoData) drawMeteoChart(withFade); }, { once: true });
-    return;
-  }
-  const canvasWrap = document.getElementById("meteo-canvas-wrap");
-  const { fc, daily } = _meteoData;
-  const hourly = fc.hourlyFull || fc.hourly;
-
-  if (_meteoChart) { _meteoChart.destroy(); _meteoChart = null; }
-  canvasWrap.classList.add("fade-swap");
-  if (withFade) canvasWrap.style.opacity = "0";
-  canvasWrap.innerHTML = `<canvas id="meteo-canvas"></canvas>`;
-
-  const labels = hourly.map(h => h.t);
-  const sunrise = daily?.sunrise?.[0]?.slice(11, 16);
-  const sunset = daily?.sunset?.[0]?.slice(11, 16);
-
-  const isDark = isDarkTheme();
-  const gridColor = isDark ? "rgba(255,255,255,.07)" : "rgba(0,0,0,.06)";
-  const textColor = isDark ? "#8b93ab" : "#56606f";
-
-  // Noční pásmo — jednoduchý plugin kreslící šedý obdélník mimo rise/set
-  const nightPlugin = {
-    id: "nightBand",
-    beforeDraw(chart) {
-      if (!sunrise || !sunset) return;
-      const { ctx, chartArea, scales } = chart;
-      const xScale = scales.x;
-      ctx.save();
-      ctx.fillStyle = isDark ? "rgba(0,0,0,.18)" : "rgba(0,0,0,.05)";
-      labels.forEach((t, i) => {
-        if (t < sunrise || t >= sunset) {
-          const x0 = xScale.getPixelForValue(i) - (xScale.width / labels.length) / 2;
-          const w = xScale.width / labels.length;
-          ctx.fillRect(x0, chartArea.top, w, chartArea.height);
-        }
-      });
-      ctx.restore();
-    },
-  };
-
-  const cfg = meteoModeConfig(hourly, textColor, gridColor);
-
-  _meteoChart = new Chart(document.getElementById("meteo-canvas"), {
-    data: { labels, datasets: cfg.datasets },
-    plugins: [nightPlugin],
-    options: {
-      animation: chartAnim("meteo"), responsive: true, maintainAspectRatio: false,
-      interaction: { mode: "index", intersect: false },
-      plugins: {
-        legend: { display: true, position: "top", labels: {
-          color: textColor, font: { size: 10 }, boxWidth: 10, padding: 8,
-          filter: item => !item.text.startsWith("_"), // pomocné hrany pásem
-        } },
-        tooltip: { mode: "index", intersect: false },
-      },
-      scales: {
-        x: { ticks: { color: textColor, font: { size: 10 }, maxTicksLimit: 8 }, grid: { display: false } },
-        ...cfg.scales,
-      },
-    },
-  });
-
-  if (withFade) {
-    void canvasWrap.offsetWidth;
-    requestAnimationFrame(() => { canvasWrap.style.opacity = "1"; });
-  } else {
-    canvasWrap.style.opacity = "1";
-  }
-}
-
-// ── Porovnání modelů — pásmo nejistoty ICON / ECMWF / GFS v meteogramu ──────
-// Druhý lehký fetch (jen teplota, 3 modely); výsledek se uloží a promítne do
-// záložky Přehled — přežije i přepínání záložek (překreslí se z _meteoSpread).
+// ── Porovnání modelů — pásmo nejistoty ICON / ECMWF / GFS ──────────────────
+// Druhý lehký fetch (jen teplota, 3 modely). Ukládá se do mapy podle ISO
+// hodiny, ne do pole zarovnaného na jeden den — díky tomu se pásmo promítne
+// do KTERÉHOKOLI rozbaleného dne, který fetch pokryl (3 dny dopředu).
 export async function addModelSpread(lat, lon, fc) {
-  if (!_meteoData) return;
-  const hourly = fc.hourlyFull || [];
-  if (!hourly.length) return;
+  if (!fc?.all?.length) return;
   try {
     const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}`
       + `&hourly=temperature_2m&models=icon_seamless,ecmwf_ifs025,gfs_seamless`
@@ -996,33 +944,17 @@ export async function addModelSpread(lat, lon, fc) {
     if (!r.ok) return;
     const data = await r.json();
     const h = data.hourly || {};
-    const idxByTime = new Map((h.time || []).map((t, i) => [t, i]));
-    const grab = key => hourly.map(x => {
-      const j = idxByTime.get(x.iso);
-      return j != null ? (h[key]?.[j] ?? null) : null;
-    });
-    const ec = grab("temperature_2m_ecmwf_ifs025");
-    const gf = grab("temperature_2m_gfs_seamless");
-    const ic = grab("temperature_2m_icon_seamless");
+    const times = h.time || [];
+    const ec = h.temperature_2m_ecmwf_ifs025 || [];
+    const gf = h.temperature_2m_gfs_seamless || [];
+    const ic = h.temperature_2m_icon_seamless || [];
     if (!ec.some(v => v != null) && !gf.some(v => v != null)) return;
 
-    const bandMax = hourly.map((x, i) => {
-      const vals = [x.tempRaw, ic[i], ec[i], gf[i]].filter(v => v != null);
-      return vals.length ? Math.max(...vals) : null;
-    });
-    const bandMin = hourly.map((x, i) => {
-      const vals = [x.tempRaw, ic[i], ec[i], gf[i]].filter(v => v != null);
-      return vals.length ? Math.min(...vals) : null;
-    });
-
     // mezitím mohl uživatel přepnout místo — fc už by nebylo aktuální
-    if (_meteoData?.fc !== fc) return;
-    _meteoSpread = { ec, gf, bandMax, bandMin };
-    if (_meteoMode === "overview" && _meteoChart) {
-      _meteoChart.data.datasets.push(...spreadDatasets(_meteoSpread));
-      _meteoChart.update("none");
-    }
-  } catch { /* nejistota je bonus — bez ní meteogram funguje dál */ }
+    if (_fc !== fc) return;
+    _spread = new Map(times.map((t, i) => [t, { ec: ec[i] ?? null, gf: gf[i] ?? null, ic: ic[i] ?? null }]));
+    if (_dayMode === "overview") redrawOpenDay();
+  } catch { /* nejistota je bonus — bez ní graf funguje dál */ }
 }
 
 // ── Kvalita ovzduší + pyl (Open-Meteo Air Quality API) ───────────────────────
@@ -1143,7 +1075,7 @@ export async function fetchOpenMeteo(lat, lon, signal) {
     + `&forecast_days=7&past_days=1&timezone=auto`;
 
   // Bez vlastního timeoutu umí fetch na slabším mobilním signálu viset
-  // donekonečna a volající strana (showFc24) pak zůstane navždy na
+  // donekonečna a volající strana (loadForecast) pak zůstane navždy na
   // "Načítám předpověď…", protože se nikdy nedostane do catch bloku.
   const ctrl = new AbortController();
   const onAbort = () => ctrl.abort(signal.reason);

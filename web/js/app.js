@@ -12,8 +12,8 @@ import {
   renderWuOwnPanel, renderWuMarkers, renderChmiMarkers, closeWuDetail, closeChmiDetail,
 } from "./stations.js";
 import {
-  fetchOpenMeteo, parseFc24, parseMinutely15,
-  renderFcHero, renderDayHeadline, renderFcNow, renderFc24, renderFc7, renderMeteogram, fetchAndRenderAQ,
+  fetchOpenMeteo, parseHourly, parseMinutely15,
+  renderFcHero, renderDayHeadline, renderFcNow, renderFc7, fetchAndRenderAQ,
   addModelSpread, addEnsembleFan,
 } from "./forecast.js";
 import {
@@ -106,29 +106,27 @@ async function loadData() {
   state.EURO = euro;
 }
 
-// ── Forecast pro vybrané místo (24h strip + meteogram + AQ + AI verdikt) ────
-async function showFc24(lat, lon, label) {
-  document.getElementById("fc24-place").textContent = label || "—";
+// ── Forecast pro vybrané místo (týden s detailem dne + AQ + AI verdikt) ─────
+async function loadForecast(lat, lon, label) {
+  document.getElementById("fc7-place").textContent = label || "—";
   // Skeleton placeholdery mají STEJNÉ rozměry jako finální karty — takže i
   // karty pod scrollem (meteogram, 7 dní, ovzduší…) jsou hned vidět správně
   // velké, místo aby byly prázdné/schované a pak najednou "naskočily".
   showLoadingSkeletons();
 
-  const scroll = document.getElementById("fc24-scroll");
-  state.fc24Ctrl?.abort();
+  const scroll = document.getElementById("fc7-grid");
+  state.fcCtrl?.abort();
   const ctrl = new AbortController();
-  state.fc24Ctrl = ctrl;
+  state.fcCtrl = ctrl;
 
   try {
     const data = await fetchOpenMeteo(lat, lon, ctrl.signal);
-    const fc = parseFc24(data);
+    const fc = parseHourly(data);
     const minutely = parseMinutely15(data);
     renderFcHero(fc);
     renderDayHeadline(fc);
-    renderFc24(fc, label);
     renderFcNow(fc, minutely);
-    renderFc7(data, label);
-    renderMeteogram(fc, data.daily);
+    renderFc7(data, label, fc);
     renderLocationVerdict(fc, lat, lon, label);
     fetchAndRenderAQ(lat, lon);
     // v2.0 doplňky — každý panel se sám schová, když pro něj nejsou data
@@ -171,12 +169,15 @@ async function showFc24(lat, lon, label) {
     } catch (e) { console.warn("v2 doplňky selhaly:", e); }
   } catch (e) {
     if (e.name === "AbortError") return;
+    // Hláška patří DO panelu předpovědi, ne vedle něj — po sloučení je to
+    // jediné místo, kde by se předpověď zobrazila, takže panel musí zůstat
+    // vidět, jinak by po chybě zmizel beze stopy.
     scroll.innerHTML = `<div style="padding:.6rem 1rem;color:var(--muted);font-size:var(--fs-body)">Předpověď se nepodařilo načíst (${esc(e.message)}).</div>`;
-    document.getElementById("fc7").style.display = "none";
+    document.getElementById("fc7").style.display = "block";
     // Skeletony ostatních karet by jinak zůstaly navždy "načítat se" —
     // schovej je stejně, jako by to udělal jejich vlastní render, kdyby
     // pro dané místo neměly co zobrazit.
-    ["meteo-block", "aq-panel", "astro-panel", "activities-panel", "precip-panel", "history-panel"]
+    ["aq-panel", "astro-panel", "activities-panel", "precip-panel", "history-panel"]
       .forEach(id => document.getElementById(id)?.classList.remove("show"));
     // Bez tohohle zůstane levá karta navždy zaseknutá na "Načítám předpověď…"
     // ze showForecast, protože se sem nikdy nedostane renderLocationVerdict.
@@ -310,7 +311,7 @@ function showForecast(lat, lon, label) {
 
   drawRainSpark(id);
   updateStormBar();
-  showFc24(lat, lon, label);
+  loadForecast(lat, lon, label);
 
   const u = new URL(window.location);
   u.searchParams.set("lat", lat.toFixed(4));
@@ -449,7 +450,7 @@ async function refreshAll() {
     applyManifestUI();
     renderWuOwnPanel(); renderWuMarkers(); renderChmiMarkers(); renderWarningsLayer();
     renderStormTracks();
-    if (state.currentLat !== null) showFc24(state.currentLat, state.currentLon, state.currentLabel);
+    if (state.currentLat !== null) loadForecast(state.currentLat, state.currentLon, state.currentLabel);
   } catch (e) {
     document.getElementById("refresh-time").textContent = "Chyba: " + e.message;
   } finally {

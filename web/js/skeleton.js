@@ -2,23 +2,11 @@
 // se plní asynchronně po výběru místa. Bez nich byly tyto karty buď prázdné,
 // nebo úplně schované (display:none) — při scrollu dolů byl vidět "uťatý",
 // prázdný prostor a obsah pak najednou "naskočil". Skeletony mají STEJNÉ CSS
-// třídy jako finální obsah (fc24-col, fc7-day, aq-item, astro-row, act…),
+// třídy jako finální obsah (fc7-day, aq-item, astro-row, act…),
 // takže mají od začátku správnou výšku — žádný layout jump při načtení.
 
 const shimmer = (w, h, extra = "") =>
   `<span class="skel" style="width:${w};height:${h}${extra ? ";" + extra : ""}"></span>`;
-
-function skelFc24(n = 8) {
-  let html = "";
-  for (let i = 0; i < n; i++) {
-    html += `<div class="fc24-col">
-      <div>${shimmer("30px", "12px", "margin:0 auto .3rem")}</div>
-      <div>${shimmer("26px", "26px", "margin:0 auto;border-radius:50%")}</div>
-      <div>${shimmer("22px", "14px", "margin:.3rem auto 0")}</div>
-    </div>`;
-  }
-  return html;
-}
 
 function skelFc7(n = 7) {
   let html = "";
@@ -64,14 +52,6 @@ function skelActivities(n = 6) {
 
 export function showLoadingSkeletons() {
   const set = (id, html) => { const el = document.getElementById(id); if (el) el.innerHTML = html; };
-
-  set("fc24-scroll", skelFc24());
-  const fc24 = document.getElementById("fc24");
-  if (fc24) fc24.style.display = "block";
-
-  const meteoWrap = document.getElementById("meteo-canvas-wrap");
-  if (meteoWrap) meteoWrap.innerHTML = `<span class="skel" style="width:100%;height:100%;border-radius:12px"></span>`;
-  document.getElementById("meteo-block")?.classList.add("show");
 
   set("fc7-grid", skelFc7());
   const fc7 = document.getElementById("fc7");

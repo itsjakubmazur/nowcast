@@ -66,6 +66,25 @@ function buildArchiveFixture() {
   return { daily };
 }
 
+// ICON-EPS: pár členů kolem stejné křivky, ať má vějíř co kreslit.
+function buildEnsembleFixture(members = 6, hours = 48) {
+  const nowHour = pragueNowAsNaive();
+  nowHour.setUTCMinutes(0, 0, 0);
+  const hourly = { time: [] };
+  for (let m = 0; m < members; m++) {
+    hourly[m === 0 ? "temperature_2m" : `temperature_2m_member${String(m).padStart(2, "0")}`] = [];
+    hourly[m === 0 ? "precipitation" : `precipitation_member${String(m).padStart(2, "0")}`] = [];
+  }
+  const tKeys = Object.keys(hourly).filter(k => k.startsWith("temperature_2m"));
+  const pKeys = Object.keys(hourly).filter(k => k.startsWith("precipitation"));
+  for (let i = 0; i < hours; i++) {
+    hourly.time.push(fmtDateTime(new Date(nowHour.getTime() + i * 3600000)));
+    tKeys.forEach((k, m) => hourly[k].push(20 + Math.sin(i / 4) * 4 + (m - members / 2) * 0.7));
+    pKeys.forEach((k, m) => hourly[k].push(i >= 3 && i < 6 ? 1.2 + m * 0.3 : 0));
+  }
+  return { hourly };
+}
+
 function buildOpenMeteoFixture() {
   const nowHour = pragueNowAsNaive();
   nowHour.setUTCMinutes(0, 0, 0);
@@ -410,8 +429,12 @@ async function main() {
   // renderClimateAnomaly/renderDayInHistory nejdou do reálné sítě
   await page.route("https://archive-api.open-meteo.com/**", route =>
     route.fulfill({ body: JSON.stringify(buildArchiveFixture()), contentType: "application/json" }));
+  // Ensemble se stahuje JEDNOU a slouží dvěma věcem: vějíři u dní v týdnu
+  // a záložce Ensemble v grafu dne. Fixture proto musí mít opravdové členy —
+  // s prázdnou odpovědí by se ta cesta vůbec neprošla.
+  const ensFixture = buildEnsembleFixture();
   await page.route("https://ensemble-api.open-meteo.com/**", route =>
-    route.fulfill({ body: "{}", contentType: "application/json" }));
+    route.fulfill({ body: JSON.stringify(ensFixture), contentType: "application/json" }));
   // leaflet-velocity je self-hosted (web/vendor/) — reálná knihovna potřebuje
   // plný Leaflet, který stub neposkytuje; pro test stačí minimální náhrada.
   await page.route("**/vendor/leaflet-velocity.min.js", route =>
@@ -502,20 +525,26 @@ async function main() {
   const accText = await page.textContent("#accuracy-line");
   assertTrue(/\+10′ 91\s?%/.test(accText), `accuracy.json se zobrazil per lead-time (obsah: "${accText.trim()}")`);
 
-  // ── 24h strip + meteogram + AQ + 7denní výhled ───────────────────────────
-  await page.waitForSelector("#fc24-scroll .fc24-col", { timeout: 8000 });
-  const fc24cols = await page.locator(".fc24-col").count();
-  assertTrue(fc24cols > 0, `fc24 strip vykreslil ${fc24cols} sloupců`);
-
-  // Chytilo reálný bug: obsah sloupce (vítr+UV+CAPE na jednom řádku)
-  // přetékal mimo úzký sloupec a překrýval sousední hodiny.
-  const fc24Overflow = await page.evaluate(() =>
-    [...document.querySelectorAll(".fc24-col")].some(col => col.scrollWidth > col.clientWidth + 1)
-  );
-  assertTrue(!fc24Overflow, "obsah fc24 sloupců nepřetéká mimo sloupec");
-
-  await page.waitForSelector("#meteo-block.show canvas#meteo-canvas", { timeout: 5000 });
-  assertTrue(true, "meteogram se vykreslil (canvas existuje)");
+  // ── Předpověď: JEDEN panel (týden + rozbalený detail dne) ────────────────
+  // Proužek "Dnes" a samostatný meteogram tady stávaly jako dva další panely
+  // nad týdnem a počítaly se z týchž hodin. Test proto hlídá i to, že už
+  // NEEXISTUJÍ — jinak by se mohly tiše vrátit.
+  await page.waitForSelector("#fc7-detail .fc7d-hour", { timeout: 8000 });
+  const zbytky = await page.evaluate(() => ({
+    fc24: !!document.getElementById("fc24"),
+    meteo: !!document.getElementById("meteo-block"),
+    hodin: document.querySelectorAll("#fc7-detail .fc7d-hour").length,
+    graf: document.querySelectorAll("#fc7-detail canvas").length,
+    pretekaHodina: [...document.querySelectorAll(".fc7d-hour")]
+      .some(c => c.scrollWidth > c.clientWidth + 1),
+  }));
+  assertTrue(!zbytky.fc24 && !zbytky.meteo,
+    `proužek Dnes ani meteogram už nejsou samostatné panely (fc24=${zbytky.fc24}, meteo=${zbytky.meteo})`);
+  assertTrue(zbytky.hodin >= 6, `detail dne nese hodiny (${zbytky.hodin})`);
+  assertTrue(zbytky.graf === 1, `detail dne má vlastní graf (${zbytky.graf})`);
+  // Chytilo reálný bug: obsah sloupce (vítr+srážky) přetékal mimo úzký
+  // sloupec a překrýval sousední hodiny.
+  assertTrue(!zbytky.pretekaHodina, "obsah hodinových sloupců nepřetéká mimo sloupec");
 
   await page.waitForSelector(".fc7-day", { timeout: 5000 });
   const fc7days = await page.locator(".fc7-day").count();
@@ -546,7 +575,7 @@ async function main() {
         const el = document.getElementById(id);
         return !!el && getComputedStyle(el).display !== "none";
       };
-      return { fc24: vis("fc24"), fc7: vis("fc7"), precip: vis("precip-panel"),
+      return { fc7: vis("fc7"), precip: vis("precip-panel"),
                forecast: vis("forecast-panel"), aq: vis("aq-panel") };
     });
     assertTrue(Object.values(stillVisible).every(Boolean),
@@ -690,7 +719,7 @@ async function main() {
   // Ve svitku to nevypadá jako důraz, ale jako že tam ty panely nepatří.
   {
     const heads = await page.evaluate(() => {
-      const sel = ".fc24-title, .fc7-title, .aq-title, .meteo-title, .astro-title,"
+      const sel = ".fc7-title, .aq-title, .meteo-title, .astro-title,"
         + " .mdl-title, .pp-title, .vf-title";
       const out = [];
       for (const el of document.querySelectorAll(sel)) {
@@ -880,55 +909,74 @@ async function main() {
       `žádná barevná plocha bez zaoblení (${square.slice(0, 5).join(" | ") || "0"})`);
   }
 
-  // ── Pás 12h výhledu: souvislá stuha, ne řada přihrádek ───────────────────
-  // Měl zaoblený obal, ale hranaté úseky uvnitř oddělené mezerou, takže se
-  // zaoblil jen levý konec. A hlavně: suché úseky měly natvrdo bílou na 9 %,
-  // což je ve světlém motivu bílá na bílé — pět ze šestnácti dílků nebylo
-  // vidět a pás vypadal, že v 68 % šířky prostě končí.
+  // ── Obě měřítka srážek mluví JEDNÍM jazykem ──────────────────────────────
+  // 2 h se kreslilo jako sloupce s výškou podle intenzity, 12 h jako plochá
+  // stuha, kde intenzitu nesl jen tón. Byly to původně dvě karty nad sebou,
+  // takže mělo smysl je odlišit; jako dvě záložky JEDNOHO panelu se ale
+  // nikdy neukážou naráz a rozdíl jen nutí učit se dvakrát totéž.
+  // Součástí je i kontrast: suché dílky měly kdysi natvrdo bílou na 9 %,
+  // což je ve světlém motivu bílá na bílé, a prostě zmizely.
   {
-    await page.evaluate(() => document.querySelector('.pp-tab[data-scale="12h"]')?.click());
-    await page.waitForTimeout(300);
-    const ow = await page.evaluate(() => {
-      const b = document.getElementById("ow-bars");
-      if (!b || !b.children.length) return null;
-      const kids = [...b.children];
-      const r = b.getBoundingClientRect();
-      const last = kids[kids.length - 1].getBoundingClientRect();
-      const rgb = v => (v.match(/[\d.]+/g) || []).map(Number);
-      // Porovnává se proti KARTĚ za dráhou, ne proti dráze samotné: dráhu
-      // úseky celou zakrývají, takže vůči ní by i neviditelný dílek vycházel
-      // v pořádku. Hledá se první předek, který má skutečné pozadí.
-      let host = b.parentElement, bg = [0, 0, 0, 0];
-      while (host && (bg[3] ?? 1) < 0.5) {
-        bg = rgb(getComputedStyle(host).backgroundColor);
-        if ((bg[3] ?? 1) >= 0.5) break;
-        host = host.parentElement;
-      }
-      // Poloprůhledný dílek se s pozadím SMÍCHÁ — právě proto bílá na 9 %
-      // ve světlém motivu zmizela. Test proto míchá stejně.
-      const mix = c => {
-        const a = c[3] ?? 1;
-        return [0, 1, 2].map(i => c[i] * a + bg[i] * (1 - a));
-      };
-      const minDelta = Math.min(...kids.map(k => {
-        const m = mix(rgb(getComputedStyle(k).backgroundColor));
-        return Math.abs(m[0] - bg[0]) + Math.abs(m[1] - bg[1]) + Math.abs(m[2] - bg[2]);
-      }));
-      return {
-        gap: getComputedStyle(b).gap,
-        radius: parseFloat(getComputedStyle(b).borderRadius),
-        fills: Math.abs(last.right - r.right) < 2,
-        minDelta,
-      };
-    });
-    assertTrue(ow, "pás 12h výhledu se vykreslil");
-    assertTrue(parseFloat(ow.gap) === 0,
-      `úseky pásu na sebe navazují bez mezer (gap ${ow.gap})`);
-    assertTrue(ow.radius >= 12,
-      `pás má zaoblené konce (r=${ow.radius})`);
-    assertTrue(ow.fills, "poslední úsek dosahuje na pravý konec dráhy");
-    assertTrue(ow.minDelta > 8,
-      `každý úsek je odlišitelný od podkladu i ve světlém motivu (nejmenší rozdíl ${Math.round(ow.minDelta)})`);
+    const zmer = async scale => {
+      await page.evaluate(sc => document.querySelector(`.pp-tab[data-scale="${sc}"]`)?.click(), scale);
+      await page.waitForTimeout(250);
+      return page.evaluate(sc => {
+        const body = document.querySelector(`.pp-body[data-scale="${sc}"]`);
+        const b = body?.querySelector(".pbars");
+        const osa = body?.querySelector(".pp-axis");
+        if (!b || !b.children.length) return null;
+        const kids = [...b.children];
+        const rgb = v => (v.match(/[\d.]+/g) || []).map(Number);
+        // Porovnává se proti KARTĚ za sloupci, ne proti dráze: hledá se
+        // první předek se skutečným (neprůhledným) pozadím.
+        let host = b.parentElement, bg = [0, 0, 0, 0];
+        while (host && (bg[3] ?? 1) < 0.5) {
+          bg = rgb(getComputedStyle(host).backgroundColor);
+          if ((bg[3] ?? 1) >= 0.5) break;
+          host = host.parentElement;
+        }
+        // Poloprůhledný dílek se s pozadím SMÍCHÁ — test proto míchá stejně.
+        const mix = c => {
+          const a = c[3] ?? 1;
+          return [0, 1, 2].map(i => c[i] * a + bg[i] * (1 - a));
+        };
+        const minDelta = Math.min(...kids.map(k => {
+          const st = getComputedStyle(k);
+          const m = mix(rgb(st.backgroundColor));
+          const opa = parseFloat(st.opacity);
+          const d = Math.abs(m[0] - bg[0]) + Math.abs(m[1] - bg[1]) + Math.abs(m[2] - bg[2]);
+          return d * (Number.isFinite(opa) ? opa : 1);
+        }));
+        const cs = getComputedStyle(b);
+        const prvni = getComputedStyle(kids[0]);
+        return {
+          trida: b.className,
+          gap: cs.gap, vyska: cs.height, zarovnani: cs.alignItems,
+          radius: prvni.borderRadius,
+          popisku: osa ? osa.children.length : 0,
+          prvniPopisek: osa?.children[0]?.textContent?.trim() || "",
+          dilku: kids.length,
+          minDelta,
+        };
+      }, scale);
+    };
+    const a2 = await zmer("2h");
+    const a12 = await zmer("12h");
+    assertTrue(a2 && a12, "obě měřítka srážek se vykreslila");
+    for (const [jmeno, v] of [["2 h", a2], ["12 h", a12]]) {
+      assertTrue(v.trida.includes("pbars"), `${jmeno} používá společnou třídu .pbars (${v.trida})`);
+      assertTrue(v.dilku >= 6, `${jmeno} má sloupce (${v.dilku})`);
+      assertTrue(v.minDelta > 8,
+        `${jmeno}: každý sloupec je odlišitelný od podkladu i ve světlém motivu (${Math.round(v.minDelta)})`);
+    }
+    assertTrue(a2.gap === a12.gap && a2.vyska === a12.vyska
+      && a2.zarovnani === a12.zarovnani && a2.radius === a12.radius,
+      `obě měřítka mají stejnou geometrii sloupců (${a2.gap}/${a2.vyska}/${a2.radius}`
+      + ` vs ${a12.gap}/${a12.vyska}/${a12.radius})`);
+    assertTrue(a2.popisku === a12.popisku && a2.popisku >= 3,
+      `obě osy mají stejný počet popisků (${a2.popisku} vs ${a12.popisku})`);
+    assertTrue(a2.prvniPopisek === "teď" && a12.prvniPopisek === "teď",
+      `obě osy začínají "teď" (${a2.prvniPopisek} / ${a12.prvniPopisek})`);
   }
 
   // ── Každý název ikony musí v sadě existovat ──────────────────────────────
@@ -1146,20 +1194,38 @@ async function main() {
   // ale při skutečném použití se ukázalo, proč to nefunguje: týden je na konci
   // svitku, takže se klepne dole a jediné, co se změní, je o dvě obrazovky
   // výš. Výsledek vlastního kliknutí nebyl vidět a muselo se rolovat zpátky.
-  // Detail se proto rozbaluje PŘÍMO POD ŘÁDKEM.
+  // Detail se proto rozbaluje PŘÍMO POD ŘÁDKEM — a když to umí, není proč
+  // mít proužek a meteogram zvlášť: dnešek je prostě první rozbalený den.
   {
-    const zaklad = await page.evaluate(() => ({
-      radku: document.querySelectorAll("#fc7-grid .fc7-day").length,
-      klikatelne: [...document.querySelectorAll("#fc7-grid .fc7-day")]
-        .every(d => d.getAttribute("role") === "button" && d.dataset.date),
-      nadpisProuzku: document.getElementById("fc24-day")?.textContent?.trim(),
-      detailOtevren: !!document.getElementById("fc7-detail"),
-    }));
+    const zaklad = await page.evaluate(() => {
+      const dnes = new Date().toLocaleString("sv-SE").slice(0, 10);
+      const otevreny = document.querySelector("#fc7-grid .fc7-day.fc7-open");
+      return {
+        radku: document.querySelectorAll("#fc7-grid .fc7-day").length,
+        klikatelne: [...document.querySelectorAll("#fc7-grid .fc7-day")]
+          .every(d => d.getAttribute("role") === "button" && d.dataset.date),
+        detailOtevren: !!document.getElementById("fc7-detail"),
+        otevrenyDen: otevreny?.dataset.date || "",
+        dnes,
+        zalozek: document.querySelectorAll("#fc7d-tabs .mtab").length,
+        vetruUHodin: document.querySelectorAll("#fc7-detail .fc7d-hw").length,
+        shrnuti: document.querySelector("#fc7-detail .fc7d-meta")?.textContent?.trim() || "",
+      };
+    });
     assertTrue(zaklad.radku >= 5, `týden má řádky (${zaklad.radku})`);
     assertTrue(zaklad.klikatelne, "každý den v týdnu je tlačítko s datem");
-    assertTrue(zaklad.nadpisProuzku === "Dnes",
-      `horní proužek zůstává dnešek (${zaklad.nadpisProuzku})`);
-    assertTrue(!zaklad.detailOtevren, "nativně není rozbalený žádný den");
+    // Bez proužku "Dnes" nad týdnem je tohle JEDINÉ místo s hodinovou
+    // předpovědí — nesmí se na ni čekat s klikáním.
+    assertTrue(zaklad.detailOtevren && zaklad.otevrenyDen === zaklad.dnes,
+      `dnešek je rozbalený hned po načtení (${zaklad.otevrenyDen} vs ${zaklad.dnes})`);
+    // Detail musí umět všechno po zrušeném meteogramu, jinak by sloučení
+    // znamenalo ztrátu funkcí.
+    assertTrue(zaklad.zalozek === 5,
+      `graf dne má všechny záložky meteogramu (${zaklad.zalozek})`);
+    assertTrue(zaklad.vetruUHodin >= 6,
+      `hodiny nesou i vítr, jako dřív proužek Dnes (${zaklad.vetruUHodin})`);
+    assertTrue(/°C/.test(zaklad.shrnuti) && /\d/.test(zaklad.shrnuti),
+      `detail má shrnutí dne (${zaklad.shrnuti})`);
 
     const po = await page.evaluate(async () => {
       const rows = [...document.querySelectorAll("#fc7-grid .fc7-day")];
@@ -1176,8 +1242,7 @@ async function main() {
         fazi: box ? box.querySelectorAll(".fc7d-phase").length : 0,
         hodin: box ? box.querySelectorAll(".fc7d-hour").length : 0,
         graf: box ? box.querySelectorAll("canvas").length : 0,
-        nadpisDetailu: box?.querySelector(".fc7d-head")?.textContent?.trim() || "",
-        nadpisProuzku: document.getElementById("fc24-day")?.textContent?.trim(),
+        nadpisDetailu: box?.querySelector(".fc7d-title")?.textContent?.trim() || "",
         oteviraJeden: document.querySelectorAll(".fc7-day.fc7-open").length,
         aria: cil.getAttribute("aria-expanded"),
       };
@@ -1190,10 +1255,54 @@ async function main() {
     assertTrue(/\d/.test(po.nadpisDetailu), `detail je pojmenovaný (${po.nadpisDetailu})`);
     assertTrue(po.oteviraJeden === 1, `rozbalený je právě jeden den (${po.oteviraJeden})`);
     assertTrue(po.aria === "true", "rozbalený řádek to hlásí přes aria-expanded");
-    // Horní proužek se nesmí hnout — jinak jsme zpátky u problému, kdy se
-    // efekt kliknutí děje mimo obrazovku.
-    assertTrue(po.nadpisProuzku === "Dnes",
-      `horní proužek zůstal na dnešku (${po.nadpisProuzku})`);
+
+    // Záložky grafu musí graf opravdu překreslit — jinak by z meteogramu
+    // zbyly jen ozdobné knoflíky.
+    const zalozka = await page.evaluate(async () => {
+      const btn = document.querySelector('#fc7d-tabs .mtab[data-mode="wind"]');
+      btn.click();
+      await new Promise(r => setTimeout(r, 400));
+      const { openDayDetail } = await import("./js/forecast.js");
+      return {
+        aktivni: document.querySelector("#fc7d-tabs .mtab.active")?.dataset.mode,
+        graf: document.querySelectorAll("#fc7-detail canvas").length,
+        denZustal: openDayDetail(),
+      };
+    });
+    assertTrue(zalozka.aktivni === "wind" && zalozka.graf === 1,
+      `přepnutí záložky grafu funguje (${zalozka.aktivni}, pláten ${zalozka.graf})`);
+    assertTrue(zalozka.denZustal === po.cilDatum,
+      `přepnutí záložky nezavře den (${zalozka.denZustal})`);
+
+    // Ensemble se dřív stahoval DVAKRÁT: jednou pro vějíř v týdnu (7 dní)
+    // a podruhé při kliknutí na záložku meteogramu (2 dny). Stejná data,
+    // kratší horizont, druhá cesta po drátě. Teď je to jedno stažení, takže
+    // vějíř musí jít vykreslit i pro den, na který dřív nedosáhl.
+    const ens = await page.evaluate(async () => {
+      document.querySelector('#fc7d-tabs .mtab[data-mode="ensemble"]').click();
+      await new Promise(r => setTimeout(r, 500));
+      return {
+        graf: document.querySelectorAll("#fc7-detail canvas").length,
+        ceka: !!document.getElementById("fc7d-note"),
+      };
+    });
+    assertTrue(ens.graf === 1 && !ens.ceka,
+      `vějíř ensemble se vykreslí bez druhého stažení (pláten ${ens.graf}, čeká=${ens.ceka})`);
+
+    // Segment "Dnes" musí dnešek doopravdy ukázat. Po zrušení proužku "Dnes"
+    // je jeho jediné bydliště rozbalený detail dneška — kdyby zůstal
+    // rozbalený pátek, odskočila by navigace na cizí den.
+    const naDnes = await page.evaluate(async () => {
+      document.querySelector('#secnav button[data-sec="today"]').click();
+      await new Promise(r => setTimeout(r, 500));
+      const otevreny = document.querySelector("#fc7-grid .fc7-day.fc7-open");
+      return {
+        den: otevreny?.dataset.date || "",
+        dnes: new Date().toLocaleString("sv-SE").slice(0, 10),
+      };
+    });
+    assertTrue(naDnes.den === naDnes.dnes,
+      `segment Dnes rozbalí dnešek (${naDnes.den} vs ${naDnes.dnes})`);
 
     // Druhé klepnutí zavírá, klepnutí na jiný den přepíná (harmonika).
     const prepnuti = await page.evaluate(async () => {
