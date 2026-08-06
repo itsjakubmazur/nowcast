@@ -922,15 +922,78 @@ button.glass-btn svg { width: 17px; height: 17px; display: block; }
   min-width: 0;
 }
 .fc7-day:last-child { border-bottom: 0; }
-/* Řádek týdne je tlačítko — přepíná proužek hodin i meteogram na ten den.
-   Dřív to byl jen text: na čtvrteční odpoledne se nedalo dostat vůbec. */
+/* ══ ROZKLIK DNE V TÝDNU ══════════════════════════════════════════════════
+   Detail se rozbaluje PŘÍMO POD ŘÁDKEM, na který jsi klepnul.
+
+   První verze přepínala horní proužek hodin a meteogram. Vypadalo to čistě,
+   ale při skutečném použití se ukázalo, proč to nefunguje: týden je na konci
+   svitku, takže jsi klepnul dole a jediné, co se změnilo, bylo o dvě
+   obrazovky výš. Výsledek vlastního kliknutí nebyl vidět a muselo se rolovat
+   zpátky nahoru — u každého dne znovu.
+
+   Akce a její efekt patří na jedno místo. Horní proužek proto zůstává
+   natrvalo dnešek (nowcast napřed, bez klikání) a každý rozbalený den má
+   vlastní hodiny, fáze i graf.
+   ═══════════════════════════════════════════════════════════════════════ */
 .fc7-day { cursor: pointer; transition: background .15s; }
 .fc7-day:hover { background: color-mix(in srgb, var(--text) 6%, transparent); }
 .fc7-day:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-.fc7-day.fc7-sel {
+.fc7-day.fc7-open {
   background: color-mix(in srgb, var(--accent) 12%, transparent);
   box-shadow: inset 3px 0 0 var(--accent);
 }
+
+.fc7-detail {
+  margin: 0 0 .5rem; padding: .6rem .7rem .7rem;
+  border-radius: var(--r-card);
+  background: color-mix(in srgb, var(--accent) 7%, var(--glass2));
+  box-shadow: inset 0 0 0 1px var(--gring);
+  animation: fc7d-open .3s cubic-bezier(.32, .72, 0, 1);
+  overflow: hidden;
+}
+@keyframes fc7d-open {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: none; }
+}
+.fc7d-head {
+  font-size: var(--fs-micro); font-weight: 800; letter-spacing: .09em;
+  text-transform: uppercase; color: var(--muted); margin-bottom: .45rem;
+}
+
+/* Fáze dne — stejná gramatika jako v proužku "Dnes". */
+.fc7d-phases { display: flex; gap: 0; margin-bottom: .5rem; }
+.fc7d-phase {
+  flex: 1; min-width: 0; text-align: center; padding: .35rem .1rem;
+  border-radius: var(--r-mini);
+}
+.fc7d-phase:nth-child(even) { background: var(--rowline); }
+.fc7d-pname {
+  font-size: var(--fs-micro); font-weight: 700; color: var(--muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.fc7d-picon .wicon { width: 26px; height: 26px; }
+.fc7d-ptemp { font-size: var(--fs-sm); font-weight: 700; }
+.fc7d-pprec { font-size: var(--fs-micro); color: var(--blue); font-weight: 700; min-height: 1em; }
+
+/* Hodiny — vodorovná dráha, ať se vejde celý den bez zalomení. */
+.fc7d-hours {
+  display: flex; gap: 0; overflow-x: auto; scrollbar-width: none;
+  margin: 0 -.7rem .5rem; padding: 0 .7rem;
+  -webkit-overflow-scrolling: touch;
+}
+.fc7d-hours::-webkit-scrollbar { display: none; }
+.fc7d-hour {
+  flex: 0 0 auto; width: 34px; text-align: center;
+  display: flex; flex-direction: column; align-items: center; gap: .1rem;
+}
+.fc7d-hour:nth-child(even) { background: var(--rowline); border-radius: var(--r-mini); }
+.fc7d-ht { font-size: var(--fs-micro); color: var(--muted); font-variant-numeric: tabular-nums; }
+.fc7d-hi .wicon { width: 20px; height: 20px; }
+.fc7d-hv { font-size: var(--fs-micro); font-weight: 700; font-variant-numeric: tabular-nums; }
+.fc7d-hb { width: 60%; height: 16px; display: flex; align-items: flex-end; }
+.fc7d-hb i { width: 100%; background: var(--blue); border-radius: 2px; display: block; }
+
+.fc7d-chart { height: 130px; position: relative; }
 
 .fc7-today {
   background: color-mix(in srgb, var(--accent) 9%, transparent);

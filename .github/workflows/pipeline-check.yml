@@ -42,3 +42,6 @@ jobs:
 
       - name: Unit testy pipeline (carry_over — meze stáří přenášených dat)
         run: python tests/test_carry_over.py
+
+      - name: Unit testy pipeline (chmi_history — kompletní řady stanic)
+        run: python tests/test_chmi_history.py

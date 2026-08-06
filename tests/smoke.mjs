@@ -1141,77 +1141,79 @@ async function main() {
     await rm.close();
   }
 
-  // ── Výběr dne v týdnu ────────────────────────────────────────────────────
-  // Týdenní přehled ukazoval jen min/max, srážky a UV — na čtvrteční odpoledne
-  // se nedalo dostat vůbec. Řádky jsou teď tlačítka a řídí proužek hodin.
-  //
-  // Nejdůležitější kontrola je ta poslední: meteogram MUSÍ jít za výběrem taky.
-  // Kdyby zůstal na dnešku, měl bys vybraný čtvrtek a graf pod ním by kreslil
-  // něco jiného — horší nekonzistence než ta, kvůli které se rušil Průběh dne.
+  // ── Rozklik dne v týdnu ─────────────────────────────────────────────────
+  // První verze přepínala HORNÍ proužek hodin a meteogram. Vypadalo to čistě,
+  // ale při skutečném použití se ukázalo, proč to nefunguje: týden je na konci
+  // svitku, takže se klepne dole a jediné, co se změní, je o dvě obrazovky
+  // výš. Výsledek vlastního kliknutí nebyl vidět a muselo se rolovat zpátky.
+  // Detail se proto rozbaluje PŘÍMO POD ŘÁDKEM.
   {
-    const before = await page.evaluate(() => ({
-      nadpis: document.getElementById("fc24-day")?.textContent?.trim(),
-      vybrany: document.querySelector("#fc7-grid .fc7-sel")?.dataset.date || null,
+    const zaklad = await page.evaluate(() => ({
       radku: document.querySelectorAll("#fc7-grid .fc7-day").length,
       klikatelne: [...document.querySelectorAll("#fc7-grid .fc7-day")]
         .every(d => d.getAttribute("role") === "button" && d.dataset.date),
+      nadpisProuzku: document.getElementById("fc24-day")?.textContent?.trim(),
+      detailOtevren: !!document.getElementById("fc7-detail"),
     }));
-    assertTrue(before.radku >= 5, `týden má řádky (${before.radku})`);
+    assertTrue(zaklad.radku >= 5, `týden má řádky (${zaklad.radku})`);
+    assertTrue(zaklad.klikatelne, "každý den v týdnu je tlačítko s datem");
+    assertTrue(zaklad.nadpisProuzku === "Dnes",
+      `horní proužek zůstává dnešek (${zaklad.nadpisProuzku})`);
+    assertTrue(!zaklad.detailOtevren, "nativně není rozbalený žádný den");
 
-    // Sloučení dvou panelů do jednoho: proužek musí nést hodiny I fáze dne.
-    // Dřív to byly dva panely nad sebou počítané ze stejných hodin.
-    const slouceno = await page.evaluate(() => ({
-      hodin: document.querySelectorAll("#fc24-scroll .fc24-col:not(.fc24-block)").length,
-      fazi: document.querySelectorAll("#fc24-scroll .fc24-block").length,
-      nazvy: [...document.querySelectorAll("#fc24-scroll .fc24-block .fc24-time")]
-        .map(e => e.textContent.trim()).join(","),
-      starýPanel: !!document.getElementById("daytl-panel"),
-    }));
-    assertTrue(slouceno.hodin >= 3, `proužek má hodinové sloupce (${slouceno.hodin})`);
-    assertTrue(slouceno.fazi >= 1, `a rovnou i fáze dne (${slouceno.fazi})`);
-    assertTrue(/Ráno|Dopoledne|Odpoledne|Večer|Noc/.test(slouceno.nazvy),
-      `fáze mají jména, ne časová okna (${slouceno.nazvy})`);
-    assertTrue(!slouceno.starýPanel,
-      "samostatný panel Průběh dne je pryč — počítal totéž ze stejných dat");
-    assertTrue(before.klikatelne, "každý den v týdnu je tlačítko s datem");
-    assertTrue(before.nadpis === "Dnes", `nativně je vybraný dnešek (${before.nadpis})`);
-    assertTrue(before.vybrany, "vybraný den je v přehledu zvýrazněný");
-
-    const after = await page.evaluate(async () => {
+    const po = await page.evaluate(async () => {
       const rows = [...document.querySelectorAll("#fc7-grid .fc7-day")];
       const cil = rows.find(r => r.dataset.date !== rows[0].dataset.date);
-      const { selectedForecastDay } = await import("./js/forecast.js");
-      const meteoPred = document.querySelector("#meteo-chart")?.dataset.day
-        || window.__meteoDay || null;
       cil.click();
-      await new Promise(r => setTimeout(r, 400));
+      await new Promise(r => setTimeout(r, 500));
+      const box = document.getElementById("fc7-detail");
       return {
         cilDatum: cil.dataset.date,
-        nadpis: document.getElementById("fc24-day")?.textContent?.trim(),
-        vybrany: document.querySelector("#fc7-grid .fc7-sel")?.dataset.date || null,
-        vybranoJich: document.querySelectorAll("#fc7-grid .fc7-sel").length,
-        denAPI: selectedForecastDay(),
-        meteoPred,
-        meteoPo: window.__meteoDay || null,
-        sloupcu: document.querySelectorAll("#fc24-scroll .fc24-col").length,
+        jeTam: !!box,
+        // Klíčová vlastnost: detail musí být HNED POD tím řádkem, na který se
+        // klepnulo — ne někde jinde na stránce.
+        hnedPod: box ? cil.nextElementSibling === box : false,
+        fazi: box ? box.querySelectorAll(".fc7d-phase").length : 0,
+        hodin: box ? box.querySelectorAll(".fc7d-hour").length : 0,
+        graf: box ? box.querySelectorAll("canvas").length : 0,
+        nadpisDetailu: box?.querySelector(".fc7d-head")?.textContent?.trim() || "",
+        nadpisProuzku: document.getElementById("fc24-day")?.textContent?.trim(),
+        oteviraJeden: document.querySelectorAll(".fc7-day.fc7-open").length,
+        aria: cil.getAttribute("aria-expanded"),
       };
     });
-    assertTrue(after.nadpis !== "Dnes" && /\d/.test(after.nadpis || ""),
-      `nadpis proužku se přepnul na vybraný den (${after.nadpis})`);
-    assertTrue(after.vybrany === after.cilDatum && after.vybranoJich === 1,
-      `zvýrazněný je právě jeden den, ten vybraný (${after.vybrany})`);
-    assertTrue(after.denAPI === after.cilDatum,
-      `stav výběru sedí (${after.denAPI} vs ${after.cilDatum})`);
-    assertTrue(after.sloupcu > 3, `proužek se překreslil (${after.sloupcu} sloupců)`);
-    assertTrue(after.meteoPo === after.cilDatum,
-      `meteogram jde za vybraným dnem (${after.meteoPo} vs ${after.cilDatum})`);
+    assertTrue(po.jeTam && po.hnedPod,
+      "detail se rozbalí HNED POD řádkem, na který se klepnulo");
+    assertTrue(po.fazi >= 2, `detail nese fáze dne (${po.fazi})`);
+    assertTrue(po.hodin >= 12, `detail nese hodiny celého dne (${po.hodin})`);
+    assertTrue(po.graf === 1, `detail má vlastní graf (${po.graf})`);
+    assertTrue(/\d/.test(po.nadpisDetailu), `detail je pojmenovaný (${po.nadpisDetailu})`);
+    assertTrue(po.oteviraJeden === 1, `rozbalený je právě jeden den (${po.oteviraJeden})`);
+    assertTrue(po.aria === "true", "rozbalený řádek to hlásí přes aria-expanded");
+    // Horní proužek se nesmí hnout — jinak jsme zpátky u problému, kdy se
+    // efekt kliknutí děje mimo obrazovku.
+    assertTrue(po.nadpisProuzku === "Dnes",
+      `horní proužek zůstal na dnešku (${po.nadpisProuzku})`);
 
-    // Zpět na dnešek — jinak by zbytek testů běžel nad čtvrtkem.
-    await page.evaluate(async () => {
-      const { selectForecastDay } = await import("./js/forecast.js");
-      selectForecastDay(null);
+    // Druhé klepnutí zavírá, klepnutí na jiný den přepíná (harmonika).
+    const prepnuti = await page.evaluate(async () => {
+      const rows = [...document.querySelectorAll("#fc7-grid .fc7-day")];
+      const prvni = rows.find(r => r.classList.contains("fc7-open"));
+      const jiny = rows.find(r => !r.classList.contains("fc7-open") && r.dataset.date);
+      jiny.click();
+      await new Promise(r => setTimeout(r, 400));
+      const poPrepnuti = {
+        otevrenych: document.querySelectorAll(".fc7-day.fc7-open").length,
+        hnedPod: document.getElementById("fc7-detail")
+          ? jiny.nextElementSibling === document.getElementById("fc7-detail") : false,
+      };
+      jiny.click();   // druhé klepnutí na týž den = zavřít
       await new Promise(r => setTimeout(r, 300));
+      return { ...poPrepnuti, poZavreni: !!document.getElementById("fc7-detail"), void: !!prvni };
     });
+    assertTrue(prepnuti.otevrenych === 1 && prepnuti.hnedPod,
+      `klepnutí na jiný den detail přesune, neotevře druhý (${prepnuti.otevrenych})`);
+    assertTrue(!prepnuti.poZavreni, "druhé klepnutí na týž den detail zavře");
   }
 
   // ── Historie měsíce v detailu stanice ────────────────────────────────────
