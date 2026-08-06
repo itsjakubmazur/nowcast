@@ -1099,6 +1099,10 @@ async function main() {
         mesicu: sel ? sel.options.length : 0,
         vybrano: sel ? Number(sel.value) : null,
         rozsah: body.querySelector(".hist-range")?.textContent?.trim() || "",
+        velicin: document.getElementById("hist-key")?.options.length || 0,
+        velicinyText: [...(document.getElementById("hist-key")?.options || [])]
+          .map(o => o.textContent).join(" | "),
+        rekord: body.querySelector(".hist-rec")?.textContent?.replace(/\s+/g, " ").trim() || "",
         veta: body.querySelector(".hist-verdict")?.textContent?.replace(/\s+/g, " ").trim() || "",
         grafu: body.querySelectorAll("canvas").length,
       };
@@ -1110,7 +1114,14 @@ async function main() {
       `nativně je vybraný aktuální měsíc (${st.vybrano})`);
     assertTrue(/1961–2025 · 65 let/.test(st.rozsah),
       `ukazuje rozsah řady (${st.rozsah})`);
-    assertTrue(st.grafu >= 2, `vykreslily se grafy teploty i srážek (${st.grafu})`);
+    assertTrue(st.grafu >= 1, `vykreslil se graf (${st.grafu})`);
+    // Stanice měří až deset veličin — dřív se ukládaly a kreslily jen dvě.
+    assertTrue(st.velicin >= 6, `dají se vybrat všechny měřené veličiny (${st.velicin})`);
+    assertTrue(/Absolutní maximum/.test(st.velicinyText)
+      && /Sluneční svit/.test(st.velicinyText),
+      `v nabídce jsou i extrémy a svit, ne jen průměry (${st.velicinyText.slice(0, 70)})`);
+    assertTrue(/v roce \d{4}/.test(st.rekord),
+      `ukazuje rekord řady i s rokem ("${st.rekord.slice(0, 70)}")`);
     // Věta je to jediné, co z grafu udělá odpověď — musí říct o kolik a kam.
     assertTrue(/°C (nad|pod)/.test(st.veta) && /průměrem let/.test(st.veta),
       `věta říká odchylku od dlouhodobého průměru ("${st.veta.slice(0, 90)}")`);
@@ -1127,6 +1138,20 @@ async function main() {
     });
     assertTrue(jiny.pred && jiny.po && jiny.pred !== jiny.po,
       "přepnutí měsíce přepočítá řadu i větu");
+
+    const jinaVel = await page.evaluate(async () => {
+      const sel = document.getElementById("hist-key");
+      const pred = document.querySelector(".hist-verdict")?.textContent;
+      sel.value = "precip_SUM";
+      sel.dispatchEvent(new Event("change"));
+      await new Promise(r => setTimeout(r, 500));
+      return { pred, po: document.querySelector(".hist-verdict")?.textContent,
+               nadpis: document.querySelector(".chmi-chart-block h4")?.textContent || "" };
+    });
+    assertTrue(jinaVel.pred !== jinaVel.po && /mm/.test(jinaVel.po || ""),
+      `přepnutí veličiny přepočítá řadu i jednotku ("${(jinaVel.po || "").slice(0, 60)}")`);
+    assertTrue(/Úhrn srážek/.test(jinaVel.nadpis),
+      `nadpis grafu jde za vybranou veličinou (${jinaVel.nadpis})`);
 
     if (process.env.SHOT) {
       await page.evaluate(async () => {

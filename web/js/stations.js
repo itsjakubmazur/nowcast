@@ -478,6 +478,7 @@ function sdCard(key, label, icon, color, unit, fmtFn, series) {
 
 let _chmiSeriesCache = {}; // stationId → payload (lazy, per-station)
 let _histMonth = null;     // vybraný měsíc v záložce Historie (drží se mezi překresleními)
+let _histKey = null;       // vybraná veličina — stanice jich měří až deset
 let _chmiCharts = [];
 let _chmiActiveTab = "dnes";
 
@@ -751,69 +752,90 @@ function _renderTabHistorie(body, stationId) {
   body.innerHTML = `<div class="hist-loading">Načítám historii…</div>`;
 
   loadHistory(stationId).then(hist => {
-    if (!hist?.months?.length) {
+    const M = hist?.monthly;
+    if (!M?.periods?.length) {
       body.innerHTML = `<div class="hist-empty">Dlouhá historie pro tuhle stanici zatím není
         k dispozici. Stahuje se postupně, po několika stanicích na běh.</div>`;
       return;
     }
 
-    const now = new Date();
-    const sel = _histMonth ?? (now.getMonth() + 1);
-    const idxOf = m => hist.months.map((ym, i) => [ym, i])
-      .filter(([ym]) => Number(ym.slice(5, 7)) === m);
+    const klice = Object.keys(M.series);
+    // Výchozí veličina: průměrná teplota, jinak první, co stanice měří.
+    if (!_histKey || !klice.includes(_histKey)) {
+      _histKey = klice.includes("temp_avg_AVG") ? "temp_avg_AVG" : klice[0];
+    }
+    const sel = _histMonth ?? (new Date().getMonth() + 1);
+    const rada = M.series[_histKey];
 
-    const picked = idxOf(sel);
-    const years = picked.map(([ym]) => ym.slice(0, 4));
-    const pick = field => picked.map(([, i]) => hist[field]?.[i] ?? null);
-    const tAvg = pick("t_avg");
-    const prec = pick("precip");
+    // Vyber z osy jen zvolený měsíc — "srpen ve všech letech".
+    const vyber = M.periods
+      .map((ym, i) => [ym, i])
+      .filter(([ym]) => Number(ym.slice(5, 7)) === sel);
+    const roky = vyber.map(([ym]) => ym.slice(0, 4));
+    const hodnoty = vyber.map(([, i]) => rada.v[i] ?? null);
 
-    const roky = years.length;
-    const od = years[0], doR = years[years.length - 1];
-
-    // Průměr celé řady jako referenční linka: bez něj graf ukazuje čáru,
-    // ale ne to podstatné — jestli je poslední hodnota nad, nebo pod.
-    const platne = tAvg.filter(v => v != null);
+    const platne = hodnoty.filter(v => v != null);
     const prumer = platne.length
       ? platne.reduce((a, b) => a + b, 0) / platne.length : null;
-    const posledni = [...tAvg].reverse().find(v => v != null);
+    const posledni = [...hodnoty].reverse().find(v => v != null);
     const odchylka = prumer != null && posledni != null ? posledni - prumer : null;
+    const od = roky[0], doR = roky[roky.length - 1];
+
+    // Rekord v rámci vybraného měsíce — u srpna "nejteplejší srpen".
+    let rekIdx = -1;
+    const jeMin = _histKey.endsWith("_MIN");
+    hodnoty.forEach((v, i) => {
+      if (v == null) return;
+      if (rekIdx < 0) { rekIdx = i; return; }
+      if (jeMin ? v < hodnoty[rekIdx] : v > hodnoty[rekIdx]) rekIdx = i;
+    });
 
     let head = `<div class="hist-head">
+      <label class="hist-pick"><span>Veličina</span>
+        <select id="hist-key">${klice.map(k =>
+          `<option value="${esc(k)}"${k === _histKey ? " selected" : ""}>${esc(M.series[k].label)}</option>`).join("")}</select>
+      </label>
       <label class="hist-pick"><span>Měsíc</span>
         <select id="hist-month">${MON_CS.map((n, i) =>
           `<option value="${i + 1}"${i + 1 === sel ? " selected" : ""}>${n}</option>`).join("")}</select>
       </label>
-      <span class="hist-range">${esc(od)}–${esc(doR)} · ${roky} let</span>
+      <span class="hist-range">${esc(od)}–${esc(doR)} · ${roky.length} let</span>
     </div>`;
 
     if (odchylka != null) {
-      const tepl = odchylka > 0;
-      head += `<div class="hist-verdict ${tepl ? "warm" : "cold"}">
-        Poslední ${esc(MON_CS[sel - 1])} byl <b>${num(Math.abs(odchylka))} °C
-        ${tepl ? "nad" : "pod"}</b> průměrem let ${esc(od)}–${esc(doR)}
-        (${num(prumer)} °C).</div>`;
+      const nad = odchylka > 0;
+      head += `<div class="hist-verdict ${nad ? "warm" : "cold"}">
+        Poslední ${esc(MON_CS[sel - 1])}: <b>${num(posledni)} ${esc(rada.unit)}</b> —
+        ${num(Math.abs(odchylka))} ${esc(rada.unit)} ${nad ? "nad" : "pod"} průměrem
+        let ${esc(od)}–${esc(doR)} (${num(prumer)} ${esc(rada.unit)}).</div>`;
+    }
+    if (rekIdx >= 0) {
+      head += `<div class="hist-rec">${jeMin ? "Nejnižší" : "Nejvyšší"} hodnota za celou řadu:
+        <b>${num(hodnoty[rekIdx])} ${esc(rada.unit)}</b> v roce ${esc(roky[rekIdx])}.</div>`;
     }
 
     body.innerHTML = head
-      + `<div class="chmi-chart-block"><h4>Průměrná teplota v ${esc(MON_CS[sel - 1])}u (°C)</h4>
+      + `<div class="chmi-chart-block"><h4>${esc(rada.label)} —
+           ${esc(MON_CS[sel - 1])} ${esc(od)}–${esc(doR)}</h4>
            <div class="chmi-chart-block-inner"><canvas id="hist-t"></canvas></div></div>`
-      + (prec.some(v => v != null)
-        ? `<div class="chmi-chart-block"><h4>Úhrn srážek v ${esc(MON_CS[sel - 1])}u (mm)</h4>
-             <div class="chmi-chart-block-inner"><canvas id="hist-p"></canvas></div></div>` : "")
-      + `<div class="ct-note">Měsíční data ČHMÚ za celé období měření stanice.
-           Ročním průměrem a 30letým normálem se zabývají vedlejší záložky.</div>`;
+      + `<div class="ct-note">Kompletní data ČHMÚ za celé období měření stanice:
+           ${klice.length} veličin, ${M.periods.length} měsíců.
+           Ročním souhrnem a 30letým normálem se zabývají vedlejší záložky.</div>`;
 
+    const prekresli = () => _renderTabHistorie(body, stationId);
     body.querySelector("#hist-month")?.addEventListener("change", e => {
-      _histMonth = Number(e.target.value);
-      _renderTabHistorie(body, stationId);
+      _histMonth = Number(e.target.value); prekresli();
+    });
+    body.querySelector("#hist-key")?.addEventListener("change", e => {
+      _histKey = e.target.value; prekresli();
     });
 
-    _makeChart(body.querySelector("#hist-t"), "line", years, tAvg, "#f59e0b", true, "°C",
+    const barva = _histKey.startsWith("precip") || _histKey.startsWith("snow")
+      ? "#06b6d4" : _histKey.startsWith("gust") ? "#a78bfa" : "#f59e0b";
+    const typ = _histKey.endsWith("_SUM") || _histKey.startsWith("snow") ? "bar" : "line";
+    _makeChart(body.querySelector("#hist-t"), typ, roky, hodnoty, barva,
+               typ === "line", rada.unit,
                prumer != null ? { refLine: prumer, refLabel: "průměr" } : null);
-    if (prec.some(v => v != null)) {
-      _makeChart(body.querySelector("#hist-p"), "bar", years, prec, "#06b6d4", false, "mm");
-    }
   });
 }
 

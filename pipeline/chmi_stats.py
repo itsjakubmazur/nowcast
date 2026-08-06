@@ -164,53 +164,95 @@ def compute_monthly_normals(rows):
     return normals
 
 
-def monthly_series(rows):
-    """
-    Měsíční řada za celé období měření — "jak vypadal srpen v roce 1961".
+# Lidský název pro každou dvojici (prvek, charakteristika). Klíč ve výstupu
+# je "<prvek>_<char>" — díky tomu se do jednoho souboru vejde TMA/AVG
+# (průměrné denní maximum v měsíci) i TMA/MAX (absolutní maximum měsíce),
+# což jsou dvě různé veličiny, které se dřív mísily do jedné.
+SERIES_LABELS = {
+    "temp_avg_AVG":   "Průměrná teplota",
+    "temp_max_AVG":   "Průměrné denní maximum",
+    "temp_max_MAX":   "Absolutní maximum",
+    "temp_min_AVG":   "Průměrné denní minimum",
+    "temp_min_MIN":   "Absolutní minimum",
+    "precip_SUM":     "Úhrn srážek",
+    "precip_MAX":     "Nejvyšší denní úhrn",
+    "sunshine_h_SUM": "Sluneční svit",
+    "snow_cm_MAX":    "Maximální sněhová pokrývka",
+    "gust_kmh_MAX":   "Nejvyšší náraz větru",
+}
 
-    Tohle je ta část historie, která tu chyběla. Modul si stahoval kompletní
-    měsíční soubory (mly-*.json od začátku měření), spočítal z nich rekordy
-    a 30leté normály — a SAMOTNOU ŘADU zahodil. Přitom právě ta ukazuje vývoj:
-    normál řekne, jaký je srpen průměrně, ale ne že posledních deset srpnů
-    bylo nad ním.
+SERIES_UNITS = {
+    "temp": "°C", "precip": "mm", "sunshine_h": "h", "snow_cm": "cm",
+    "gust_kmh": "km/h",
+}
 
-    Ukládá se jako paralelní pole, ne pole objektů: pro stanici se 60 lety
-    měření je to 720 měsíců a zápis {"m":"1961-01","t_avg":-2.1,...} by na
-    každý údaj opakoval jméno klíče. Takhle je soubor zhruba třetinový.
+
+def series_unit(key):
+    for prefix, unit in SERIES_UNITS.items():
+        if key.startswith(prefix):
+            return unit
+    return ""
+
+
+def build_series(rows, granularity):
     """
-    # Jen teploty a srážky. Svit a sníh se do dlouhé řady schválně neukládají:
-    # jejich extrémy jsou v records a měsíční průměry v monthly_normals, takže
-    # by šest polí místo čtyř znamenalo o polovinu větší soubor za data, která
-    # nic nekreslí. Přes 292 stanic je to rozdíl v jednotkách megabajtů na
-    # každý deploy — a ten se dělá co pět minut.
-    WANT = {("temp_avg", "AVG"): "t_avg", ("temp_max", "AVG"): "t_max",
-            ("temp_min", "AVG"): "t_min", ("precip", "SUM"): "precip"}
-    by_month = defaultdict(dict)
+    Řada za CELÉ období měření — všechno, co ČHMÚ pro stanici nabízí.
+
+    Dřív to bylo dvakrát ořezané: jen čtyři veličiny (teploty + srážky)
+    a jen posledních 80 let. Obojí pryč — ukládá se každá dvojice
+    (prvek, charakteristika), která se v datech objeví, za celou dobu měření.
+    U nejstarších stanic to znamená řadu od 19. století.
+
+    Ukládá se jako paralelní pole se společnou osou období: zápis
+    {"1961-01": {...}} by u tisíce období opakoval jména klíčů tisíckrát.
+    Osa je jedna, každá veličina jedno pole stejné délky — a ta délka je
+    invariant, který hlídá test: kdyby se rozešla, graf by přiřadil hodnoty
+    k jiným rokům, což je horší než je neukázat.
+
+    granularity: "month" (osa YYYY-MM) nebo "year" (osa YYYY)
+    """
+    width = 7 if granularity == "month" else 4
+    by_period = defaultdict(dict)
     for k, c, dt, v in rows:
-        # Jen měsíční záznamy (YYYY-MM); denní řádky aktuálního měsíce sem
-        # nepatří, ty by řadu rozsypaly na dny.
-        if len(dt) < 7 or not dt[:4].isdigit():
+        if len(dt) < width or not dt[:4].isdigit():
             continue
-        ym = dt[:7]
-        out = WANT.get((k, c or ""))
-        if out is None and not c:
-            out = {"temp_avg": "t_avg", "precip": "precip"}.get(k)
-        if out:
-            by_month[ym][out] = round(v, 1)
+        # Jemnější záznam než požadovaná granularita se agreguje do období,
+        # kam patří — denní řádky aktuálního měsíce nesmí založit vlastní
+        # "měsíc" v ose. U extrémů bereme extrém, u zbytku poslední hodnotu.
+        period = dt[:width]
+        key = f"{k}_{c}" if c else k
+        cur = by_period[period].get(key)
+        val = round(v, 1)
+        if cur is None:
+            by_period[period][key] = val
+        elif c == "MAX":
+            by_period[period][key] = max(cur, val)
+        elif c == "MIN":
+            by_period[period][key] = min(cur, val)
+        elif c == "SUM" and len(dt) > width:
+            by_period[period][key] = round(cur + val, 1)
 
-    months = sorted(by_month)
-    if not months:
+    periods = sorted(by_period)
+    if not periods:
         return None
-    # Strop na 80 let. Nejstarší české řady sahají do 19. století, ale pro
-    # otázku "je tenhle měsíc nezvyklý?" nemá smysl tahat data, u kterých se
-    # měnila metodika i umístění stanice — a soubor by rostl bez užitku.
-    months = months[-MAX_MONTHS:]
-    series = {"months": months}
-    for field in ("t_avg", "t_max", "t_min", "precip"):
-        col = [by_month[m].get(field) for m in months]
-        if any(v is not None for v in col):
-            series[field] = col
-    return series
+
+    keys = sorted({k for p in periods for k in by_period[p]})
+    out = {"periods": periods, "series": {}}
+    for key in keys:
+        col = [by_period[p].get(key) for p in periods]
+        if not any(v is not None for v in col):
+            continue
+        out["series"][key] = {
+            "label": SERIES_LABELS.get(key, key),
+            "unit": series_unit(key),
+            "v": col,
+        }
+    return out if out["series"] else None
+
+
+def monthly_series(rows):
+    """Zpětně kompatibilní obal — měsíční osa."""
+    return build_series(rows, "month")
 
 
 def yearly_trend_from_yrs(rows):
@@ -240,9 +282,9 @@ def load_station_ids():
 
 
 CACHE_MAX_AGE_H = 6  # přegenerovat jen když je soubor starší (drží ho CI cache)
-PARSER_V = 3         # bump = zahodit uložené stanice (změna parsování hodnot)
+PARSER_V = 4         # bump = zahodit uložené stanice (změna parsování hodnot)
                      # v3: k rekordům přibyla dlouhá měsíční řada (chmi_history/)
-MAX_MONTHS = 80 * 12  # strop délky dlouhé řady — viz monthly_series()
+                     # v4: řada je KOMPLETNÍ — všechny veličiny, celé období
 
 
 def main():
@@ -323,18 +365,25 @@ def main():
             all_stats[wsi] = {"records": {}, "monthly_normals": {}, "yearly_trend": {}}
             continue
 
-        # Dlouhá měsíční řada jde do vlastního souboru — v hlavním by 292× 720
-        # měsíců udělalo soubor, který se stahuje při každém otevření detailu.
-        # Takhle se stáhne jen ta jedna stanice, kterou uživatel otevřel.
-        hist = monthly_series(merged)
-        if hist:
+        # Kompletní historie stanice do vlastního souboru — v hlavním by
+        # 292 stanic × stovky období udělalo soubor, který se stahuje při
+        # každém otevření detailu. Takhle se stáhne jen ta jedna stanice.
+        #
+        # Měsíční řada je z mly (celé období měření), roční z yrs. Denní data
+        # jsou v merged jen za aktuální měsíc — ČHMÚ historická denní data
+        # po stanicích nenabízí, jen měsíční a roční agregace.
+        hist_month = build_series(merged, "month")
+        hist_year = build_series(yrs_rows or merged, "year")
+        if hist_month or hist_year:
             hist_dir = DATA_DIR / "chmi_history"
             hist_dir.mkdir(parents=True, exist_ok=True)
-            (hist_dir / f"{wsi.replace('/', '_')}.json").write_text(json.dumps({
-                "generated_at_utc": now_utc.isoformat(),
-                "wsi": wsi,
-                **hist,
-            }, ensure_ascii=False, separators=(",", ":")))
+            doc = {"generated_at_utc": now_utc.isoformat(), "wsi": wsi}
+            if hist_month:
+                doc["monthly"] = hist_month
+            if hist_year:
+                doc["yearly"] = hist_year
+            (hist_dir / f"{wsi.replace('/', '_')}.json").write_text(
+                json.dumps(doc, ensure_ascii=False, separators=(",", ":")))
 
         all_stats[wsi] = {
             "records":         compute_records(merged),

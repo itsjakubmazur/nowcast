@@ -1738,6 +1738,11 @@ button.ctrl.active {
 }
 .hist-verdict.warm { background: color-mix(in srgb, var(--orange) 14%, var(--glass2)); }
 .hist-verdict.cold { background: color-mix(in srgb, var(--blue) 14%, var(--glass2)); }
+.hist-rec {
+  font-size: var(--fs-sm); color: var(--muted); line-height: 1.45;
+  margin: -.3rem 0 .6rem; padding: 0 .1rem;
+}
+.hist-rec b { color: var(--text); }
 .hist-loading, .hist-empty {
   color: var(--muted); font-size: var(--fs-sm); padding: 1rem; line-height: 1.5;
 }
