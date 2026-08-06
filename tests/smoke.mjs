@@ -577,6 +577,12 @@ async function main() {
     const before = await topOf("fc7");
     await page.click('#secnav button[data-sec="week"]');
     await page.waitForTimeout(700);
+    // Počkej, až doběhnou animace. Panely nabíhají přes transform, a ten se
+    // do getBoundingClientRect počítá — měření uprostřed náběhu je posunuté
+    // o celou dráhu animace (tady o 10 px, což stačilo na spadlý test).
+    await page.waitForFunction(
+      () => document.getAnimations().every(a => a.playState !== "running"),
+      null, { timeout: 4000 }).catch(() => {});
     const after = await topOf("fc7");
     assertTrue(Math.abs(after - before) > 20 && after >= -8 && after < 160,
       `klepnutí na sekci vytáhne její začátek nahoru (${Math.round(before)} → ${Math.round(after)} px od horní hrany)`);
@@ -685,7 +691,7 @@ async function main() {
   {
     const heads = await page.evaluate(() => {
       const sel = ".fc24-title, .fc7-title, .aq-title, .meteo-title, .astro-title,"
-        + " .mdl-title, .pp-title, .dtl-title, .vf-title";
+        + " .mdl-title, .pp-title, .vf-title";
       const out = [];
       for (const el of document.querySelectorAll(sel)) {
         if (el.offsetParent === null) continue;
@@ -1075,6 +1081,137 @@ async function main() {
       await page.waitForTimeout(200);
       await page.screenshot({ path: `${process.env.SHOT}/audit-desktop.png`, fullPage: true });
     }
+  }
+
+  // ── Pohyb: jen první objevení a akce uživatele ───────────────────────────
+  // Animace v meteo appce může snadno škodit víc, než pomůže. Data se obnovují
+  // co pět minut — kdyby se u každého obnovení něco hýbalo, stránka by trhala
+  // sama od sebe. A napočítávání čísel je u naměřených hodnot přímo špatně:
+  // než teplota "dojede" na 22, appka dvě vteřiny ukazuje hodnoty, které nikdo
+  // nenaměřil.
+  {
+    const m = await page.evaluate(async () => {
+      const mot = await import("./js/motion.js");
+      const pred = document.querySelectorAll(".rise-in").length;
+      // Druhé zavolání musí být no-op — přesně to je "jen první objevení".
+      const znovu = mot.riseIn();
+      return {
+        nabehlo: pred,
+        podruhe: znovu,
+        maRozestup: [...document.querySelectorAll(".rise-in")]
+          .some(el => el.style.getPropertyValue("--rise-i") !== "0"),
+        // Animace grafu taky jen poprvé.
+        grafPoprve: !!mot.chartAnim("test-klic"),
+        grafPodruhe: mot.chartAnim("test-klic"),
+      };
+    });
+    assertTrue(m.nabehlo > 3, `panely při prvním vykreslení nabíhají (${m.nabehlo})`);
+    assertTrue(m.podruhe === 0,
+      `obnovení dat už nic nerozhýbe (druhé volání přidalo ${m.podruhe} panelů)`);
+    assertTrue(m.maRozestup, "panely nabíhají po sobě, ne všechny naráz");
+    assertTrue(m.grafPoprve && m.grafPodruhe === false,
+      "graf se animuje jen při prvním vykreslení");
+
+    // Napočítávání čísel v appce být nesmí — hodnota se objeví hotová.
+    const hero = await page.evaluate(() => {
+      const el = document.querySelector(".fc-temp-big, .tile-v");
+      return el ? el.textContent.trim() : null;
+    });
+    assertTrue(hero && !/^0[°\s]*$/.test(hero),
+      `číslo se objeví hotové, ne odpočítané od nuly ("${hero}")`);
+
+    // A při zapnutém prefers-reduced-motion se nesmí hýbat nic.
+    const rm = await browser.newContext({ reducedMotion: "reduce", serviceWorkers: "block" });
+    const prm = await rm.newPage();
+    const bezPohybu = await prm.evaluate(async () => true).catch(() => true);
+    await prm.goto(`${base}/?lat=50.09&lon=14.40&q=TestObec`, { waitUntil: "load" });
+    await prm.waitForTimeout(1200);
+    const klid = await prm.evaluate(async () => {
+      const mot = await import("./js/motion.js");
+      return {
+        redukce: mot.reducedMotion(),
+        nabehlo: document.querySelectorAll(".rise-in").length,
+        graf: mot.chartAnim("cokoli"),
+      };
+    });
+    assertTrue(klid.redukce, "prefers-reduced-motion se rozpozná");
+    assertTrue(klid.nabehlo === 0 && klid.graf === false,
+      `při prefers-reduced-motion se nehýbe nic (${klid.nabehlo} panelů, graf ${klid.graf})`);
+    void bezPohybu;
+    await rm.close();
+  }
+
+  // ── Výběr dne v týdnu ────────────────────────────────────────────────────
+  // Týdenní přehled ukazoval jen min/max, srážky a UV — na čtvrteční odpoledne
+  // se nedalo dostat vůbec. Řádky jsou teď tlačítka a řídí proužek hodin.
+  //
+  // Nejdůležitější kontrola je ta poslední: meteogram MUSÍ jít za výběrem taky.
+  // Kdyby zůstal na dnešku, měl bys vybraný čtvrtek a graf pod ním by kreslil
+  // něco jiného — horší nekonzistence než ta, kvůli které se rušil Průběh dne.
+  {
+    const before = await page.evaluate(() => ({
+      nadpis: document.getElementById("fc24-day")?.textContent?.trim(),
+      vybrany: document.querySelector("#fc7-grid .fc7-sel")?.dataset.date || null,
+      radku: document.querySelectorAll("#fc7-grid .fc7-day").length,
+      klikatelne: [...document.querySelectorAll("#fc7-grid .fc7-day")]
+        .every(d => d.getAttribute("role") === "button" && d.dataset.date),
+    }));
+    assertTrue(before.radku >= 5, `týden má řádky (${before.radku})`);
+
+    // Sloučení dvou panelů do jednoho: proužek musí nést hodiny I fáze dne.
+    // Dřív to byly dva panely nad sebou počítané ze stejných hodin.
+    const slouceno = await page.evaluate(() => ({
+      hodin: document.querySelectorAll("#fc24-scroll .fc24-col:not(.fc24-block)").length,
+      fazi: document.querySelectorAll("#fc24-scroll .fc24-block").length,
+      nazvy: [...document.querySelectorAll("#fc24-scroll .fc24-block .fc24-time")]
+        .map(e => e.textContent.trim()).join(","),
+      starýPanel: !!document.getElementById("daytl-panel"),
+    }));
+    assertTrue(slouceno.hodin >= 3, `proužek má hodinové sloupce (${slouceno.hodin})`);
+    assertTrue(slouceno.fazi >= 1, `a rovnou i fáze dne (${slouceno.fazi})`);
+    assertTrue(/Ráno|Dopoledne|Odpoledne|Večer|Noc/.test(slouceno.nazvy),
+      `fáze mají jména, ne časová okna (${slouceno.nazvy})`);
+    assertTrue(!slouceno.starýPanel,
+      "samostatný panel Průběh dne je pryč — počítal totéž ze stejných dat");
+    assertTrue(before.klikatelne, "každý den v týdnu je tlačítko s datem");
+    assertTrue(before.nadpis === "Dnes", `nativně je vybraný dnešek (${before.nadpis})`);
+    assertTrue(before.vybrany, "vybraný den je v přehledu zvýrazněný");
+
+    const after = await page.evaluate(async () => {
+      const rows = [...document.querySelectorAll("#fc7-grid .fc7-day")];
+      const cil = rows.find(r => r.dataset.date !== rows[0].dataset.date);
+      const { selectedForecastDay } = await import("./js/forecast.js");
+      const meteoPred = document.querySelector("#meteo-chart")?.dataset.day
+        || window.__meteoDay || null;
+      cil.click();
+      await new Promise(r => setTimeout(r, 400));
+      return {
+        cilDatum: cil.dataset.date,
+        nadpis: document.getElementById("fc24-day")?.textContent?.trim(),
+        vybrany: document.querySelector("#fc7-grid .fc7-sel")?.dataset.date || null,
+        vybranoJich: document.querySelectorAll("#fc7-grid .fc7-sel").length,
+        denAPI: selectedForecastDay(),
+        meteoPred,
+        meteoPo: window.__meteoDay || null,
+        sloupcu: document.querySelectorAll("#fc24-scroll .fc24-col").length,
+      };
+    });
+    assertTrue(after.nadpis !== "Dnes" && /\d/.test(after.nadpis || ""),
+      `nadpis proužku se přepnul na vybraný den (${after.nadpis})`);
+    assertTrue(after.vybrany === after.cilDatum && after.vybranoJich === 1,
+      `zvýrazněný je právě jeden den, ten vybraný (${after.vybrany})`);
+    assertTrue(after.denAPI === after.cilDatum,
+      `stav výběru sedí (${after.denAPI} vs ${after.cilDatum})`);
+    assertTrue(after.sloupcu > 3, `proužek se překreslil (${after.sloupcu} sloupců)`);
+    assertTrue(after.meteoPo === after.cilDatum,
+      `meteogram jde za vybraným dnem (${after.meteoPo} vs ${after.cilDatum})`);
+
+    // Zpět na dnešek — jinak by zbytek testů běžel nad čtvrtkem.
+    await page.evaluate(async () => {
+      const { selectForecastDay } = await import("./js/forecast.js");
+      selectForecastDay(null);
+      await new Promise(r => setTimeout(r, 300));
+    });
   }
 
   // ── Historie měsíce v detailu stanice ────────────────────────────────────

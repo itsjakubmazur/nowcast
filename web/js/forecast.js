@@ -1,10 +1,19 @@
 import { state } from "./state.js";
 import { wcIconSvg, wcLabel, mostSevere, wImg } from "./icons.js";
+import { chartAnim, slideSwap, riseIn } from "./motion.js";
 import { uvClass, esc, num, revealSwap, nowLocStr, locDateStr } from "./utils.js";
 import { isDarkTheme } from "./theme.js";
 
 const N_HOURLY = 6;
-const BLOCK_H = 3;
+const CZ_DAY_FULL = ["neděle", "pondělí", "úterý", "středa", "čtvrtek", "pátek", "sobota"];
+
+/** "Čtvrtek 7. 8." — nadpis proužku, když je vybraný jiný den než dnešek. */
+function dayLabel(dateStr) {
+  const d = new Date(dateStr + "T12:00:00");
+  if (Number.isNaN(d.getTime())) return dateStr;
+  const n = CZ_DAY_FULL[d.getDay()];
+  return `${n[0].toUpperCase()}${n.slice(1)} ${d.getDate()}. ${d.getMonth() + 1}.`;
+}
 
 function _nn(v, def = 0) { return v != null ? v : def; }
 
@@ -30,9 +39,10 @@ export function parseFc24(data) {
   let si = times.findIndex(t => t >= nowLoc);
   if (si < 0) si = 0;
 
+  // Dřív se braly jen hodiny od teď do +24. Pro výběr dne v týdnu je potřeba
+  // celá odpověď — čtvrteční odpoledne v ní je, jen se zahazovalo.
   const hourly = [];
-  for (let k = 0; k < 24 && si + k < times.length; k++) {
-    const i = si + k;
+  for (let i = 0; i < times.length; i++) {
     const t = temp[i], f = feels[i];
     const feelsDiff = (t != null && f != null) ? Math.round(f) - Math.round(t) : null;
     hourly.push({
@@ -57,28 +67,71 @@ export function parseFc24(data) {
     });
   }
 
-  const first6 = hourly.slice(0, N_HOURLY);
-  const blocks = [];
-  let i = si + N_HOURLY;
-  const end = si + 24;
-  while (i < end && i < times.length) {
-    const ie = Math.min(i + BLOCK_H, end, times.length);
-    const sl = arr => arr.slice(i, ie).filter(v => v != null);
-    const tsl = sl(temp), psl = sl(prec), prbsl = sl(prob), gsl = sl(gust);
-    const tFrom = times[i].slice(11, 16);
-    const tTo = times[Math.min(ie, times.length - 1)].slice(11, 16);
-    blocks.push({
-      t: `${tFrom}–${tTo}`,
-      wc: mostSevere(wc.slice(i, ie)),
-      tmin: tsl.length ? Math.round(Math.min(...tsl)) : null,
-      tmax: tsl.length ? Math.round(Math.max(...tsl)) : null,
-      precip: psl.length ? Math.round(psl.reduce((a, b) => a + b, 0) * 10) / 10 : 0,
-      prob: prbsl.length ? Math.max(...prbsl) : 0,
-      gust: gsl.length ? Math.round(Math.max(...gsl)) : 0,
-    });
-    i += BLOCK_H;
+  const nowIso = times[si] || (hourly[0]?.iso ?? "");
+  return { all: hourly, nowIso, ...viewFields(hourly, nowIso, null) };
+}
+
+// ── Fáze dne ────────────────────────────────────────────────────────────────
+// Tohle nahradilo tříhodinové bloky. Byly to DVA panely nad sebou počítané
+// ze stejných dat: fc24 řezal zbytek dne na okna po třech hodinách
+// ("14:00–17:00") a Průběh dne tytéž hodiny na pojmenované fáze
+// ("Odpoledne"). Stejná agregace, stejná pole, jen jiný štítek — a člověk
+// čte "odpoledne" líp než "13:00–16:00", takže zůstaly fáze.
+const DAY_PHASES = [
+  [0, 6, "Noc"], [6, 10, "Ráno"], [10, 13, "Dopoledne"],
+  [13, 17, "Odpoledne"], [17, 21, "Večer"], [21, 24, "Noc"],
+];
+
+export function dayPhases(hours) {
+  const segs = [];
+  for (const h of hours) {
+    const hr = +h.t.slice(0, 2);
+    const phase = DAY_PHASES.find(([a, b]) => hr >= a && hr < b);
+    if (!phase) continue;
+    const last = segs[segs.length - 1];
+    if (last && last.name === phase[2] && last.hours.length < 12) last.hours.push(h);
+    else segs.push({ name: phase[2], hours: [h] });
   }
-  return { hourly: first6, hourlyFull: hourly, blocks };
+  // Fáze o jediné hodině není fáze, je to zbytek předchozí — a v pruhu by
+  // vypadala jako plnohodnotný úsek dne.
+  return segs.filter(s => s.hours.length >= 2).map(s => {
+    const temps = s.hours.map(h => h.tempRaw).filter(v => v != null);
+    const precs = s.hours.map(h => h.precip || 0);
+    return {
+      name: s.name,
+      from: s.hours[0].t,
+      to: s.hours[s.hours.length - 1].t,
+      wc: mostSevere(s.hours.map(h => h.wc).filter(v => v != null)),
+      hr: +s.hours[Math.floor(s.hours.length / 2)].t.slice(0, 2),
+      tmin: temps.length ? Math.round(Math.min(...temps)) : null,
+      tmax: temps.length ? Math.round(Math.max(...temps)) : null,
+      precip: Math.round(precs.reduce((a, b) => a + b, 0) * 10) / 10,
+      prob: Math.max(0, ...s.hours.map(h => h.prob || 0)),
+    };
+  });
+}
+
+// Hodiny + fáze pro JEDEN den. Pro dnešek se počítá od aktuální hodiny,
+// pro ostatní dny od půlnoci — jinak by u čtvrtka chybělo ráno.
+function viewFields(all, nowIso, dateStr) {
+  const today = nowIso.slice(0, 10);
+  const isToday = !dateStr || dateStr === today;
+  const hrs = isToday
+    ? all.filter(h => h.iso >= nowIso).slice(0, 24)
+    : all.filter(h => h.iso.slice(0, 10) === dateStr);
+  return {
+    day: dateStr || today,
+    isToday,
+    hourly: hrs.slice(0, N_HOURLY),
+    hourlyFull: hrs,
+    phases: dayPhases(hrs.slice(N_HOURLY)),
+  };
+}
+
+/** Pohled na jeden den — stejný tvar jako parseFc24, jiný výřez. */
+export function forecastView(fc, dateStr) {
+  if (!fc?.all?.length) return fc;
+  return { ...fc, ...viewFields(fc.all, fc.nowIso, dateStr) };
 }
 
 export function parseMinutely15(data) {
@@ -232,10 +285,57 @@ function degCompass(deg) {
   return dirs[Math.round(deg / 22.5) % 16];
 }
 
+// ── Vybraný den ─────────────────────────────────────────────────────────────
+// Týdenní přehled ukazoval jen min/max, srážky a UV — na čtvrteční odpoledne
+// se nedalo dostat vůbec. Řádky dnů jsou teď vybíratelné a řídí proužek
+// hodin i meteogram pod ním.
+//
+// Meteogram MUSÍ jít za výběrem taky. Kdyby zůstal na dnešku, měl bys vybraný
+// čtvrtek a graf pod ním by kreslil něco jiného — a to je horší nekonzistence
+// než ta, kvůli které se rušil Průběh dne.
+let _fc = null;          // poslední rozparsovaná předpověď (má .all)
+let _fcDaily = null;
+let _fcLabel = "";
+let _selDay = null;      // YYYY-MM-DD, nebo null = dnešek od aktuální hodiny
+
+export function selectForecastDay(dateStr) {
+  if (!_fc) return;
+  const today = _fc.nowIso.slice(0, 10);
+  const prev = _selDay || today;
+  _selDay = (!dateStr || dateStr === today) ? null : dateStr;
+  const den = _selDay || today;
+  const view = forecastView(_fc, _selDay);
+  // Posun ve směru, kterým jsi v týdnu skočil — bez pohybu není poznat, že se
+  // něco stalo, sloupce se jen přepíšou jinými čísly.
+  slideSwap(document.getElementById("fc24-scroll"), den >= prev ? 1 : -1,
+            () => renderFc24(view, _fcLabel));
+  renderMeteogram(view, _fcDaily);
+  markSelectedDay(den);
+}
+
+export function selectedForecastDay() {
+  return _selDay || _fc?.nowIso.slice(0, 10) || null;
+}
+
+function markSelectedDay(dateStr) {
+  document.querySelectorAll("#fc7-grid .fc7-day").forEach(el => {
+    const on = el.dataset.date === dateStr;
+    el.classList.toggle("fc7-sel", on);
+    el.setAttribute("aria-pressed", String(on));
+  });
+}
+
 export function renderFc24(fc, label) {
   const el = document.getElementById("fc24");
   const scroll = document.getElementById("fc24-scroll");
   document.getElementById("fc24-place").textContent = label || "—";
+  // Nadpis musí říct, který den je vidět — jinak se po kliknutí na čtvrtek
+  // nedá poznat, jestli se něco přepnulo.
+  const titleEl = document.getElementById("fc24-day");
+  if (titleEl) {
+    titleEl.textContent = fc.isToday === false ? dayLabel(fc.day) : "Dnes";
+  }
+  if (fc.all) { _fc = fc; _fcLabel = label || _fcLabel; }
   // Fade-out skeletonu → fade-in skutečného obsahu (viz revealSwap v utils.js,
   // tady je to natvrdo protože se staví přes appendChild, ne přes jeden innerHTML).
   scroll.classList.add("fade-swap");
@@ -269,23 +369,28 @@ export function renderFc24(fc, label) {
     scroll.appendChild(col);
   });
 
-  if (fc.hourly.length && fc.blocks.length) {
+  const phases = fc.phases || [];
+  if (fc.hourly.length && phases.length) {
     const sep = document.createElement("div");
     sep.className = "fc24-sep";
     scroll.appendChild(sep);
   }
 
-  for (const b of fc.blocks) {
+  // Zbytek dne po fázích. Dřív to byla samostatná karta "Průběh dne" se
+  // stejným výpočtem — viz dayPhases().
+  for (const b of phases) {
     const col = document.createElement("div");
     col.className = "fc24-col fc24-block";
-    const tRange = b.tmin != null ? `${b.tmin}–${b.tmax}°` : "—";
+    const tRange = b.tmin != null
+      ? (b.tmin === b.tmax ? `${b.tmax}°` : `${b.tmin}–${b.tmax}°`) : "—";
     const precStr = b.precip > 0
       ? `${b.prob} % ${num(b.precip)} mm`
       : b.prob >= 15 ? `${b.prob} %` : "";
     col.innerHTML = `
-      <div class="fc24-time">${esc(b.t)}</div>
-      <div class="fc24-icon">${wcIconSvg(b.wc, parseInt(b.t))}</div>
+      <div class="fc24-time">${esc(b.name)}</div>
+      <div class="fc24-icon">${wcIconSvg(b.wc, b.hr)}</div>
       <div class="fc24-range">${esc(tRange)}</div>
+      <div class="fc24-sub fc24-hours">${esc(b.from)}–${esc(b.to)}</div>
       <div class="fc24-sub fc24-prec">${esc(precStr)}</div>`;
     scroll.appendChild(col);
   }
@@ -356,7 +461,14 @@ export function renderFc7(data, label) {
     const uvStr = uv != null && uv >= 6 ? `<span class="${uvClass(uv)}">UV ${Math.round(uv)}</span>` : "";
 
     const day = document.createElement("div");
+    // Řádek je tlačítko: klepnutím přepneš proužek hodin i meteogram na ten
+    // den. Role a aria-pressed proto, že to nese <div> — bez nich by to pro
+    // odečítač obrazovky byl jen text.
     day.className = "fc7-day" + (isToday ? " fc7-today" : "");
+    day.dataset.date = dateStr;
+    day.setAttribute("role", "button");
+    day.setAttribute("tabindex", "0");
+    day.setAttribute("aria-pressed", String(isToday));
     day.innerHTML = `
       <div class="fc7-day-name">${esc(dayName)}</div>
       <div class="fc7-day-date">${esc(dayDate)}</div>
@@ -372,6 +484,19 @@ export function renderFc7(data, label) {
   // Škála se počítá až po vykreslení, protože potřebuje minimum a maximum
   // celého týdne, ne jednotlivého dne.
   paintRanges(grid, d);
+  markSelectedDay(_selDay || todayStr);
+
+  if (!grid.dataset.wired) {
+    grid.dataset.wired = "1";
+    const pick = t => {
+      const row = t.closest?.(".fc7-day");
+      if (row?.dataset.date) selectForecastDay(row.dataset.date);
+    };
+    grid.addEventListener("click", e => pick(e.target));
+    grid.addEventListener("keydown", e => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(e.target); }
+    });
+  }
 
   el.style.display = "block";
   void grid.offsetWidth;
@@ -484,6 +609,10 @@ export function renderMeteogram(fc, daily) {
   const hourly = fc.hourlyFull || fc.hourly;
   if (!hourly.length) { wrap.classList.remove("show"); return; }
   _meteoData = { fc, daily };
+  if (daily) _fcDaily = daily;
+  // Den, který graf právě kreslí — čte to test. Bez toho se nedá odlišit
+  // "meteogram se překreslil" od "meteogram zůstal na dnešku".
+  window.__meteoDay = fc.day || null;
   _meteoSpread = null;   // nové místo = staré pásmo modelů neplatí
   _meteoEnsemble = null; // ensemble se pro nové místo stáhne líně při kliku
   wireMeteoTabs();
@@ -748,7 +877,7 @@ function drawMeteoChart(withFade) {
     data: { labels, datasets: cfg.datasets },
     plugins: [nightPlugin],
     options: {
-      animation: false, responsive: true, maintainAspectRatio: false,
+      animation: chartAnim("meteo"), responsive: true, maintainAspectRatio: false,
       interaction: { mode: "index", intersect: false },
       plugins: {
         legend: { display: true, position: "top", labels: {

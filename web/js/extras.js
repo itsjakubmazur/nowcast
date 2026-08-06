@@ -427,60 +427,11 @@ export function renderWinter(fc, data) {
   panel.classList.add("show");
 }
 
-// ── Průběh dne — den jako příběh po fázích ──────────────────────────────────
-// Špičkové aplikace umí říct "ráno mlha, odpoledne slunečno, večer bouřky"
-// jedním pohledem. Segmentace příštích ~24 h do fází dne, každá s dominantní
-// ikonou (nejzávažnější weather_code), teplotami a srážkami.
-const DAY_PHASES = [
-  [0, 6, "Noc"], [6, 10, "Ráno"], [10, 13, "Dopoledne"],
-  [13, 17, "Odpoledne"], [17, 21, "Večer"], [21, 24, "Noc"],
-];
-
-export function renderDayTimeline(fc) {
-  const panel = document.getElementById("daytl-panel");
-  if (!panel) return;
-  const hours = fc?.hourlyFull || [];
-  if (hours.length < 6) { panel.classList.remove("show"); return; }
-
-  // Seskup hodiny do fází v pořadí, jak jdou za sebou (fáze se může přes
-  // půlnoc objevit podruhé — pak je to "Noc (zítra)" atd., max 5 segmentů)
-  const segs = [];
-  for (const h of hours.slice(0, 24)) {
-    const hr = +h.t.slice(0, 2);
-    const phase = DAY_PHASES.find(([a, b]) => hr >= a && hr < b);
-    if (!phase) continue;
-    const last = segs[segs.length - 1];
-    if (last && last.name === phase[2] && last.hours.length < 12) last.hours.push(h);
-    else segs.push({ name: phase[2], hours: [h] });
-  }
-  const shown = segs.filter(s => s.hours.length >= 2).slice(0, 5);
-  if (shown.length < 2) { panel.classList.remove("show"); return; }
-
-  const html = shown.map(s => {
-    const temps = s.hours.map(h => h.tempRaw).filter(v => v != null);
-    const precip = s.hours.reduce((a, h) => a + (h.precip || 0), 0);
-    const maxProb = Math.max(...s.hours.map(h => h.prob || 0));
-    const wc = mostSevere(s.hours.map(h => h.wc).filter(v => v != null));
-    const midHr = +s.hours[Math.floor(s.hours.length / 2)].t.slice(0, 2);
-    const tStr = temps.length
-      ? (Math.round(Math.min(...temps)) === Math.round(Math.max(...temps))
-        ? `${Math.round(temps[0])}°`
-        : `${Math.round(Math.min(...temps))}–${Math.round(Math.max(...temps))}°`)
-      : "—";
-    const precStr = precip >= 0.2 ? `<span class="dtl-prec">${num(precip)} mm</span>`
-      : maxProb >= 40 ? `<span class="dtl-prec">${maxProb} %</span>` : "";
-    return `<div class="dtl-seg">
-      <div class="dtl-name">${esc(s.name)}</div>
-      <div class="dtl-icon">${wcIconSvg(wc, midHr)}</div>
-      <div class="dtl-temp">${tStr}</div>
-      ${precStr}
-      <div class="dtl-range">${esc(s.hours[0].t.slice(0, 2))}–${esc(s.hours[s.hours.length - 1].t.slice(0, 2))} h</div>
-    </div>`;
-  }).join("");
-
-  panel.innerHTML = `<div class="dtl-title">Průběh dne</div><div class="dtl-strip">${html}</div>`;
-  panel.classList.add("show");
-}
+// Průběh dne TADY BYL a je pryč. Byl to druhý panel počítaný ze stejných
+// hodin jako druhá půlka proužku "24 hodin": ten řezal zbytek dne na okna po
+// třech hodinách ("14:00–17:00"), tenhle na pojmenované fáze ("Odpoledne").
+// Stejná agregace, stejná pole — jen jiný štítek. Zůstaly fáze, protože se
+// čtou líp, a bydlí v forecast.js (dayPhases) jako součást proužku.
 
 // ── Kontrola proti nejbližší meteostanici — hyperlokální bias modelu ────────
 // "U tebe je reálně o 2 °C chladněji, než říká model." Porovnání aktuální

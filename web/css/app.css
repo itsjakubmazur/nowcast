@@ -178,7 +178,7 @@ img.wicon { filter: var(--wicon-shadow); vertical-align: middle; }
 /* .layer-btn tady schválně NENÍ: sklo nese jeho kontejner #layer-selector,
    protože je to výběr jedné veličiny (rádio), ne sada nezávislých vypínačů.
    Volné skleněné pilulky jsou vyhrazené přepínačům vrstev v doku radaru. */
-/* #accum-legend, #daytl-panel a #more-toggle si sklo dřív skládaly samy:
+/* #accum-legend a #more-toggle si sklo dřív skládaly samy:
    blur(18px) místo 26 a `1px solid var(--glass-border)` — jenže --glass-border
    nikdy neexistovala (prstenec se jmenuje --gring). Neplatná var() bez
    fallbacku shodí celou deklaraci, takže ty panely neměly ani ohraničení,
@@ -186,7 +186,7 @@ img.wicon { filter: var(--wicon-shadow); vertical-align: middle; }
 #left-card, #right-panel, #radar-bar-inner, #storm-bar, #radar-legend,
 button.glass-btn, .search-wrap, #suggestions, .logo,
 #chmi-detail, #wu-detail-box, #notif-bar, button.ctrl, #alert-bar,
-#accum-legend, #daytl-panel, #more-toggle,
+#accum-legend, #more-toggle,
 #refresh-time {
   background: var(--glass);
   -webkit-backdrop-filter: blur(26px) saturate(1.7);
@@ -416,7 +416,7 @@ button.glass-btn svg { width: 17px; height: 17px; display: block; }
 .pp-head {
   display: flex; align-items: center; gap: .5rem; margin-bottom: .35rem;
 }
-/* .pp-title, .settings-log-title, .legend-title a .dtl-title dědí
+/* .pp-title, .settings-log-title a .legend-title dědí
    z hlavičkového bloku výš — vlastní kopie tady měly jen šanci se rozejít. */
 /* ══ SEGMENTOVANÝ PŘEPÍNAČ — jedna gramatika pro všechna "vyber jedno" ═════
    Appka jich má čtyři: sekce (Teď/Dnes/Týden/Data), veličina u stanic,
@@ -808,7 +808,7 @@ button.glass-btn svg { width: 17px; height: 17px; display: block; }
    ═══════════════════════════════════════════════════════════════════════ */
 .fc24-title, .fc7-title, .aq-title, .meteo-title, .astro-title,
 .mdl-title, .pp-title, .settings-log-title, #radar-legend .legend-title,
-#daytl-panel .dtl-title, #verif-panel .vf-title {
+#verif-panel .vf-title {
   font-size: var(--fs-tiny); font-weight: 700; color: var(--muted);
   text-transform: uppercase; letter-spacing: .07em;
   margin-bottom: .55rem; overflow: hidden;
@@ -922,6 +922,16 @@ button.glass-btn svg { width: 17px; height: 17px; display: block; }
   min-width: 0;
 }
 .fc7-day:last-child { border-bottom: 0; }
+/* Řádek týdne je tlačítko — přepíná proužek hodin i meteogram na ten den.
+   Dřív to byl jen text: na čtvrteční odpoledne se nedalo dostat vůbec. */
+.fc7-day { cursor: pointer; transition: background .15s; }
+.fc7-day:hover { background: color-mix(in srgb, var(--text) 6%, transparent); }
+.fc7-day:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.fc7-day.fc7-sel {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
 .fc7-today {
   background: color-mix(in srgb, var(--accent) 9%, transparent);
   box-shadow: none;
@@ -1756,28 +1766,8 @@ button.ctrl.active {
 .temp-label-marker.wt-label { font-size: var(--fs-tiny); opacity: .92; padding: 1px 4px; }
 
 /* ── Průběh dne — fáze dne jako pás ─────────────────────────────────────── */
-#daytl-panel {
-  display: none; border-radius: var(--r-card); padding: .7rem .9rem;
-}
-#daytl-panel.show { display: block; }
-#daytl-panel .dtl-title { margin-bottom: .45rem; }
-/* Úseky dne se kreslí jako sloupce v „24 hodin“, ne jako kartičky. Je to
-   totéž — čas napříč dnem — a dvě podoby téže věci hned pod sebou vypadaly
-   jako dva nesouvisející panely. Odlišení nese pruhování, ne rámeček. */
-#daytl-panel .dtl-strip { display: flex; gap: 0; }
-#daytl-panel .dtl-seg {
-  flex: 1; min-width: 0; text-align: center; padding: .4rem .15rem;
-  border-radius: var(--r-mini);
-}
-#daytl-panel .dtl-seg:nth-child(even) { background: var(--glass2); }
-#daytl-panel .dtl-name {
-  font-size: var(--fs-micro); font-weight: 700; color: var(--muted);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 .1rem;
-}
-#daytl-panel .dtl-icon .wicon { width: 30px; height: 30px; }
-#daytl-panel .dtl-temp { font-size: var(--fs-sm); font-weight: 700; }
-#daytl-panel .dtl-prec { display: block; font-size: var(--fs-tiny); color: var(--blue); font-weight: 700; }
-#daytl-panel .dtl-range { font-size: var(--fs-micro); color: var(--muted); margin-top: .1rem; }
+/* Panel "Průběh dne" je pryč — fáze dne kreslí proužek 24 hodin (dayPhases
+   ve forecast.js). Byly to dva panely nad sebou z týchž dat. */
 
 /* ── Zásah bouřkou — nápadný banner ─────────────────────────────────────── */
 #storm-impact { display: none; margin: 0 0 .5rem; padding: .6rem .8rem; border-radius: var(--r-card); }
@@ -2011,6 +2001,32 @@ body.embed .embed-hide {
 /* Bez lišty sekcí (půlka jejích cílů leží v skrytém pravém panelu) se karta
    vrací nahoru na místo, které lišta jinak zabírá. */
 body.embed #left-card { top: 100px; bottom: 1rem; }
+
+/* ══ POHYB ════════════════════════════════════════════════════════════════
+   Postupné nabíhání panelů při PRVNÍM objevení. Rozestup nese --rise-i,
+   které nastavuje motion.js; CSS jen říká, jak ten pohyb vypadá.
+
+   Vědomě chybí: napočítávání čísel (u naměřených hodnot by appka dvě vteřiny
+   ukazovala hodnoty, které nikdo nenaměřil) a pružné odskoky (tohle je meteo
+   appka, ne hra). A nic z toho neběží při obnovení dat — jen při prvním
+   objevení a při akci uživatele.
+   ═══════════════════════════════════════════════════════════════════════ */
+@keyframes rise-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: none; }
+}
+.rise-in {
+  animation: rise-in .42s cubic-bezier(.32, .72, 0, 1) backwards;
+  animation-delay: calc(var(--rise-i, 0) * 40ms);
+}
+
+/* Přechod při otevření detailu — prohlížeč bez View Transitions nedostane nic
+   a změna prostě nastane hned. */
+@media (prefers-reduced-motion: no-preference) {
+  ::view-transition-old(root), ::view-transition-new(root) {
+    animation-duration: .28s;
+  }
+}
 
 /* ── Redukce pohybu ─────────────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {

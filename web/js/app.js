@@ -30,7 +30,7 @@ import {
 import { initSearch, reverseGeocode } from "./search.js";
 import {
   renderMinutely, renderActivities, renderDeltaLine, renderAstro, renderWinter,
-  renderDayTimeline, renderStationCheck, renderRainMeasured, initPrecipTabs,
+  renderStationCheck, renderRainMeasured, initPrecipTabs,
 } from "./extras.js";
 import { renderClimateAnomaly, renderDayInHistory } from "./climate.js";
 import { renderChmiExtras } from "./chmidata.js";
@@ -48,6 +48,7 @@ import { initWorldTemps, renderWorldTemps } from "./worldtemp.js";
 import { esc, num } from "./utils.js";
 import { initUiIcons } from "./uiicons.js";
 import { initSections, markSectionAlerts } from "./sections.js";
+import { riseIn, resetChartAnim, withTransition } from "./motion.js";
 
 // ── Data fetch (graceful degradation — radar/grid kritické, zbytek volitelné) ─
 async function loadData() {
@@ -147,7 +148,6 @@ async function showFc24(lat, lon, label) {
       renderActivities(fc, data);
       renderDeltaLine(data);
       renderWinter(fc, data);
-      renderDayTimeline(fc);                  // den jako příběh po fázích
       renderStationCheck(fc);                 // bias modelu vs. nejbližší stanice
       // Vlastní try: všechny panely tu visí na JEDNOM try bloku, takže výjimka
       // v kterémkoli z nich sebere i všechny následující (což mi tenhle panel
@@ -158,6 +158,10 @@ async function showFc24(lat, lon, label) {
       // try, takže výjimka v jednom nesebere zbytek.
       renderChmiExtras(data?.daily?.temperature_2m_max?.[0]);
       renderVerifCard();                      // "Trefili jsme se?" po dnech
+      // Postupné nabíhání panelů — JEN při prvním objevení. Obnovení dat
+      // (co 5 minut) ani přepnutí místa nic nerozhýbe, jinak by stránka
+      // trhala sama od sebe.
+      requestAnimationFrame(() => riseIn());
       addModelSpread(lat, lon, fc);           // async — pásmo nejistoty do meteogramu
       addEnsembleFan(lat, lon, data);         // async — rozptyl ensemble do 7 dní
       renderModelsPanel(lat, lon, ctrl.signal); // async — 9 modelů + přesnost
@@ -182,7 +186,9 @@ async function showFc24(lat, lon, label) {
 
 function renderLocationVerdict(fc, lat, lon, label) {
   const h = fc.hourly;
-  const b = fc.blocks;
+  // fc.blocks (tříhodinová okna) nahradily pojmenované fáze dne — je to týž
+  // výpočet, jen se štítkem "Odpoledne" místo "13:00–16:00". Viz dayPhases().
+  const b = fc.phases || [];
   const sentences = [];
 
   const temps = h.map(x => x.temp).filter(v => v != null);
@@ -213,7 +219,9 @@ function renderLocationVerdict(fc, lat, lon, label) {
   const allTemps = b.flatMap(x => [x.tmin, x.tmax]).filter(v => v != null);
   if (allTemps.length) p2.push(`Denní teplotní rozsah ${Math.min(...allTemps)}–${Math.max(...allTemps)} °C.`);
   const rainBlocks = b.filter(x => x.precip > 0);
-  p2.push(rainBlocks.length ? `Srážky možné od ${rainBlocks[0].t.split("–")[0]}.` : "Do konce dne bez výraznějších srážek.");
+  p2.push(rainBlocks.length
+    ? `Srážky možné od ${rainBlocks[0].from} (${rainBlocks[0].name.toLowerCase()}).`
+    : "Do konce dne bez výraznějších srážek.");
 
   const templateText = esc(sentences.join(" ") + (p2.length ? "\n\n" + p2.join(" ") : "")).replace(/\n\n/g, "<br><br>");
 

@@ -2,6 +2,7 @@ import { state } from "./state.js";
 import { esc, num, ageMinutes, degToCompass, beaufortLabel } from "./utils.js";
 import { thinByZoom, capForBounds } from "./labelthin.js";
 import { uiIcon } from "./uiicons.js";
+import { withTransition, chartAnim } from "./motion.js";
 
 /**
  * Bublina stanice — JEDEN tvar pro všechny tři sítě.
@@ -902,7 +903,9 @@ export async function openChmiDetail(stationId) {
   const body = document.getElementById("chmi-detail-body");
   const s = state.CHMI?.stations?.find(x => x.id === stationId);
   document.getElementById("chmi-detail-name").textContent = s?.name || stationId;
-  panel.classList.add("open");
+  // Otevření panelu jako přechod, ne jako skok. Prohlížeč bez View Transitions
+  // dostane holé zavolání a panel se prostě objeví.
+  withTransition(() => panel.classList.add("open"));
 
   if (!_chmiSeriesCache[stationId]) {
     body.innerHTML = `<div style="color:var(--muted);font-size:var(--fs-body);padding:1rem">Načítám data…</div>`;

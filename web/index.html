@@ -276,11 +276,12 @@
 <!-- Pravý floating panel -->
 <div id="right-panel">
   <div class="fc24" id="fc24" data-sec="today">
-    <div class="fc24-title">24 hodin — <span id="fc24-place">—</span></div>
+    <!-- Nadpis nese vybraný den: proužek dřív ukazoval vždycky "24 hodin"
+         od teď, teď ho řídí výběr v týdenním přehledu. -->
+    <div class="fc24-title"><span id="fc24-day">Dnes</span> — <span id="fc24-place">—</span></div>
     <div class="fc24-scroll" id="fc24-scroll"></div>
   </div>
   <!-- Průběh dne — den jako příběh po fázích -->
-  <div id="daytl-panel"></div>
   <div class="meteo-block" id="meteo-block" data-sec="today">
     <div class="meteo-head">
       <div class="meteo-title">Meteogram</div>
