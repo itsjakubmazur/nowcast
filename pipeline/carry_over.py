@@ -66,7 +66,12 @@ CARRY = {
     # z Pages (load_wu_history), takže když tam nebyla, začal od nuly. Historie
     # vlastních stanic se tím pravidelně mazala a nikdy nenarostla.
     "wu_history.json": 24,
-    "chmi_series_index.json": 12,
+    # chmi_series_index.json tady SCHVÁLNĚ NENÍ. Byl a rozbilo to detail
+    # stanice: smyčka nad CARRY běží dřív než carry_tiles, stáhla index —
+    # a carry_series() se pak podle jeho existence rozhodl, že už je hotovo,
+    # takže per-stanicové soubory nepřenesl ani jeden. Web měl rejstřík
+    # tvrdící "292 stanic" a k němu 404 na každou z nich.
+    # Index i soubory proto vlastní JEDNA funkce.
     "wind_grid.json": 6,
     "chmi_fct.json": 6,
     "echotop.json": 6,
@@ -160,7 +165,10 @@ def carry_series():
     Tohle je historie: když zmizí, nezmizí obrázek, ale měsíce měření.
     """
     idx_path = DATA_DIR / "chmi_series_index.json"
-    if idx_path.exists():
+    d = DATA_DIR / "chmi_series"
+    # Rozhoduje přítomnost DAT, ne rejstříku. Rejstřík sám o sobě nestačí:
+    # appka podle něj nabídne stanice, ale detail každé z nich skončí 404.
+    if d.exists() and any(d.glob("*.json")):
         return 0
     try:
         r = SESSION.get(f"{PAGES}/chmi_series_index.json", timeout=TIMEOUT)
@@ -169,7 +177,6 @@ def carry_series():
         idx = r.json()
         ids = list((idx.get("stations") or {}).keys())
         idx_path.write_text(json.dumps(idx, ensure_ascii=False, separators=(",", ":")))
-        d = DATA_DIR / "chmi_series"
         d.mkdir(parents=True, exist_ok=True)
 
         def one(sid):

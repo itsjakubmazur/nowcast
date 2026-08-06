@@ -128,10 +128,45 @@ def probe_history():
         print(f"  {name}: HTTP 200, generováno {doc.get('generated_at_utc')},{detail}")
 
 
+def probe_series():
+    """
+    Detail stanice: rejstřík je k ničemu, když per-stanicové soubory chybí.
+
+    Přesně tohle se stalo — chmi_series_index.json byl v CARRY i podmínkou
+    carry_series(), takže se přenesl rejstřík a nula souborů. Web nabídl
+    292 stanic a každá skončila 404.
+    """
+    print("\n== DETAIL STANICE (per-stanicové řady) ==")
+    for adr, idx_path, klic in [
+        ("chmi_series", "chmi_series_index.json", "stations"),
+        ("chmi_history", "chmi_history/index.json", "stations"),
+    ]:
+        code, idx = get(idx_path)
+        if code != 200 or not isinstance(idx, dict):
+            print(f"  {idx_path}: HTTP {code}")
+            continue
+        st = idx.get(klic)
+        ids = list(st.keys()) if isinstance(st, dict) else list(st or [])
+        print(f"  {idx_path}: slibuje {len(ids)} stanic")
+        if not ids:
+            continue
+        vzorek = ids[:: max(1, len(ids) // 12)][:12]
+        with ThreadPoolExecutor(max_workers=6) as ex:
+            res = list(ex.map(lambda i: (i, get(f"{adr}/{i.replace('/', '_')}.json")[0]), vzorek))
+        ok = [r for r in res if r[1] == 200]
+        print(f"  {adr}/: vzorek {len(vzorek)}, z toho 200: {len(ok)}")
+        if len(ok) < len(vzorek):
+            chybi = [r for r in res if r[1] != 200][:5]
+            print(f"  CHYBĚJÍ: {chybi}")
+            print(f"  → rejstřík slibuje stanice, které na webu nejsou."
+                  f" Detail stanice skončí 404.")
+
+
 def main():
     probe_tiles()
     probe_stations()
     probe_history()
+    probe_series()
 
 
 if __name__ == "__main__":

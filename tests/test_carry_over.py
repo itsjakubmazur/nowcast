@@ -68,13 +68,31 @@ def main():
     wf = (ROOT / ".github/workflows/nowcast.yml").read_text()
     m = re.search(r"Restore station data.*?path: \|\n(.*?)\n\s+key:", wf, re.S)
     check("krok Restore station data se v workflow našel", m is not None)
+    src = (ROOT / "pipeline/carry_over.py").read_text()
     if m:
         cached = [l.strip()[len("data/"):] for l in m.group(1).split("\n") if l.strip()]
-        # Adresáře řeší carry_dir/carry_series, ne slovník CARRY.
+        # Adresáře a jejich rejstříky řeší carry_dir/carry_series, ne slovník
+        # CARRY. Stačí, že se o ně někdo stará — proto se hledá i ve zdroji.
         dirs = {"metar", "chmi_series", "chmi_history"}
-        chybi = [c for c in cached if c not in dirs and c not in co.CARRY]
-        check(f"každý cachovaný soubor má i carry ({', '.join(chybi) or 'ok'})",
+        chybi = [c for c in cached
+                 if c not in dirs and c not in co.CARRY and c not in src]
+        check(f"každý cachovaný soubor někdo přenáší ({', '.join(chybi) or 'ok'})",
               not chybi)
+
+    # ── Past, do které jsem spadl: dvojí vlastník ──────────────────────────
+    # chmi_series_index.json byl ZÁROVEŇ v CARRY a zároveň sloužil jako
+    # podmínka, podle které carry_series() poznával, že už je hotovo. Smyčka
+    # nad CARRY běží dřív, stáhla index — a carry_series pak nepřenesl ani
+    # jeden per-stanicový soubor. Web měl rejstřík tvrdící "292 stanic"
+    # a k tomu 404 na každou z nich, takže detail stanice nešel otevřít.
+    #
+    # Pravidlo: co je podmínkou nějaké carry funkce, nesmí být v CARRY.
+    gates = re.findall(r'DATA_DIR / "([a-z0-9_]+\.json)"', src)
+    kolize = [g for g in set(gates) if g in co.CARRY]
+    check(f"žádný soubor není v CARRY a zároveň podmínkou funkce ({', '.join(kolize) or 'ok'})",
+          not kolize)
+    check("carry_series se řídí přítomností DAT, ne rejstříku",
+          'any(d.glob("*.json"))' in src)
 
     # ── Rejstřík dlaždic je pole OBJEKTŮ, ne řetězců ───────────────────────
     # Na tomhle se carry_dir spálil: metar.py zapisuje {"tile": "9_18",
@@ -85,7 +103,6 @@ def main():
            for t in [{"tile": "9_18", "count": 42}, {"tile": "5_3", "count": 7}]]
     check("z rejstříku se vytáhnou ID dlaždic, ne str(dict)",
           ids == ["9_18", "5_3"])
-    src = (ROOT / "pipeline/carry_over.py").read_text()
     check("carry_dir počítá s objekty v rejstříku",
           't.get("tile") if isinstance(t, dict)' in src)
     check("carry_series přenáší i řady stanic (historie)",
