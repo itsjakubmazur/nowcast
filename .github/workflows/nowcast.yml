@@ -45,7 +45,7 @@ jobs:
     timeout-minutes: 20
     environment:
       name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      url: ${{ steps.deployment.outputs.page_url || steps.deployment_retry.outputs.page_url }}
     permissions:
       contents: write   # potřeba pro commit-back pipeline/state/ (verify.py historie)
       pages: write      # deploy na Pages jede v tomhle jobu, ne ve vlastním
@@ -376,10 +376,32 @@ jobs:
         with:
           path: web/
 
-      # Strop na deploy zvlášť: actions/deploy-pages čeká, až deployment
-      # doběhne, a sám to vzdá až po deseti minutách — to je víc, než kolik
-      # má trvat celý běh. Osm minut je konec čekání, ne cíl.
+      # Deploy se zkouší DVAKRÁT. Ne z opatrnosti — 6. 8. 2026 v 17:41 spadl
+      # po dvou vteřinách na tomhle:
+      #
+      #   Invalid actions OIDC token due to No keys from key endpoint match
+      #   the id token, validate around 1786038105  (HTTP 400)
+      #
+      # Token, kterým se deploy autentizuje, byl podepsaný klíčem, který
+      # ověřovací endpoint GitHubu neznal — rotace klíčů na jejich straně.
+      # Náš běh přitom celý prošel, takže o data se přišlo jen kvůli tomu
+      # poslednímu kroku a web zůstal viset na starých.
+      #
+      # Proti přechodné nekonzistenci pomáhá jediné: požádat o token znovu
+      # o chvíli později. Druhý pokus stojí pár vteřin a jede ve stejném
+      # jobu, takže nesháníme dalšího runnera.
+      #
+      # Strop 8 minut je proti opačnému případu: actions/deploy-pages čeká na
+      # dokončení deploymentu a sám to vzdá až po deseti, což je víc, než kolik
+      # má trvat celý běh.
       - name: Deploy to GitHub Pages
         id: deployment
+        timeout-minutes: 8
+        continue-on-error: true
+        uses: actions/deploy-pages@v4
+
+      - name: Deploy to GitHub Pages (druhý pokus)
+        id: deployment_retry
+        if: steps.deployment.outcome == 'failure'
         timeout-minutes: 8
         uses: actions/deploy-pages@v4
