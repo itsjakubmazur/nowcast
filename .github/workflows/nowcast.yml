@@ -25,9 +25,23 @@ on:
         type: choice
         options: [auto, full, fast]
 
-# Zabrání hromadění běhů — nový run zruší čekající, ne běžící
+# Zabrání hromadění běhů — nový run zruší čekající, ne běžící.
+#
+# Za jménem je pořadové číslo, a to je záměr, ne ozdoba. 6. 8. 2026 uvízl běh
+# 31123794617 ve stavu "waiting" (čekal na prostředí github-pages, viz
+# komentář u run-pipeline) a v tom stavu ho nešlo zrušit ani přes API
+# (500/502), ani přes web (timeout při načtení stránky běhu). Jenže dokud
+# visel, držel slot celé skupiny a nepustil za sebe NIC — od 15:35 UTC se
+# nepublikovalo.
+#
+# Změna jména skupiny je jediná páka, která je čistě v repu: nové běhy padnou
+# do jiné skupiny, takže je zaseknutý běh v té staré nebrzdí. Zůstane viset,
+# ale sám, a časem ho GitHub uklidí.
+#
+# Kdyby se to opakovalo, číslo se zvedne. Ne že by to bylo elegantní — je to
+# nouzový východ pro stav, ze kterého jiné dveře nevedou.
 concurrency:
-  group: nowcast-pipeline
+  group: nowcast-pipeline-2
   cancel-in-progress: false
 
 jobs:
