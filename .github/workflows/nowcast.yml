@@ -21,6 +21,10 @@ concurrency:
 jobs:
   run-pipeline:
     runs-on: ubuntu-latest
+    # Strop, aby zaseknutý běh neblokoval frontu. Zdravý full běh je po
+    # odlehčení ~5 minut, s pomalými crawlery na :00 a :30 ~10 — dvacet je
+    # rezerva, ne cíl.
+    timeout-minutes: 20
     permissions:
       contents: write   # potřeba pro commit-back pipeline/state/ (verify.py historie)
     steps:
@@ -30,16 +34,35 @@ jobs:
       # Rychlá dráha: fast režim přeskočí stanice/verify (ušetří ~1–2 min),
       # takže radar může jet každých 5 minut. Externí cron (cron-job.org) volá
       # workflow_dispatch s mode=auto co 5 min → minuty :x0–:x4 full, :x5–:x9 fast.
+      # Tři kadence, ne dvě. Fast/full samo nestačilo: full běh trval ~10 minut,
+      # ale spouští se po pěti, takže se běhy začaly hromadit — GitHub pak
+      # čekající rušil ("cancelled") a runner občas ani nenaskočil ("Set up job"
+      # failure po třech minutách). Skoro pět z těch deseti minut spolykaly TŘI
+      # crawlery s vlastním časovým rozpočtem (chmi_stats 150 s, hydro 120 s,
+      # chmi_normals 120 s), které svůj rozpočet vyčerpají do dna KAŽDÝ běh.
+      #
+      # Nic z toho se ale nemění po minutách: rekordy a normály po měsících,
+      # hlásné profily po desítkách minut. Jedou proto jen na :00 a :30 a mezi
+      # tím je carry_over.py doplní z posledního nasazení — přesně na to je.
       - name: Determine mode
         id: mode
         run: |
           MODE="${{ github.event.inputs.mode || 'auto' }}"
+          M=$((10#$(date -u +%M)))
           if [ "$MODE" = "auto" ]; then
-            M=$((10#$(date -u +%M)))
             if [ $((M % 10)) -lt 5 ]; then MODE=full; else MODE=fast; fi
           fi
+          # Ruční full běh smí pomalé crawlery taky — jinak by se po zásahu
+          # do jejich kódu nedaly vyzkoušet jinak než čekáním na půlhodinu.
+          if [ "$MODE" = "full" ] && { [ $((M % 30)) -lt 5 ] \
+             || [ "${{ github.event.inputs.mode }}" = "full" ]; }; then
+            SLOW=1
+          else
+            SLOW=0
+          fi
           echo "mode=$MODE" >> "$GITHUB_OUTPUT"
-          echo "Režim běhu: $MODE"
+          echo "slow=$SLOW" >> "$GITHUB_OUTPUT"
+          echo "Režim běhu: $MODE (pomalé crawlery: $SLOW)"
 
       # Ve fast režimu se stanice/accuracy negenerují — obnovíme je z cache
       # posledního full běhu, ať se z publikovaného webu neztratí.
@@ -179,8 +202,8 @@ jobs:
         continue-on-error: true
         run: python pipeline/metar.py || echo "metar.py selhalo, pokračuji"
 
-      - name: Run chmi_stats (rekordy/normály/trend — rozpočet 100 s, resume mezi běhy)
-        if: steps.mode.outputs.mode == 'full'
+      - name: Run chmi_stats (rekordy/normály/trend — rozpočet 150 s, resume; jen :00 a :30)
+        if: steps.mode.outputs.slow == '1'
         timeout-minutes: 4
         continue-on-error: true
         run: python pipeline/chmi_stats.py || echo "chmi_stats.py selhalo, pokračuji"
@@ -215,14 +238,14 @@ jobs:
         continue-on-error: true
         run: python pipeline/verify_precip.py || echo "verify_precip.py selhalo, pokračuji"
 
-      - name: Run chmi_normals (normály 1991-2020 — statická data, stáhne se jednou)
-        if: steps.mode.outputs.mode == 'full'
+      - name: Run chmi_normals (normály 1991-2020 — statická data; jen :00 a :30)
+        if: steps.mode.outputs.slow == '1'
         timeout-minutes: 4
         continue-on-error: true
         run: python pipeline/chmi_normals.py || echo "chmi_normals.py selhalo, pokračuji"
 
-      - name: Run hydro (hlásné profily — stavy a průtoky, rozpočet 90 s)
-        if: steps.mode.outputs.mode == 'full'
+      - name: Run hydro (hlásné profily — stavy a průtoky, rozpočet 120 s; jen :00 a :30)
+        if: steps.mode.outputs.slow == '1'
         timeout-minutes: 4
         continue-on-error: true
         run: python pipeline/hydro.py || echo "hydro.py selhalo, pokračuji"
@@ -328,6 +351,20 @@ jobs:
   deploy-pages:
     needs: run-pipeline
     runs-on: ubuntu-latest
+    # Deploye se stohovaly: actions/deploy-pages čeká, až Pages deployment
+    # doběhne, a po deseti minutách to vzdá — v logu je krok "Deploy to GitHub
+    # Pages" dlouhý přesně 10:06 a červený. Prostředí github-pages přitom pustí
+    # jen jeden deployment naráz, takže při běhu po pěti minutách stačí jedno
+    # zdržení a fronta se přenese do dalšího běhu.
+    #
+    # Vlastní skupina s cancel-in-progress to řeže na správném místě: čekající
+    # deploy ustoupí novějšímu. Zahodit ho nic nestojí — publikuje se celý
+    # adresář data/, takže novější deploy nese všechno, co nesl ten zrušený,
+    # a k tomu čerstvější radar.
+    concurrency:
+      group: pages
+      cancel-in-progress: true
+    timeout-minutes: 8
     permissions:
       pages: write
       id-token: write
