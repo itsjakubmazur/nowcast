@@ -149,6 +149,11 @@ function buildMultiModelFixture(om) {
     hourly[`temperature_2m_${id}`] = om.hourly.temperature_2m.map(t => t + (k - 2) * 0.7);
     hourly[`precipitation_${id}`] = om.hourly.precipitation.map(p => p * (1 + k * 0.1));
   });
+  // best_match je to, co appka ukazuje jako předpověď. V odpovědi má vlastní
+  // sadu klíčů a je SHODNÝ s jedním z modelů výš — tady s ecmwf_ifs025 (k=2,
+  // posun 0), aby šlo ověřit, že ho identifyBestMatch() pozná.
+  hourly.temperature_2m_best_match = [...hourly.temperature_2m_ecmwf_ifs025];
+  hourly.precipitation_best_match = [...hourly.precipitation_ecmwf_ifs025];
   return { hourly, timezone: "Europe/Prague" };
 }
 
@@ -2077,6 +2082,56 @@ async function main() {
   assertTrue(mdlScore.length === 1 && Math.abs(mdlScore[0] - 8) < 0.61,
     `verifikace zapsala chybu ICONu proti stanici (errs=${JSON.stringify(mdlScore)})`);
   assertTrue(errorsMod.length === 0, `žádné JS chyby v panelu modelů (${errorsMod[0] || 0})`);
+
+  // ── Konsenzus: rodiny místo hlav, srážky shodou místo průměru ────────────
+  // Vážený průměr předpokládá NEZÁVISLÉ názory. ICON-D2 a ICON jsou obě DWD
+  // nad stejným modelem, KNMI a DMI obě HARMONIE — bez dělení velikostí
+  // rodiny by dvojčata přehlasovala samotáře. A srážky se nesmí průměrovat
+  // vůbec: průměr z 0 mm a 10 mm dá 5 mm, scénář, který nenastane.
+  {
+    const kons = await pageMod.evaluate(async () => {
+      const m = await import("./js/models.js");
+      // Dva členové rodiny ICON tvrdí 30 °C, jeden ECMWF 20 °C, všichni
+      // stejně přesní. Prostý průměr by dal 26,7; po zohlednění rodin 25.
+      const sc = { mae: 1, bias: 0, n: 10, nShared: 0 };
+      const rodiny = m.blendTemperature(
+        { icon_d2: 30, icon_seamless: 30, ecmwf_ifs025: 20 },
+        { icon_d2: sc, icon_seamless: sc, ecmwf_ifs025: sc });
+      // Zobrazená předpověď je duplikát, ne jedenáctý názor.
+      const sDuplikatem = m.blendTemperature(
+        { icon_d2: 30, icon_seamless: 30, ecmwf_ifs025: 20, best_match: 20 },
+        { icon_d2: sc, icon_seamless: sc, ecmwf_ifs025: sc, best_match: sc });
+      const srazky = m.precipConsensus([
+        { id: "icon_d2", rain: 5 }, { id: "icon_seamless", rain: 6 },
+        { id: "ecmwf_ifs025", rain: 0 }, { id: "gfs_seamless", rain: 0 },
+        { id: "ukmo_seamless", rain: 0.1 },
+      ]);
+      return { rodiny, sDuplikatem, srazky };
+    });
+    assertTrue(kons.rodiny.value === 25 && kons.rodiny.rodin === 2,
+      `rodina modelů má dohromady jeden hlas (${kons.rodiny.value} °C, `
+      + `${kons.rodiny.rodin} rodin, prostý průměr by dal ${kons.rodiny.plain})`);
+    assertTrue(kons.sDuplikatem.value === kons.rodiny.value,
+      `zobrazená předpověď se do konsenzu nezapočítá dvakrát `
+      + `(${kons.sDuplikatem.value} vs ${kons.rodiny.value})`);
+    assertTrue(kons.srazky && kons.srazky.rodin === 4 && kons.srazky.mokrych === 1,
+      `srážky se nepočítají průměrem, ale shodou rodin `
+      + `(${kons.srazky?.mokrych}/${kons.srazky?.rodin})`);
+    assertTrue(kons.srazky.lo === 0 && kons.srazky.hi === 6,
+      `konsenzus srážek nese rozsah scénářů (${kons.srazky.lo}–${kons.srazky.hi} mm)`);
+
+    const karta = await pageMod.evaluate(() =>
+      document.getElementById("blend-card")?.textContent?.replace(/\s+/g, " ").trim() || "");
+    assertTrue(/Srážky dnes/.test(karta) && /nezávislých model/.test(karta),
+      `karta konsenzu mluví i o srážkách ("${karta.slice(0, 120)}")`);
+
+    // best_match je černá skříňka: Open-Meteo neřekne, kterou volbu udělal.
+    // Pozná se porovnáním řad — fixture ho dělá shodný s ECMWF.
+    const bm = await pageMod.evaluate(() =>
+      document.getElementById("models-panel")?.textContent || "");
+    assertTrue(/Zobrazená předpověď/.test(bm) && /ECMWF/.test(bm),
+      `panel řekne, čím zobrazená předpověď právě je (${/best_match/.test(bm)})`);
+  }
   await pageMod.close();
 
   // ── Světový režim — místo mimo pokrytí českého radaru (New York) ──────────
@@ -2287,6 +2342,47 @@ async function main() {
     }
     assertTrue(inlineHits.length === 0,
       `žádná velikost písma napevno v šablonách (${inlineHits.slice(0, 3).join("; ") || "0"})`);
+  }
+
+  // ── Bias korekce se DOTKNE zobrazeného čísla ─────────────────────────────
+  // Tohle je ta hlavní věc: appka dřív pečlivě měřila, o kolik model u tvojí
+  // stanice přestřeluje, a hlavní teplota si mezitím jela dál nedotčená —
+  // celý aparát stál VEDLE předpovědi, ne v ní. Test proto nekontroluje
+  // výpočet biasu (ten má vlastní testy), ale to, že se změní číslo v hero,
+  // že se stejně posune i týden a že se o tom napíše.
+  //
+  // Běží ÚPLNĚ NAKONEC a přes reload téže stránky: routy jsou navěšené na
+  // page, takže nová záložka by neměla fixtures, a po reloadu už jsou
+  // teploty všude posunuté.
+  {
+    const bezK = parseInt(await page.textContent("#fc-temp-big"), 10);
+    const tydenBez = parseInt(await page.textContent("#fc7-grid .fc7-day-tmax"), 10);
+
+    // Předsazené skóre: zobrazená předpověď (best_match) tady systematicky
+    // přestřeluje o 2 °C na osmi porovnáních — nad prahem MIN_BIAS_SAMPLES.
+    await page.evaluate(() => localStorage.setItem("nowcast_model_scores_v1", JSON.stringify({
+      "50.09,14.40": { t: Date.now(), snaps: [],
+        scores: { best_match: { errs: [2, 2, 2, 2, 2, 2, 2, 2] } } },
+    })));
+    await page.reload({ waitUntil: "load" });
+    await waitForAsync(page, () => window.__nowcastInitDone === true, 8000);
+    await page.waitForTimeout(600);
+
+    const sK = await page.evaluate(() => ({
+      hero: document.getElementById("fc-temp-big")?.textContent?.trim(),
+      poznamka: document.getElementById("fc-bias")?.textContent?.trim() || "",
+      videt: document.getElementById("fc-bias")?.offsetParent !== null,
+      tyden: document.querySelector("#fc7-grid .fc7-day-tmax")?.textContent?.trim(),
+    }));
+
+    assertTrue(sK.videt && /2 °C níž/.test(sK.poznamka),
+      `korekce se přiznává pod teplotou ("${sK.poznamka}")`);
+    assertTrue(parseInt(sK.hero, 10) === bezK - 2,
+      `zobrazená teplota je o změřený bias níž (${bezK}° → ${parseInt(sK.hero, 10)}°)`);
+    // Kdyby se korigovala jen hodinovka a ne daily, rozešel by se týden
+    // s detailem dne o dva stupně.
+    assertTrue(parseInt(sK.tyden, 10) === tydenBez - 2,
+      `korekce platí i pro týdenní maxima (${tydenBez}° → ${parseInt(sK.tyden, 10)}°)`);
   }
 
   await browser.close();

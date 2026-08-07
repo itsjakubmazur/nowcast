@@ -539,6 +539,14 @@ button.glass-btn svg { width: 17px; height: 17px; display: block; }
 .fc-hero-right { display: flex; flex-direction: column; gap: .2rem; padding-bottom: .35rem; }
 .fc-desc { font-size: var(--fs-md); font-weight: 700; display: flex; align-items: center; gap: .35rem; }
 .fc-desc svg, .fc-desc img { width: 22px; height: 22px; flex-shrink: 0; }
+/* Korekce zobrazené teploty — decentní, ale ne schovaná. Tiše upravovat
+   čísla podle měření by bylo to poslední, co appka smí dělat. */
+.fc-bias {
+  font-size: var(--fs-micro); color: var(--muted); margin-top: .15rem;
+  font-style: italic;
+}
+.blend-precip { margin-top: .25rem; }
+
 .fc-feels { font-size: var(--fs-sm); color: var(--muted); }
 
 /* včera vs dnes + klimatická odchylka */

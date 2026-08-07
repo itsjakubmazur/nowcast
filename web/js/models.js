@@ -11,25 +11,45 @@
 import { state, WORKER_BASE } from "./state.js";
 import { esc, num, haversine, ageMinutes, nowLocStr, locDateStr } from "./utils.js";
 
+// Čtvrtá položka je RODINA, ne provozovatel. Vážený průměr totiž předpokládá
+// nezávislé názory, a ty tu nejsou: ICON-D2 a ICON jsou obě DWD nad stejným
+// modelem, KNMI a DMI jedou obě HARMONIE-AROME. Průměr z deseti členů je proto
+// míň nezávislý, než vypadá — bez korekce by dvojčata přehlasovala samotáře.
+// Váha se dělí velikostí rodiny (viz blendTemperature), takže rodina má dohromady
+// jeden hlas.
 export const MODELS = [
-  ["icon_d2",              "ICON-D2", "DWD · 2 km, ČR"],   // nejvyšší rozlišení pro Česko
-  ["icon_seamless",        "ICON",    "DWD · Německo"],
-  ["ecmwf_ifs025",         "ECMWF",   "Evropa (IFS)"],
-  ["gfs_seamless",         "GFS",     "NOAA · USA"],
-  ["meteofrance_seamless", "ARPEGE",  "Météo-France"],
-  ["ukmo_seamless",        "UKMO",    "Met Office · UK"],
-  ["gem_seamless",         "GEM",     "ECCC · Kanada"],
-  ["jma_seamless",         "JMA",     "Japonsko"],
-  ["knmi_seamless",        "KNMI",    "Harmonie · NL"],
-  ["dmi_seamless",         "DMI",     "Harmonie · Dánsko"],
+  ["icon_d2",              "ICON-D2", "DWD · 2 km, ČR",  "ICON"],   // nejvyšší rozlišení pro Česko
+  ["icon_seamless",        "ICON",    "DWD · Německo",   "ICON"],
+  ["ecmwf_ifs025",         "ECMWF",   "Evropa (IFS)",    "IFS"],
+  ["gfs_seamless",         "GFS",     "NOAA · USA",      "GFS"],
+  ["meteofrance_seamless", "ARPEGE",  "Météo-France",    "ARPEGE"],
+  ["ukmo_seamless",        "UKMO",    "Met Office · UK", "UM"],
+  ["gem_seamless",         "GEM",     "ECCC · Kanada",   "GEM"],
+  ["jma_seamless",         "JMA",     "Japonsko",        "GSM"],
+  ["knmi_seamless",        "KNMI",    "Harmonie · NL",   "HARMONIE"],
+  ["dmi_seamless",         "DMI",     "Harmonie · Dánsko", "HARMONIE"],
 ];
+
+// Model, ze kterého appka bere ČÍSLA, která ukazuje.
+//
+// Hodinová i sedmidenní předpověď jede z Open-Meteo bez parametru models=,
+// tedy z jejich "best_match" — ten sám vybírá nejvhodnější model podle
+// lokality. Dřív stál mimo tenhle systém: appka pečlivě měřila přesnost
+// deseti modelů a hlavní číslo mezi nimi nebylo. Teď se stahuje a hodnotí
+// jako každý jiný, takže víme, jak se trefuje TO, co je vidět.
+//
+// Do konsenzu ale nepatří — je to duplikát některého z modelů výš, ne
+// jedenáctý názor. Vlastní rodinu proto nedostává.
+export const MAIN_MODEL = ["best_match", "Zobrazená předpověď", "Open-Meteo best_match", null];
 
 // ALADIN/ČHMÚ není v Open-Meteo — stahuje se zvlášť z data/aladin.json
 // (pipeline/aladin.py z opendata GRIB). Meta drží stejný tvar jako MODELS.
-const ALADIN = ["aladin_chmi", "ALADIN", "ČHMÚ · 1 km"];
+const ALADIN = ["aladin_chmi", "ALADIN", "ČHMÚ · 1 km", "ALADIN"];
 function metaFor(id) {
-  return MODELS.find(m => m[0] === id) || (id === ALADIN[0] ? ALADIN : [id, id, ""]);
+  return MODELS.find(m => m[0] === id)
+    || (id === ALADIN[0] ? ALADIN : id === MAIN_MODEL[0] ? MAIN_MODEL : [id, id, "", id]);
 }
+function familyOf(id) { return metaFor(id)[3]; }
 
 const STORE_KEY = "nowcast_model_scores_v1";
 const SNAP_MIN_AGE_H = 3;    // predikci hodnotíme až po ≥ 3 h (jinak je to opis)
@@ -120,7 +140,7 @@ export function nearestFreshStation(lat, lon) {
 
 async function fetchModels(lat, lon, signal) {
   const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}`
-    + `&hourly=temperature_2m,precipitation&models=${MODELS.map(m => m[0]).join(",")}`
+    + `&hourly=temperature_2m,precipitation&models=${[...MODELS.map(m => m[0]), MAIN_MODEL[0]].join(",")}`
     + `&forecast_days=2&timezone=auto`;
   const ctrl = new AbortController();
   const onAbort = () => ctrl.abort();
@@ -141,7 +161,7 @@ function modelSeries(data) {
   const h = data.hourly || {};
   const times = h.time || [];
   const out = {};
-  for (const [id] of MODELS) {
+  for (const [id] of [...MODELS, MAIN_MODEL]) {
     // multi-model odpověď suffixuje klíče (temperature_2m_icon_seamless…);
     // model bez pokrytí místa suffixovaný klíč nemá / má samé nully
     const arr = h[`temperature_2m_${id}`];
@@ -292,25 +312,139 @@ export function mergeScores(localScores, shared) {
 export const MIN_BLEND_MODELS = 3;
 
 export function blendTemperature(values, scores) {
-  let wsum = 0, vsum = 0, used = 0, rawSum = 0, raw = 0;
+  // Nejdřív zjisti, kdo se vůbec kvalifikuje — až podle toho se dají spočítat
+  // velikosti rodin. Kdyby se rodiny počítaly ze VŠECH modelů, dělilo by se
+  // i za členy, kteří do průměru stejně nevstupují.
+  const zpusobili = [];
+  let rawSum = 0, raw = 0;
   for (const [id, v] of Object.entries(values || {})) {
     if (v == null || !Number.isFinite(v)) continue;
+    // Zobrazená předpověď je duplikát některého z modelů, ne další názor —
+    // do konsenzu by se započítala dvakrát.
+    if (id === MAIN_MODEL[0]) continue;
     raw++; rawSum += v;
     const sc = scores?.[id];
     const n = (sc?.n || 0) + (sc?.nShared || 0);
     if (!sc || sc.mae == null || n < 2) continue;
-    const corrected = v - (sc.bias || 0);
-    const w = 1 / Math.pow((sc.mae || 0) + 0.5, 2);
-    wsum += w; vsum += corrected * w; used++;
+    zpusobili.push({ id, v, sc, fam: familyOf(id) || id });
   }
+
+  const velikost = {};
+  for (const m of zpusobili) velikost[m.fam] = (velikost[m.fam] || 0) + 1;
+
+  let wsum = 0, vsum = 0;
+  for (const m of zpusobili) {
+    const corrected = m.v - (m.sc.bias || 0);
+    // Váha 1/(MAE+0.5)² je klasické inverse-error vážení; dělení velikostí
+    // rodiny drží dvojčatům dohromady jeden hlas.
+    const w = (1 / Math.pow((m.sc.mae || 0) + 0.5, 2)) / velikost[m.fam];
+    wsum += w; vsum += corrected * w;
+  }
+
+  const used = zpusobili.length;
+  const rodin = Object.keys(velikost).length;
   if (used < MIN_BLEND_MODELS) {
-    return raw ? { value: null, plain: Math.round(rawSum / raw * 10) / 10, used: 0 } : null;
+    return raw ? { value: null, plain: Math.round(rawSum / raw * 10) / 10, used: 0, rodin: 0 } : null;
   }
   return {
     value: Math.round((vsum / wsum) * 10) / 10,
     plain: Math.round(rawSum / raw * 10) / 10,
-    used,
+    used, rodin,
   };
+}
+
+/**
+ * Konsenzus SRÁŽEK — shoda, ne průměr.
+ *
+ * Srážky se nesmí průměrovat jako teplota: průměr dvou modelů, kde jeden
+ * říká 0 mm a druhý 10, dá 5 mm — scénář, který nenastane ani u jednoho.
+ * Užitečná odpověď u srážek proto není lepší číslo, ale míra shody a rozsah
+ * scénářů. Rodiny se počítají stejně jako u teploty, aby dvojčata neurčovala
+ * většinu.
+ */
+export const WET_MM = 0.2;
+
+export function precipConsensus(rows) {
+  const platne = (rows || []).filter(r => r.rain != null && r.id !== MAIN_MODEL[0]);
+  if (platne.length < 3) return null;
+  // Hlas rodiny = má aspoň jeden její člen srážky? (a kolik nejvíc)
+  const rodiny = {};
+  for (const r of platne) {
+    const f = familyOf(r.id) || r.id;
+    const p = rodiny[f] || (rodiny[f] = { wet: false, max: 0 });
+    if (r.rain >= WET_MM) p.wet = true;
+    if (r.rain > p.max) p.max = r.rain;
+  }
+  const jmena = Object.keys(rodiny);
+  const mokre = jmena.filter(f => rodiny[f].wet).length;
+  const uhrny = platne.map(r => r.rain).sort((a, b) => a - b);
+  const median = uhrny.length % 2
+    ? uhrny[(uhrny.length - 1) / 2]
+    : (uhrny[uhrny.length / 2 - 1] + uhrny[uhrny.length / 2]) / 2;
+  return {
+    rodin: jmena.length, mokrych: mokre,
+    podil: Math.round(mokre / jmena.length * 100),
+    lo: uhrny[0], hi: uhrny[uhrny.length - 1], median: Math.round(median * 10) / 10,
+    modelu: platne.length,
+  };
+}
+
+/**
+ * Který model je právě "best_match"?
+ *
+ * Open-Meteo neřekne, kterou volbu pod best_match udělal — a přitom je to
+ * číslo, které appka ukazuje jako předpověď. Zjistí se porovnáním řad: ta
+ * shodná (do setiny stupně) je ta pravá.
+ */
+export function identifyBestMatch(series) {
+  const hlavni = series?.[MAIN_MODEL[0]];
+  if (!hlavni) return null;
+  const casy = Object.keys(hlavni);
+  if (casy.length < 6) return null;
+  let nej = null, nejD = Infinity;
+  for (const [id] of MODELS) {
+    const s = series[id];
+    if (!s) continue;
+    let sum = 0, n = 0;
+    for (const iso of casy) {
+      if (s[iso] == null) continue;
+      sum += Math.abs(s[iso] - hlavni[iso]); n++;
+    }
+    if (n < casy.length * 0.6) continue;      // málo překryvu, neporovnávej
+    const d = sum / n;
+    if (d < nejD) { nejD = d; nej = id; }
+  }
+  // 0,05 °C je "totéž zaokrouhlené jinak"; větší rozdíl už znamená, že
+  // best_match míchá víc modelů nebo běží nad jiným během.
+  return nej && nejD <= 0.05 ? { id: nej, label: metaFor(nej)[1] } : null;
+}
+
+/**
+ * Systematická odchylka ZOBRAZENÉ předpovědi (best_match) pro tohle místo.
+ *
+ * Čte se synchronně z localStorage plus z posledních stažených sdílených
+ * skóre — musí být k dispozici hned při parsování předpovědi, aby se korekce
+ * promítla do všech pohledů naráz. Kdyby dorazila později a čísla se změnila
+ * pod rukama, bylo by to horší než ji neaplikovat vůbec.
+ *
+ * Váhy se tu ZÁMĚRNĚ nepoužívají, jen bias. Vážený průměr modelů by
+ * v hlavním čísle ukazoval teplotu, kterou netvrdí žádný model, a při málo
+ * vzorcích by skákal. Odečíst změřenou systematickou odchylku je oprava
+ * téhož čísla, ne jeho nahrazení.
+ */
+export const MIN_BIAS_SAMPLES = 5;   // pod tím je "bias" jen šum
+export const MIN_BIAS_C = 0.5;       // menší korekce jen předstírá přesnost
+
+export function displayCorrection(lat, lon) {
+  if (lat == null || lon == null) return null;
+  const key = locKey(lat, lon);
+  const rec = loadStore()[key];
+  const shared = _sharedCache.get(key)?.models;
+  const sc = mergeScores(rec?.scores || {}, shared || {})[MAIN_MODEL[0]];
+  if (!sc || sc.bias == null) return null;
+  const n = (sc.n || 0) + (sc.nShared || 0);
+  if (n < MIN_BIAS_SAMPLES || Math.abs(sc.bias) < MIN_BIAS_C) return null;
+  return { bias: sc.bias, n, local: sc.n || 0, shared: sc.nShared || 0 };
 }
 
 function mae(errs) {
@@ -318,33 +452,51 @@ function mae(errs) {
 }
 
 // ── Konsenzus: jedno číslo místo deseti ────────────────────────────────────
-function renderBlend(blend, rows) {
+function renderBlend(blend, rows, srazky) {
   const el = document.getElementById("blend-card");
   if (!el) return;
   el.classList.remove("show");
   el.innerHTML = "";
   if (!blend) return;
 
+  // Srážky se NEPRŮMĚRUJÍ (viz precipConsensus) — vedle teploty stojí míra
+  // shody a rozsah scénářů. Dřív o srážkách konsenzus mlčel úplně, přestože
+  // je to to, kvůli čemu se appka jmenuje nowcast.
+  const srazkyRadek = !srazky ? "" : (() => {
+    const rozsah = srazky.hi < WET_MM
+      ? "žádný model nedává měřitelné srážky"
+      : `úhrn ${num(srazky.lo)}–${num(srazky.hi)} mm, medián ${num(srazky.median)}`;
+    return `<div class="blend-precip"><b>Srážky dnes:</b> `
+      + `${srazky.mokrych} z ${srazky.rodin} nezávislých modelů `
+      + `<span class="muted">(${rozsah})</span></div>`;
+  })();
+
   if (blend.value == null) {
     // Ještě se učíme — ukaž prostý průměr a řekni, že to zatím není vážené.
-    if (blend.plain == null) return;
-    el.innerHTML =
-      `<b>Konsenzus modelů:</b> ${Math.round(blend.plain)} °C ` +
-      `<span class="muted">prostý průměr ${rows.length} modelů — vážený podle ` +
-      `naměřené přesnosti bude, až se nasbírá dost porovnání se stanicí.</span>`;
+    if (blend.plain == null && !srazkyRadek) return;
+    if (blend.plain != null) {
+      el.innerHTML = `<div><b>Konsenzus modelů:</b> ${Math.round(blend.plain)} °C `
+        + `<span class="muted">prostý průměr — přesnost modelů se pro tohle místo teprve učí</span></div>`
+        + srazkyRadek;
+    } else {
+      el.innerHTML = srazkyRadek;
+    }
     el.classList.add("show");
     return;
   }
 
   const diff = blend.plain != null ? blend.value - blend.plain : 0;
-  const shift = Math.abs(diff) >= 0.3
-    ? ` <span class="muted">(prostý průměr by řekl ${Math.round(blend.plain)} °C — ` +
-      `rozdíl dělá váha přesnějších modelů a odečtená systematická chyba)</span>`
+  const shift = Math.abs(diff) >= 0.4
+    ? ` <span class="muted">(prostý průměr by řekl ${Math.round(blend.plain)} °C — `
+      + `korekce podle měření ${diff > 0 ? "+" : ""}${num(diff)} °C)</span>`
     : "";
-  el.innerHTML =
-    `<b>Konsenzus modelů:</b> ${Math.round(blend.value)} °C ` +
-    `<span class="muted">vážený přesností ${blend.used} ` +
-    `${blend.used < 5 ? "modelů" : "modelů"} pro tohle místo</span>${shift}`;
+  // "Rodin", ne "modelů": ICON-D2 a ICON jsou obě DWD, KNMI a DMI obě
+  // HARMONIE. Napsat "z deseti modelů" by slibovalo víc nezávislosti,
+  // než tam je.
+  el.innerHTML = `<div><b>Konsenzus modelů:</b> ${Math.round(blend.value)} °C `
+    + `<span class="muted">vážený přesností ${blend.used} modelů `
+    + `v ${blend.rodin} nezávislých rodinách</span>${shift}</div>`
+    + srazkyRadek;
   el.classList.add("show");
 }
 
@@ -479,13 +631,14 @@ export async function renderModelsPanel(lat, lon, signal) {
     // jediné číslo, které z celého žebříčku uživatele opravdu zajímá.
     const blend = blendTemperature(
       Object.fromEntries(rows.map(r => [r.id, r.tmax])), scores);
-    renderBlend(blend, rows);
+    renderBlend(blend, rows, precipConsensus(rows));
 
     const ranked = rows.some(r => r.mae != null);
     rows.sort((a, b) => (a.mae ?? 99) - (b.mae ?? 99) || a.label.localeCompare(b.label));
 
     const body = rows.map((r, i) => `
-      <div class="mdl-row${i === 0 && ranked && r.mae != null ? " best" : ""}">
+      <div class="mdl-row${i === 0 && ranked && r.mae != null ? " best" : ""}${
+        r.id === MAIN_MODEL[0] ? " mdl-main" : ""}">
         <span class="mdl-medal">${ranked && r.mae != null && i < 3 ? `<span class="mdl-rank r${i + 1}">${i + 1}</span>` : ""}</span>
         <span class="mdl-name" title="${esc(r.src)}">${esc(r.label)}</span>
         <span class="mdl-tmax">${Math.round(r.tmax)}°</span>
@@ -502,13 +655,24 @@ export async function renderModelsPanel(lat, lon, signal) {
     const stStr = st ? `${esc(st.name)} (${st.distKm.toFixed(0)} km${
       Math.abs(st.elevDiff || 0) >= 100 ? `, přepočet na výšku ${Math.round(st.elevDiff > 0 ? st.elevDiff : -st.elevDiff)} m` : ""})` : "";
     const sharedN = rows.reduce((a, r) => a + (r.nShared || 0), 0);
+    // Čím je zobrazená předpověď právě teď. Open-Meteo to neřekne, tak se to
+    // pozná porovnáním řad — a je to poctivější než mlčet o tom, že hlavní
+    // číslo appky pochází z modelu, který uživatel nevidí.
+    const bm = identifyBestMatch(series);
+    const korekce = displayCorrection(lat, lon);
+    const bmNote = `<br><b>Zobrazená předpověď</b> jede z Open-Meteo best_match`
+      + (bm ? ` — teď shodný s ${esc(bm.label)}.` : ` (mix modelů podle lokality).`)
+      + (korekce
+        ? ` Podle ${korekce.n} porovnání se stanicí ji appka posouvá o `
+          + `${korekce.bias > 0 ? "−" : "+"}${num(Math.abs(korekce.bias))} °C.`
+        : ` Systematickou odchylku zatím měří (od ${MIN_BIAS_SAMPLES} porovnání ji začne odečítat).`);
     const note = ranked
       ? `Přesnost = průměrná chyba slibované teploty proti měření stanice ${stStr}.` +
         (sharedN ? ` Učí se i ze zkušeností ostatních v okolí (${sharedN} vzorků).` : "") +
-        ` ▲/▼ značí, že model systematicky přestřeluje / podstřeluje.`
+        ` ▲/▼ značí, že model systematicky přestřeluje / podstřeluje.` + bmNote
       : st
-        ? `Žebříček se učí: při každé návštěvě porovnám starší sliby modelů s měřením stanice ${stStr}. Potřebuje pár návštěv v odstupu aspoň 3 h.`
-        : `V okruhu ${STATION_MAX_KM} km není čerstvě hlásící meteostanice, takže přesnost modelů tu nejde poctivě ověřit — ukazuji jen dnešní předpovědi.`;
+        ? `Žebříček se učí: při každé návštěvě porovnám starší sliby modelů s měřením stanice ${stStr}. Potřebuje pár návštěv v odstupu aspoň 3 h.` + bmNote
+        : `V okruhu ${STATION_MAX_KM} km není čerstvě hlásící meteostanice, takže přesnost modelů tu nejde poctivě ověřit — ukazuji jen dnešní předpovědi.` + bmNote;
 
     panel.innerHTML = `
       <div class="mdl-title">Modely pro tohle místo <span class="mdl-sub">${rows.length} modelů · dnes max / srážky / přesnost</span></div>

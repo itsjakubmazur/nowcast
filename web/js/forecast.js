@@ -71,6 +71,47 @@ export function parseHourly(data) {
   return { all: hourly, nowIso, ...viewFields(hourly, nowIso, null) };
 }
 
+/**
+ * Odečte změřenou systematickou odchylku od ZOBRAZENÝCH teplot.
+ *
+ * Tohle je to místo, kde se celý aparát měření přesnosti konečně dotkne
+ * čísla, které je vidět. Dřív appka pečlivě počítala, o kolik který model
+ * u tvojí stanice přestřeluje, a hlavní teplota si mezitím jela dál
+ * nedotčená — hodnocení bylo vedle předpovědi, ne v ní.
+ *
+ * Aplikuje se JEN bias, ne váhy: vážený průměr modelů by v hlavním čísle
+ * ukazoval teplotu, kterou netvrdí žádný model, a při málo vzorcích by
+ * skákal. Odečíst změřenou odchylku je oprava téhož čísla, ne jeho výměna.
+ *
+ * Posouvá se i pocitová teplota — nemáme pro ni vlastní měření, ale rozdíl
+ * proti skutečné teplotě je to, co uživatel čte, a ten musí zůstat sedět.
+ *
+ * Vrací popis korekce (nebo null), ať se dá pod hero napsat, co se stalo.
+ * Tichá úprava naměřených čísel by byla to poslední, co appka smí dělat.
+ *
+ * ZPĚTNÁ VAZBA TU NEHROZÍ, a to je důležité: bias se měří v models.js proti
+ * SUROVÉ řadě z modelového fetche, ne proti tomuhle upravenému výstupu.
+ * Kdyby se učil z už opraveného čísla, korekce by se sama sebou potvrzovala
+ * a ujížděla by donekonečna.
+ */
+export function applyTempCorrection(fc, daily, corr) {
+  if (!corr?.bias || !fc?.all?.length) return null;
+  const b = corr.bias;
+  for (const h of fc.all) {
+    if (h.tempRaw != null) { h.tempRaw -= b; h.temp = Math.round(h.tempRaw); }
+    if (h.feelsRaw != null) h.feelsRaw -= b;
+  }
+  // Denní extrémy jedou ze samostatného pole daily, ne z hodinovky —
+  // bez tohohle by řádky týdne zůstaly nezkorigované a rozešly by se
+  // s detailem dne o desetiny stupně.
+  for (const k of ["temperature_2m_max", "temperature_2m_min", "apparent_temperature_max",
+    "apparent_temperature_min"]) {
+    const arr = daily?.[k];
+    if (Array.isArray(arr)) daily[k] = arr.map(v => (v == null ? v : v - b));
+  }
+  return corr;
+}
+
 // ── Fáze dne ────────────────────────────────────────────────────────────────
 // Tohle nahradilo tříhodinové bloky. Byly to DVA panely nad sebou počítané
 // ze stejných dat: fc24 řezal zbytek dne na okna po třech hodinách
@@ -176,6 +217,25 @@ export function renderFcHero(fc) {
   feelsEl.textContent = now.feels != null && Math.abs(now.feelsRaw - now.tempRaw) >= 2
     ? `Pocitová ${Math.round(now.feelsRaw)}°` : "";
   hero.style.display = "flex";
+  renderBiasNote();
+}
+
+// Korekce se NESMÍ dít potichu. Číslo, které appka ukazuje, je po úpravě
+// podle měření — a je poctivé říct o kolik a z čeho, ne to vydávat za
+// surový výstup modelu.
+let _corr = null;
+export function setDisplayCorrection(c) { _corr = c; }
+
+function renderBiasNote() {
+  const el = document.getElementById("fc-bias");
+  if (!el) return;
+  if (!_corr?.bias) { el.style.display = "none"; el.textContent = ""; return; }
+  const smer = _corr.bias > 0 ? "níž" : "výš";
+  el.textContent = `upraveno o ${num(Math.abs(_corr.bias))} °C ${smer} podle měření stanice`;
+  el.title = `Model pro tohle místo systematicky ${_corr.bias > 0 ? "přestřeluje" : "podstřeluje"}`
+    + ` o ${num(Math.abs(_corr.bias))} °C (${_corr.n} porovnání`
+    + `${_corr.shared ? `, z toho ${_corr.shared} sdílených` : ""}). Odchylka je odečtená.`;
+  el.style.display = "block";
 }
 
 // ── Shrnutí dne jednou větou (at a glance) ──────────────────────────────────

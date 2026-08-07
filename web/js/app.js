@@ -14,7 +14,7 @@ import {
 import {
   fetchOpenMeteo, parseHourly, parseMinutely15,
   renderFcHero, renderDayHeadline, renderFcNow, renderFc7, fetchAndRenderAQ,
-  addModelSpread, addEnsembleFan,
+  addModelSpread, addEnsembleFan, applyTempCorrection, setDisplayCorrection,
 } from "./forecast.js";
 import {
   nearestPt, templateVerdict, renderRainBadge, renderRainCountdown,
@@ -42,7 +42,7 @@ import { initLightning } from "./lightning.js";
 import { showLoadingSkeletons } from "./skeleton.js";
 import { shareCurrentView, copyEmbedLink, initEmbedMode } from "./share.js";
 import { prefetchGlobalRadar } from "./globalrain.js";
-import { renderModelsPanel } from "./models.js";
+import { renderModelsPanel, displayCorrection } from "./models.js";
 import { ensureWorldStations } from "./worldstations.js";
 import { initWorldTemps, renderWorldTemps } from "./worldtemp.js";
 import { esc, num } from "./utils.js";
@@ -122,6 +122,13 @@ async function loadForecast(lat, lon, label) {
   try {
     const data = await fetchOpenMeteo(lat, lon, ctrl.signal);
     const fc = parseHourly(data);
+    // Systematická odchylka zobrazené předpovědi se odečte HNED po parsování,
+    // než cokoli něco vykreslí. Jinak by se korekce promítla do jedněch
+    // pohledů a do druhých ne — a hero by se rozešlo s grafem o desetinu
+    // stupně. Čte se synchronně z localStorage (+ posledních sdílených
+    // skóre), takže při první návštěvě místa prostě není a nic se neupravuje.
+    const korekce = applyTempCorrection(fc, data.daily, displayCorrection(lat, lon));
+    setDisplayCorrection(korekce);
     const minutely = parseMinutely15(data);
     renderFcHero(fc);
     renderDayHeadline(fc);
