@@ -366,6 +366,32 @@ function dayMetaLine(dateStr, hodiny) {
   return bits.join(" · ");
 }
 
+/**
+ * Hodiny seskupené po fázích dne — JEDEN pruh místo dvou.
+ *
+ * Detail měl nad hodinami ještě řádek fází (Ráno / Dopol. / Odpol. …). Byla
+ * to ale tatáž čísla podruhé, jen zhuštěná — přesně ta duplikace, kvůli které
+ * předtím zmizel proužek "Dnes" a karta "Průběh dne". Jméno fáze je jediné,
+ * co ten řádek uměl navíc ("odpoledne" se čte líp než "14, 15, 16"), takže
+ * z něj zbyl štítek nad skupinou hodin.
+ *
+ * Na rozdíl od dayPhases() se tady NEFILTRUJE na dvě a víc hodin: tohle není
+ * shrnutí, ale rozdělení — každá hodina musí někam patřit, i ta poslední
+ * osamocená.
+ */
+function hoursByPhase(hours) {
+  const out = [];
+  for (const h of hours) {
+    const hr = +h.t.slice(0, 2);
+    const phase = DAY_PHASES.find(([a, b]) => hr >= a && hr < b);
+    if (!phase) continue;
+    const last = out[out.length - 1];
+    if (last && last.name === phase[2]) last.hours.push(h);
+    else out.push({ name: phase[2], short: phase[3], hours: [h] });
+  }
+  return out;
+}
+
 export function toggleDayDetail(dateStr) {
   if (!_fc || !dateStr) return;
   if (_openDay === dateStr) { closeDayDetail(); return; }
@@ -384,7 +410,7 @@ export function toggleDayDetail(dateStr) {
   const box = document.createElement("div");
   box.id = "fc7-detail";
   box.className = "fc7-detail";
-  const faze = dayPhases(hodiny);
+  const skupiny = hoursByPhase(hodiny);
   const maxP = Math.max(0.4, ...hodiny.map(h => h.precip || 0));
   // Noc má tmavší podklad, ať je vidět bez čtení času (dřív to uměl proužek
   // "Dnes" přes .fc24-night). Hranice bere východ/západ TOHO dne.
@@ -393,28 +419,14 @@ export function toggleDayDetail(dateStr) {
   const set_ = di >= 0 ? _daily.sunset?.[di]?.slice(11, 16) : null;
   const jeNoc = t => rise && set_ ? (t < rise || t >= set_) : false;
 
-  box.innerHTML = `
-    <div class="fc7d-head">
-      <div class="fc7d-title">${esc(dayLabel(dateStr))}</div>
-      <div class="fc7d-meta">${esc(dayMetaLine(dateStr, hodiny))}</div>
-    </div>
-    <div class="fc7d-phases">${faze.map(f => `
-      <div class="fc7d-phase" title="${esc(f.name)} ${esc(f.from)}–${esc(f.to)}">
-        <div class="fc7d-pname">${esc(f.short || f.name)}</div>
-        <div class="fc7d-picon">${wcIconSvg(f.wc, f.hr)}</div>
-        <div class="fc7d-ptemp">${f.tmin != null
-          ? (f.tmin === f.tmax ? `${f.tmax}°` : `${f.tmin}–${f.tmax}°`) : "—"}</div>
-        <div class="fc7d-pprec">${f.precip > 0
-          ? `${num(f.precip)} mm` : f.prob >= 15 ? `${f.prob} %` : ""}</div>
-      </div>`).join("")}</div>
-    <div class="fc7d-hours">${hodiny.map(h => {
-      // Šipka ukazuje, KAM vítr fouká (meteorologický směr + 180°) — "odkud"
-      // si člověk musí přepočítat v hlavě a stejně to splete.
-      const vitr = h.wind != null
-        ? `<span class="fc7d-arrow" style="transform:rotate(${(h.wind_dir ?? 0) + 180}deg)">↑</span>${h.wind}`
-        : "";
-      const srazky = h.precip > 0 ? `${num(h.precip)} mm` : h.prob >= 25 ? `${h.prob} %` : "";
-      return `
+  const hodinaHtml = h => {
+    // Šipka ukazuje, KAM vítr fouká (meteorologický směr + 180°) — "odkud"
+    // si člověk musí přepočítat v hlavě a stejně to splete.
+    const vitr = h.wind != null
+      ? `<span class="fc7d-arrow" style="transform:rotate(${(h.wind_dir ?? 0) + 180}deg)">↑</span>${h.wind}`
+      : "";
+    const srazky = h.precip > 0 ? `${num(h.precip)} mm` : h.prob >= 25 ? `${h.prob} %` : "";
+    return `
       <div class="fc7d-hour${jeNoc(h.t) ? " fc7d-night" : ""}">
         <div class="fc7d-ht">${esc(h.t.slice(0, 2))}</div>
         <div class="fc7d-hi">${wcIconSvg(h.wc, parseInt(h.t, 10))}</div>
@@ -424,14 +436,27 @@ export function toggleDayDetail(dateStr) {
           ? Math.max(10, Math.round(h.precip / maxP * 100)) : 0}%"></i></div>
         <div class="fc7d-hp">${esc(srazky)}</div>
       </div>`;
-    }).join("")}</div>
+  };
+
+  box.innerHTML = `
+    <div class="fc7d-inner">
+    <div class="fc7d-head">
+      <div class="fc7d-title">${esc(dayLabel(dateStr))}</div>
+      <div class="fc7d-meta">${esc(dayMetaLine(dateStr, hodiny))}</div>
+    </div>
+    <div class="fc7d-hours">${skupiny.map(g => `
+      <div class="fc7d-group">
+        <div class="fc7d-gname">${esc(g.short || g.name)}</div>
+        <div class="fc7d-grow">${g.hours.map(hodinaHtml).join("")}</div>
+      </div>`).join("")}</div>
     <div class="meteo-head">
       <div class="meteo-title">Meteogram</div>
       <div class="meteo-tabs" id="fc7d-tabs">${DAY_TABS.map(([m, lbl, tip]) => `
         <button type="button" class="mtab${m === _dayMode ? " active" : ""}" data-mode="${m}"${
           tip ? ` title="${esc(tip)}"` : ""}>${esc(lbl)}</button>`).join("")}</div>
     </div>
-    <div class="fc7d-chart"><canvas id="fc7d-canvas"></canvas></div>`;
+    <div class="fc7d-chart"><canvas id="fc7d-canvas"></canvas></div>
+    </div>`;
 
   row.insertAdjacentElement("afterend", box);
 
@@ -443,20 +468,62 @@ export function toggleDayDetail(dateStr) {
     drawDayChart(hodiny);
   });
 
-  drawDayChart(hodiny);
+  // ── Rozbalení: odvine se, ne vyskočí ──────────────────────────────────────
+  // Detail se dřív objevil celý naráz — jen krátký fade, takže mezi "klepl
+  // jsem" a "je tu obsah na dvě obrazovky" nebyl žádný pohyb, který by ty dvě
+  // věci spojil.
+  //
+  // Výška se animuje přes grid-template-rows 0fr → 1fr. Je to jediný způsob,
+  // jak plynule dojet na "tak vysoké, jak to zrovna vyjde", aniž by se výška
+  // musela dopředu měřit v JS — max-height by se muselo hádat a u dne s málo
+  // hodinami by konec animace uťal nebo naopak čekal naprázdno.
+  //
+  // Vnitřek se skládá po částech (hlavička → hodiny → graf) s rozestupem
+  // 60 ms; to je stejná gramatika jako riseIn() u panelů.
+  const rychle = reducedMotion();
+  if (!rychle) {
+    box.querySelectorAll(".fc7d-inner > *").forEach((el, i) => {
+      el.style.setProperty("--fc7d-i", String(i));
+      el.classList.add("fc7d-part");
+    });
+  }
+  // Graf se kreslí AŽ po odvinutí. Během animace má obal nulovou výšku a
+  // Chart.js si při vzniku měří kontejner — nakreslil by se do ničeho.
+  const dokresli = () => { if (_openDay === dateStr) drawDayChart(hodiny); dorovnej(); };
+
   // Rozbalení nesmí utéct pod spodní lištu sekcí — když se detail nevejde,
   // dorovnej pohled tak, aby byl vidět celý. Při automatickém otevření
   // dneška po načtení se ale scrollovat NESMÍ: uživatel by přišel o nowcast
   // nahoře, aniž by o něco požádal.
-  if (_userOpened) {
-    requestAnimationFrame(() => {
-      const r = box.getBoundingClientRect();
-      const spodek = window.innerHeight - 90;
-      if (r.bottom > spodek) {
-        const o = Math.min(r.top - 80, r.bottom - spodek);
-        if (o > 0) window.scrollBy({ top: o, behavior: reducedMotion() ? "auto" : "smooth" });
-      }
-    });
+  const dorovnej = () => {
+    if (!_userOpened) return;
+    const r = box.getBoundingClientRect();
+    const spodek = window.innerHeight - 90;
+    if (r.bottom <= spodek) return;
+    const o = Math.min(r.top - 80, r.bottom - spodek);
+    if (o > 0) window.scrollBy({ top: o, behavior: rychle ? "auto" : "smooth" });
+  };
+
+  if (rychle) {
+    box.classList.add("fc7d-shown");
+    dokresli();
+  } else {
+    // Reflow MUSÍ být tady, mezi vložením a třídou. Bez něj prohlížeč
+    // spočítá styl až jednou, to už s cílovou třídou, výchozí 0fr nikdy
+    // neuvidí a přechod se nespustí — detail vyskočí. (Přidávat třídu
+    // v requestAnimationFrame nestačí: rAF běží PŘED výpočtem stylu daného
+    // snímku, takže se stane přesně totéž. Stejný trik má slideSwap().)
+    void box.offsetHeight;
+    box.classList.add("fc7d-shown");
+    // transitionend chodí za každou animovanou vlastnost i za potomky —
+    // ber jen dojezd výšky na samotném boxu, jinak by se graf kreslil
+    // několikrát.
+    box.addEventListener("transitionend", e => {
+      if (e.target === box && e.propertyName === "grid-template-rows") dokresli();
+    }, { once: true });
+    // Pojistka, kdyby přechod neproběhl (skrytá záložka prohlížeče apod.) —
+    // bez ní by graf nevznikl vůbec.
+    setTimeout(() => { if (!_dayChart && _openDay === dateStr) dokresli(); }, 700);
   }
 }
 

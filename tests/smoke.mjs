@@ -1239,7 +1239,8 @@ async function main() {
         // Klíčová vlastnost: detail musí být HNED POD tím řádkem, na který se
         // klepnulo — ne někde jinde na stránce.
         hnedPod: box ? cil.nextElementSibling === box : false,
-        fazi: box ? box.querySelectorAll(".fc7d-phase").length : 0,
+        fazi: box ? box.querySelectorAll(".fc7d-group").length : 0,
+        pruhuHodin: box ? box.querySelectorAll(".fc7d-hours").length : 0,
         hodin: box ? box.querySelectorAll(".fc7d-hour").length : 0,
         graf: box ? box.querySelectorAll("canvas").length : 0,
         nadpisDetailu: box?.querySelector(".fc7d-title")?.textContent?.trim() || "",
@@ -1249,7 +1250,11 @@ async function main() {
     });
     assertTrue(po.jeTam && po.hnedPod,
       "detail se rozbalí HNED POD řádkem, na který se klepnulo");
-    assertTrue(po.fazi >= 2, `detail nese fáze dne (${po.fazi})`);
+    // Fáze byly kdysi VLASTNÍ řádek nad hodinami — tatáž čísla podruhé.
+    // Teď jsou to štítky nad skupinami téhož jediného pruhu hodin.
+    assertTrue(po.fazi >= 2, `hodiny jsou rozdělené po fázích dne (${po.fazi})`);
+    assertTrue(po.pruhuHodin === 1,
+      `hodinová předpověď je v detailu JEDNOU, ne dvakrát (${po.pruhuHodin})`);
     assertTrue(po.hodin >= 12, `detail nese hodiny celého dne (${po.hodin})`);
     assertTrue(po.graf === 1, `detail má vlastní graf (${po.graf})`);
     assertTrue(/\d/.test(po.nadpisDetailu), `detail je pojmenovaný (${po.nadpisDetailu})`);
@@ -1288,6 +1293,40 @@ async function main() {
     });
     assertTrue(ens.graf === 1 && !ens.ceka,
       `vějíř ensemble se vykreslí bez druhého stažení (pláten ${ens.graf}, čeká=${ens.ceka})`);
+
+    // ── Rozbalení se odvine, nevyskočí ────────────────────────────────────
+    // Dřív se detail objevil celý naráz (jen krátký fade), takže mezi
+    // klepnutím a obsahem na dvě obrazovky nebyl žádný pohyb, který by ty dvě
+    // věci spojil. Test měří SKUTEČNOU výšku hned po klepnutí a po dojezdu —
+    // kontrola na třídu nebo na CSS by prošla i tehdy, kdyby se přechod
+    // nikdy nespustil.
+    const rozbal = await page.evaluate(async () => {
+      document.getElementById("fc7-detail")?.remove();
+      const rows = [...document.querySelectorAll("#fc7-grid .fc7-day")];
+      const cil = rows.find(r => !r.classList.contains("fc7-open") && r.dataset.date);
+      cil.click();
+      await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+      const box = document.getElementById("fc7-detail");
+      const hned = box.getBoundingClientRect().height;
+      const prechod = getComputedStyle(box).transitionDuration;
+      await new Promise(r => setTimeout(r, 900));
+      return {
+        hned, prechod,
+        potom: box.getBoundingClientRect().height,
+        grafu: window.Chart?.instances?.length ?? -1,
+        castiSPozdrzenim: [...box.querySelectorAll(".fc7d-part")]
+          .map(el => getComputedStyle(el).animationDelay).filter(d => parseFloat(d) > 0).length,
+      };
+    });
+    assertTrue(parseFloat(rozbal.prechod) > 0.2,
+      `výška detailu se animuje (${rozbal.prechod})`);
+    assertTrue(rozbal.potom > 150 && rozbal.hned < rozbal.potom * 0.6,
+      `detail se odvine, nevyskočí (hned ${Math.round(rozbal.hned)} px → potom ${Math.round(rozbal.potom)} px)`);
+    assertTrue(rozbal.castiSPozdrzenim >= 2,
+      `vnitřek se skládá po částech (${rozbal.castiSPozdrzenim} s prodlevou)`);
+    // Graf se kreslí AŽ po dojezdu — během animace má obal nulovou výšku
+    // a Chart.js by se měřil do ničeho.
+    assertTrue(rozbal.grafu >= 1, `graf vznikl po dojezdu animace (${rozbal.grafu})`);
 
     // Segment "Dnes" musí dnešek doopravdy ukázat. Po zrušení proužku "Dnes"
     // je jeho jediné bydliště rozbalený detail dneška — kdyby zůstal

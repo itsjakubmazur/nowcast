@@ -885,17 +885,36 @@ button.glass-btn svg { width: 17px; height: 17px; display: block; }
   box-shadow: inset 3px 0 0 var(--accent);
 }
 
+/* Rozbalení se ODVINE, nevyskočí.
+   grid-template-rows 0fr → 1fr je jediný způsob, jak plynule dojet na "tak
+   vysoké, jak to zrovna vyjde": max-height by se muselo hádat dopředu a
+   u dne s málo hodinami by konec animace uťalo nebo čekalo naprázdno. */
 .fc7-detail {
-  margin: 0 0 .5rem; padding: .6rem .7rem .7rem;
+  margin: 0 0 .5rem;
   border-radius: var(--r-card);
   background: color-mix(in srgb, var(--accent) 7%, var(--glass2));
   box-shadow: inset 0 0 0 1px var(--gring);
-  animation: fc7d-open .3s cubic-bezier(.32, .72, 0, 1);
-  overflow: hidden;
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition: grid-template-rows .42s cubic-bezier(.32, .72, 0, 1),
+              opacity .22s ease;
 }
-@keyframes fc7d-open {
-  from { opacity: 0; transform: translateY(-6px); }
+.fc7-detail.fc7d-shown { grid-template-rows: 1fr; opacity: 1; }
+/* min-height:0 je u grid položky nutnost — bez něj se obsah odmítne smrsknout
+   a řádek 0fr nic neschová. */
+.fc7d-inner { overflow: hidden; min-height: 0; padding: .6rem .7rem .7rem; }
+
+/* Vnitřek se skládá po částech, stejná gramatika jako riseIn() u panelů. */
+.fc7d-part { opacity: 0; animation: fc7d-part .34s cubic-bezier(.32, .72, 0, 1) forwards; }
+.fc7-detail.fc7d-shown .fc7d-part { animation-delay: calc(120ms + var(--fc7d-i, 0) * 60ms); }
+@keyframes fc7d-part {
+  from { opacity: 0; transform: translateY(8px); }
   to   { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fc7-detail { transition: none; }
+  .fc7d-part { opacity: 1; animation: none; }
 }
 .fc7d-head { margin-bottom: .45rem; }
 .fc7d-title {
@@ -910,33 +929,32 @@ button.glass-btn svg { width: 17px; height: 17px; display: block; }
   margin-top: .15rem; font-variant-numeric: tabular-nums;
 }
 
-/* Fáze dne — stejná gramatika jako v proužku "Dnes". */
-.fc7d-phases { display: flex; gap: 0; margin-bottom: .5rem; }
-.fc7d-phase {
-  flex: 1; min-width: 0; text-align: center; padding: .35rem .1rem;
-  border-radius: var(--r-mini);
-}
-.fc7d-phase:nth-child(even) { background: var(--rowline); }
-.fc7d-pname {
-  font-size: var(--fs-micro); font-weight: 700; color: var(--muted);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.fc7d-picon .wicon { width: 26px; height: 26px; }
-.fc7d-ptemp { font-size: var(--fs-sm); font-weight: 700; }
-.fc7d-pprec { font-size: var(--fs-micro); color: var(--blue); font-weight: 700; min-height: 1em; }
-
-/* Hodiny — vodorovná dráha, ať se vejde celý den bez zalomení. */
+/* Hodiny — vodorovná dráha, ať se vejde celý den bez zalomení.
+   Nad hodinami býval ještě pruh fází (Ráno / Dopol. / Odpol. …), jenže to
+   byla tatáž čísla podruhé, jen zhuštěná. Zbyl z něj štítek nad skupinou —
+   "odpoledne" se čte líp než "14, 15, 16", a víc ten řádek neuměl. */
 .fc7d-hours {
-  display: flex; gap: 0; overflow-x: auto; scrollbar-width: none;
+  display: flex; gap: .5rem; overflow-x: auto; scrollbar-width: none;
   margin: 0 -.7rem .5rem; padding: 0 .7rem;
   -webkit-overflow-scrolling: touch;
+}
+.fc7d-group { flex: 0 0 auto; }
+.fc7d-gname {
+  font-size: var(--fs-micro); font-weight: 800; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--muted);
+  padding: 0 .1rem .25rem; white-space: nowrap;
+}
+.fc7d-grow { display: flex; gap: 0; }
+/* Pruhuje se po FÁZÍCH, ne po hodinách: střídavý podklad každé druhé hodiny
+   dělal ze dne šachovnici a hranice fází v ní zanikly. */
+.fc7d-group:nth-child(even) .fc7d-grow {
+  background: var(--rowline); border-radius: var(--r-mini);
 }
 .fc7d-hours::-webkit-scrollbar { display: none; }
 .fc7d-hour {
   flex: 0 0 auto; width: 42px; text-align: center;
   display: flex; flex-direction: column; align-items: center; gap: .1rem;
 }
-.fc7d-hour:nth-child(even) { background: var(--rowline); border-radius: var(--r-mini); }
 /* Noc je vidět na první pohled, ne až po přečtení času. */
 .fc7d-hour.fc7d-night { box-shadow: inset 0 0 0 100px rgba(10, 20, 45, .28); border-radius: var(--r-mini); }
 [data-theme="light"] .fc7d-hour.fc7d-night { box-shadow: inset 0 0 0 100px rgba(14, 26, 43, .05); }
