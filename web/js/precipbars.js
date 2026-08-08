@@ -48,17 +48,69 @@ export function precipBarsHtml(slots) {
       // ukaž nízký "možná" sloupec místo patníku.
       if (p != null && p >= 30) {
         const h = Math.max(10, Math.round(p / 100 * 45));
-        return `<i class="maybe" style="height:${h}%" title="${cas}možné srážky${pStr}"></i>`;
+        return `<i class="maybe" style="height:${h}%" title="${cas}možné srážky${pStr}" aria-hidden="true"></i>`;
       }
       const cls = s.good ? "dry-good" : "dry";
       const t = s.good ? "suché okno" : "beze srážek";
-      return `<i class="${cls}" title="${cas}${t}${pStr}"></i>`;
+      return `<i class="${cls}" title="${cas}${t}${pStr}" aria-hidden="true"></i>`;
     }
     const h = Math.max(12, Math.round(rate / maxV * 100));
     const op = p != null ? Math.max(0.45, p / 100).toFixed(2) : null;
     return `<i style="height:${h}%${op ? `;opacity:${op}` : ""}" `
-      + `title="${cas}${num(rate)} mm/h${pStr}"></i>`;
+      + `title="${cas}${num(rate)} mm/h${pStr}" aria-hidden="true"></i>`;
   }).join("");
+}
+
+/**
+ * Shrnutí celé dráhy jednou větou — VE STEJNÝCH datech, jaká kreslí sloupce.
+ *
+ * Dva důvody, proč to existuje:
+ *
+ * 1) Nad dráhou stála jediná věta, psaná z 12h výhledu, ale vidět byla i na
+ *    2h záložce. V jedné kartě tak stály tři odpovědi na "kdy bude pršet"
+ *    (odpočet, sloupce, věta) ze tří různých výpočtů a nemusely souhlasit.
+ *    Teď má každé měřítko svoji větu a ta se počítá z týchž slotů, ze
+ *    kterých vyrostly jeho sloupce — odporovat si nemají čím.
+ *
+ * 2) Sloupce nesly svá čísla výhradně v `title`. Ten se na dotyku nezobrazí
+ *    vůbec a odečítače ho čtou nespolehlivě, takže data, která existují jen
+ *    tam, na telefonu fakticky neexistují. Dvacet čtyři jednotlivých popisků
+ *    je ale i pro odečítač k ničemu — nikdo neposlouchá dvacet čtyři hodnot
+ *    po sobě. Sloupce jsou proto `aria-hidden` a čte se tahle věta.
+ *
+ * @returns {{html:string, text:string}} html do panelu, text do aria-label
+ */
+export function precipSummary(slots, okno) {
+  const wet = slots.filter(s => (s.rate ?? 0) >= WET_RATE);
+  const b = (s) => ({ html: `<b>${s}</b>`, text: s });
+
+  if (!wet.length) {
+    const maybe = slots.some(s => (s.prob ?? 0) >= 30);
+    const veta = maybe
+      ? `Model ${okno} sucho nevidí jistě — je nezanedbatelná šance na přeháňku.`
+      : `Beze srážek ${okno}.`;
+    return { html: veta, text: `Srážky ${okno}: ${veta}` };
+  }
+
+  const first = wet[0];
+  const max = wet.reduce((a, c) => (c.rate > a.rate ? c : a));
+  const kdyOd = first.ms != null ? localHM(new Date(first.ms).toISOString()) : null;
+  const kdyMax = max.ms != null ? localHM(new Date(max.ms).toISOString()) : null;
+  const sila = num(max.rate);
+
+  // Když je první mokrý slot rovnou ten první v řadě, "od HH:MM" by znělo
+  // jako budoucnost, i když prší právě teď.
+  const zacatek = first === slots[0]
+    ? "Prší"
+    : kdyOd ? `Déšť ${b(`od ${kdyOd}`).html}` : "Déšť";
+  const zacatekTxt = first === slots[0]
+    ? "prší" : kdyOd ? `déšť od ${kdyOd}` : "déšť";
+
+  const vrchol = kdyMax ? `, nejsilněji ${sila} mm/h kolem ${kdyMax}` : `, až ${sila} mm/h`;
+  return {
+    html: `${zacatek}${vrchol}.`,
+    text: `Srážky ${okno}: ${zacatekTxt}${vrchol}.`,
+  };
 }
 
 /** Osa pod sloupci: "teď" a pak hodiny, rovnoměrně rozmístěné. */

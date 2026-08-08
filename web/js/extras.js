@@ -8,7 +8,7 @@ import { moonIconImg, wImg, wcIconSvg, mostSevere } from "./icons.js";
 import { uiIcon } from "./uiicons.js";
 import { computeNight } from "./stargaze.js";
 import { nearestFreshStation } from "./models.js";
-import { precipBarsHtml, precipAxisHtml, WET_RATE } from "./precipbars.js";
+import { precipBarsHtml, precipAxisHtml, precipSummary, WET_RATE } from "./precipbars.js";
 
 function locMonth() {
   return +new Date().toLocaleString("sv-SE", { timeZone: state.tz }).slice(5, 7);
@@ -215,6 +215,14 @@ export function renderMinutely(ptId, minutely) {
   const t0 = Date.now();
   const slots = vals.map((v, i) => ({ rate: v, prob: probAt(i), ms: t0 + i * 10 * 60000 }));
   revealSwap(barsEl, precipBarsHtml(slots));
+  // Věta i popisek pro odečítač vychází ze STEJNÝCH slotů jako sloupce nad
+  // nimi — viz precipSummary(). Dřív tady žádná věta nebyla a nad dráhou
+  // visela jediná, počítaná z 12h výhledu, takže si s grafem uměla odporovat.
+  const sum = precipSummary(slots, "příští 2 h");
+  const msgEl = document.getElementById("minutely-msg");
+  if (msgEl) msgEl.innerHTML = sum.html;
+  barsEl.setAttribute("role", "img");
+  barsEl.setAttribute("aria-label", sum.text);
   const axisEl = document.getElementById("minutely-axis");
   if (axisEl) axisEl.innerHTML = precipAxisHtml(slots.map(s => s.ms));
   if (srcEl) {
@@ -362,8 +370,8 @@ export function renderAstro(data, fc) {
 
   // pásek oblačnosti: jeden sloupec za hodinu, tmavší = jasněji
   const strip = nightHours.length ? `<div class="astro-row"><span class="a-k">Oblačnost</span>
-    <span class="a-v nstrip" title="oblačnost po hodinách ${esc(nightHours[0].t)}–${esc(nightHours[nightHours.length - 1].t)}">
-      ${nightHours.map(h => `<i style="opacity:${(0.15 + 0.85 * (h.cloud ?? 50) / 100).toFixed(2)}" title="${esc(h.t)} · ${h.cloud ?? "?"} %"></i>`).join("")}
+    <span class="a-v nstrip" role="img" aria-label="Oblačnost po hodinách ${esc(nightHours[0].t)}–${esc(nightHours[nightHours.length - 1].t)}, průměrně ${Math.round(nightHours.reduce((a, h) => a + (h.cloud ?? 50), 0) / nightHours.length)} %" title="oblačnost po hodinách ${esc(nightHours[0].t)}–${esc(nightHours[nightHours.length - 1].t)}">
+      ${nightHours.map(h => `<i style="opacity:${(0.15 + 0.85 * (h.cloud ?? 50) / 100).toFixed(2)}" title="${esc(h.t)} · ${h.cloud ?? "?"} %" aria-hidden="true"></i>`).join("")}
     </span>
     ${bestHour && (bestHour.cloud ?? 100) <= 40 ? `<span class="a-d">nejjasněji ~${esc(bestHour.t)}</span>` : ""}</div>` : "";
 

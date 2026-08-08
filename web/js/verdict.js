@@ -752,7 +752,10 @@ export function renderVerifCard() {
     const day = new Date(d.date + "T12:00:00");
     const label = ["Ne", "Po", "Út", "St", "Čt", "Pá", "So"][day.getDay()];
     const cls = pct >= 90 ? "good" : pct >= 75 ? "mid" : "bad";
-    return `<div class="vf-col" title="${d.date}: shoda ${pct} % (${d.n_runs} běhů, MAE ${num(d.mae_mm_h, 2)} mm/h)">
+    // Počet běhů a MAE žily jen v `title`, který se na dotyku nezobrazí
+    // a odečítač ho čte nespolehlivě. Stejný text jde i do aria-label.
+    const popis = `${d.date}: shoda ${pct} % (${d.n_runs} běhů, MAE ${num(d.mae_mm_h, 2)} mm/h)`;
+    return `<div class="vf-col" title="${popis}" aria-label="${popis}">
       <div class="vf-bar-wrap"><div class="vf-bar ${cls}" style="height:${Math.max(8, pct)}%"></div></div>
       <div class="vf-pct">${pct}</div>
       <div class="vf-day">${label}</div>

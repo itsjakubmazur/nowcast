@@ -444,6 +444,29 @@ button.glass-btn svg { width: 17px; height: 17px; display: block; }
 .pp-tab { font-size: var(--fs-tiny); padding: .12rem .5rem; line-height: 1.4; }
 .pp-tab:disabled { opacity: .35; cursor: default; }
 .pp-tab:disabled.active { background: var(--glass2); color: var(--muted); }
+
+/* ══ DOTYKOVÝ CÍL ROSTE, VZHLED NE ════════════════════════════════════════
+   Tři nejčastěji mačkané prvky v appce byly zároveň nejmenší: .pp-tab 31×19,
+   .mtab 37×20 a #ai-ask-send 17×18 px. Spodní hranice WCAG 2.5.8 je 24×24,
+   pohodlná velikost pro prst 44×44 — tyhle neplnily ani to první.
+
+   Zvětšit se ale nesmí VZHLED. Segmentovaný přepínač funguje právě tím, že
+   je kompaktní; nafouknutý výplní přestane vypadat jako jeden přepínač a
+   začne jako dvě samostatná tlačítka. Roste proto jen PLOCHA — neviditelný
+   překryv, který sahá nad a pod pilulku. Prst se trefí do 44 px, oko vidí 19.
+
+   Záložky se roztahují jen SVISLE. Vodorovně už 24px minimum plní, a kdyby
+   se roztáhly i do stran, překryvy dvou sousedních segmentů by se přelily
+   přes sebe a klepnutí na hranici by padlo tomu, kdo je v DOMu později —
+   tedy náhodně. #ai-ask-send stojí v řádku sám, takže může do obou směrů.
+   ═══════════════════════════════════════════════════════════════════════ */
+.pp-tab, .mtab { position: relative; }
+.pp-tab::after, .mtab::after {
+  content: ""; position: absolute;
+  left: 0; right: 0; top: 50%;
+  height: max(44px, 100%);
+  transform: translateY(-50%);
+}
 .pp-src { margin-left: auto; font-size: var(--fs-micro); color: var(--muted); }
 .pp-msg { font-size: var(--fs-sm); line-height: 1.5; margin-bottom: .45rem; }
 .pp-msg:empty { display: none; }
@@ -589,7 +612,14 @@ button.glass-btn svg { width: 17px; height: 17px; display: block; }
 #ai-ask-row.show { display: flex; }
 #ai-ask { flex: 1; background: none; border: none; outline: none; color: var(--text); font-size: var(--fs-body); }
 #ai-ask::placeholder { color: var(--muted); }
-#ai-ask-send { background: none; border: none; color: var(--accent); font-weight: 800; cursor: pointer; font-size: var(--fs-body); padding: .1rem .2rem; }
+/* Dotykový cíl přes překryv — viz blok u .pp-tab. Tenhle stojí v řádku sám,
+   takže se smí roztáhnout i do stran; nemá se s čím překrýt. */
+#ai-ask-send { background: none; border: none; color: var(--accent); font-weight: 800; cursor: pointer; font-size: var(--fs-body); padding: .1rem .2rem; position: relative; }
+#ai-ask-send::after {
+  content: ""; position: absolute; left: 50%; top: 50%;
+  width: max(44px, 100%); height: max(44px, 100%);
+  transform: translate(-50%, -50%);
+}
 #ai-answer { display: none; font-size: var(--fs-body); line-height: 1.5; margin-top: .5rem;
   padding: .55rem .7rem; border-radius: var(--r-chip); background: color-mix(in srgb, var(--accent) 10%, transparent); }
 #ai-answer.show { display: block; }
@@ -818,13 +848,42 @@ button.glass-btn svg { width: 17px; height: 17px; display: block; }
    ═══════════════════════════════════════════════════════════════════════ */
 .fc7-title, .aq-title, .meteo-title, .astro-title,
 .mdl-title, .pp-title, .settings-log-title, #radar-legend .legend-title,
-#verif-panel .vf-title {
+#verif-panel .vf-title, .pfail-t {
   font-size: var(--fs-tiny); font-weight: 700; color: var(--muted);
   text-transform: uppercase; letter-spacing: .07em;
   margin-bottom: .55rem; overflow: hidden;
   display: flex; align-items: center; gap: .35rem; white-space: nowrap;
 }
 .fc7-title span { overflow: hidden; text-overflow: ellipsis; }
+/* ══ PRÁZDNÝ A CHYBOVÝ STAV ═══════════════════════════════════════════════
+   Když panel neměl co ukázat, appka ho na čtyřiceti místech prostě skryla
+   (`classList.remove("show")`) a nikde nebyl jediný text "nemám data".
+   Zmizelý panel je ale nerozlišitelný od tří různých věcí: "tuhle funkci
+   nemáš", "tady zrovna není co ukázat" a "něco se rozbilo". Uživatel z toho
+   neví, jestli má čekat, kliknout, nebo si stěžovat.
+
+   Stav proto NEKŘIČÍ — není to výstraha, je to konstatování. Žádná červená,
+   žádná ikona; jen hlavička (ať je poznat, KTERÁ část selhala), věta a
+   případně tlačítko. Hlavičku sdílí s ostatními panely přes selektor výš,
+   takže se od nich neodliší ani o stupeň.
+
+   Skrývat je pořád správně tam, kde je prázdno samo informací — bouřkový
+   banner bez bouřky nemá co říct. Tohle je pro panely, které mluvit MĚLY.
+   ═══════════════════════════════════════════════════════════════════════ */
+.pfail { padding: .1rem 0 .2rem; }
+.pfail-m { font-size: var(--fs-sm); color: var(--muted); line-height: 1.5; }
+.pfail-r {
+  margin-top: .5rem; padding: .32rem .7rem;
+  font: inherit; font-size: var(--fs-sm); font-weight: 700;
+  color: var(--accent); cursor: pointer;
+  background: var(--glass2); border: none; border-radius: var(--r-pill);
+  box-shadow: inset 0 0 0 1px var(--gring);
+}
+.pfail-r:disabled { color: var(--muted); cursor: default; }
+/* Tichá varianta: "ještě nemám" není chyba, tak ať ani nevypadá jako nabídka
+   k akci — text sedí o stupeň níž a nemá tlačítko. */
+.pfail-quiet .pfail-m { font-size: var(--fs-tiny); }
+
 /* Doplňková věta v hlavičce nekřičí s ní — nese ji malá písmena a normální
    řez, jinak by z hlavičky byly dva soupeřící bloky verzálek. */
 .vf-sub, .aq-title-days {
@@ -2282,7 +2341,24 @@ body.embed #left-card { top: 100px; bottom: 1rem; }
   #sheet-grabber { padding: .4rem 0 .3rem; }
 }
 
-/* ── Střední šířky — pravý panel by se křížil s levým ───────────────────── */
+/* ── Střední šířky — jedna lišta místo dvou ─────────────────────────────────
+   Tady dřív stálo `#right-panel { display: none }`. Důvod byl správný (dvě
+   fixní lišty po stranách nechají v tomhle pásmu z mapy proužek), ale
+   následek ne: zmizely expertní panely a s nimi význam tlačítek TÝDEN a DATA.
+   Zůstala klikatelná a nedělala nic. Mrtvé ovládání je horší než chybějící —
+   uživatel klikne, nestane se nic, a nemá jak zjistit proč.
+
+   Obsah se proto nezahazuje, ale stěhuje: rail.js vsune pravý panel na konec
+   levé karty, takže je JEDEN svitek se vším a mapa má celou zbylou šířku.
+   Selektor je `#left-card #right-panel`, ne třída — platí přesně tehdy, když
+   je panel doopravdy vnořený, takže když by JS neproběhl, nic se nerozbije
+   a panel zůstane po svém na pravé straně. ═══════════════════════════════ */
 @media (min-width: 769px) and (max-width: 1080px) {
-  #right-panel { display: none; }
+  #left-card #right-panel {
+    position: static; right: auto; top: auto; bottom: auto;
+    width: auto; z-index: auto;
+    overflow: visible;
+    border-radius: 0;
+    padding: 0; margin-top: .5rem;
+  }
 }

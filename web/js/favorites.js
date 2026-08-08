@@ -4,6 +4,7 @@ import { showToast } from "./toast.js";
 import { getSettings, logNotif } from "./settings.js";
 import { assessRain, precipDescr } from "./verdict.js";
 import { initUiIcons } from "./uiicons.js";
+import { panelError } from "./emptystate.js";
 
 const FAV_KEY = "nowcast_favs";
 const FAV_MAX = 5;
@@ -362,7 +363,14 @@ export async function renderPushDiagnosis() {
   if (!el) return;
   let d;
   try { d = await pushDiagnosis(); }
-  catch { el.classList.remove("show"); return; }
+  catch {
+    // Dřív tady bylo `remove("show")`. U diagnostiky upozornění je to obzvlášť
+    // matoucí: řádek, který má říct "notifikace fungují", zmizel a vypadalo to,
+    // že fungují — přitom se ho jen nepodařilo zjistit.
+    panelError(el, "Upozornění", "Stav upozornění se nepodařilo zjistit.",
+      () => renderPushDiagnosis());
+    return;
+  }
   el.innerHTML = `<b>${d.ok ? "✓" : "!"}</b> ${esc(d.msg)}` +
     (d.hint ? ` <span class="muted">${esc(d.hint)}</span>` : "");
   el.classList.toggle("push-bad", !d.ok);

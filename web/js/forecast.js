@@ -3,6 +3,7 @@ import { wcIconSvg, wcLabel, mostSevere, wImg } from "./icons.js";
 import { chartAnim, reducedMotion } from "./motion.js";
 import { uvClass, esc, num, revealSwap, nowLocStr, locDateStr } from "./utils.js";
 import { isDarkTheme } from "./theme.js";
+import { panelError } from "./emptystate.js";
 
 const N_HOURLY = 6;
 const CZ_DAY_FULL = ["neděle", "pondělí", "úterý", "středa", "čtvrtek", "pátek", "sobota"];
@@ -1107,7 +1108,11 @@ export async function fetchAndRenderAQ(lat, lon) {
     const data = await r.json();
     renderAQ(data);
   } catch (e) {
-    panel.classList.remove("show");
+    // Dřív tady bylo `remove("show")` — panel beze slova zmizel a nešlo
+    // poznat, jestli je vzduch v pořádku, nebo jestli selhal dotaz.
+    panelError(panel, "Kvalita ovzduší",
+      "Data o kvalitě ovzduší se nepodařilo načíst.",
+      () => fetchAndRenderAQ(lat, lon));
   }
 }
 

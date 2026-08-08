@@ -188,19 +188,28 @@
       </div>
       <span class="pp-src" id="minutely-src"></span>
     </div>
-    <!-- Věta "kdy vyrazit" — to jediné, co z 12h pohledu opravdu potřebuješ -->
-    <div class="pp-msg" id="outlook-msg"></div>
     <!-- Vodorovná dráha se snapem: měřítko se mění přejetím prstu, ne klikem.
          Nativní scroll-snap, ne vlastní drag — má setrvačnost, gumový doraz
          i chování podle systému zdarma a funguje i trackpadem a klávesnicí. -->
     <div class="pp-track" id="pp-track">
-      <!-- Obě měřítka kreslí stejnou gramatikou (.pbars/.pp-axis) — viz
-           precipbars.js. Liší se jen zdrojem dat a délkou okna. -->
+      <!-- Obě měřítka kreslí stejnou gramatikou (.pp-msg/.pbars/.pp-axis) —
+           viz precipbars.js. Liší se jen zdrojem dat a délkou okna.
+
+           VĚTA PATŘÍ DOVNITŘ TĚLA, ne nad dráhu. Stála nad ní jediná,
+           psaná z 12h výhledu, a byla vidět i na 2h záložce: v jedné kartě
+           tak stály tři odpovědi na "kdy bude pršet" — odpočet v hlavě,
+           sloupce pod ní a věta odjinud — a nemusely souhlasit. Konkrétně
+           uměla nad dvouhodinovými sloupci plnými deště stát věta "Beze
+           srážek celých příštích 12 h". Teď má každé měřítko svoji větu
+           a odvozuje ji z týchž slotů, které kreslí jeho sloupce. -->
       <div class="pp-body" data-scale="2h">
+        <div class="pp-msg" id="minutely-msg"></div>
         <div class="pbars" id="minutely-bars"></div>
         <div class="pp-axis" id="minutely-axis"></div>
       </div>
       <div class="pp-body" data-scale="12h">
+        <!-- Věta "kdy vyrazit" — to jediné, co z 12h pohledu opravdu potřebuješ -->
+        <div class="pp-msg" id="outlook-msg"></div>
         <div class="pbars" id="ow-bars"></div>
         <div class="pp-axis" id="ow-axis"></div>
       </div>

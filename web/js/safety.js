@@ -9,7 +9,7 @@ import { state } from "./state.js";
 import { haversine, esc, localHM, num } from "./utils.js";
 import { uiIcon } from "./uiicons.js";
 import { markPrecipBody } from "./extras.js";
-import { precipBarsHtml, precipAxisHtml, WET_RATE } from "./precipbars.js";
+import { precipBarsHtml, precipAxisHtml, precipSummary, WET_RATE } from "./precipbars.js";
 import { assessRain, nearestPt } from "./verdict.js";
 
 // ── 1) Zásah bouřkou ────────────────────────────────────────────────────────
@@ -169,6 +169,10 @@ export function renderOutlookWindows(minutely, fc) {
 
   msgEl.innerHTML = msg;
   barsEl.innerHTML = bars;
+  // Sloupce jsou aria-hidden, protože dvanáct hodnot po sobě nikdo
+  // neposlouchá; dráha nese jednu větu ze stejných dat — viz precipSummary().
+  barsEl.setAttribute("role", "img");
+  barsEl.setAttribute("aria-label", precipSummary(tl, "příštích 12 h").text);
   if (axisEl) axisEl.innerHTML = precipAxisHtml(tl.map(p => p.ms));
   markPrecipBody("12h", true);
 }

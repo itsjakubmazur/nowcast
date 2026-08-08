@@ -6,6 +6,7 @@
 import { state } from "./state.js";
 import { num } from "./utils.js";
 import { uiIcon } from "./uiicons.js";
+import { panelError } from "./emptystate.js";
 
 const CACHE_KEY = "nowcast_climate_normals_v2"; // v2: + rekordy max/min
 const CACHE_TTL_MS = 30 * 24 * 3600 * 1000;
@@ -148,7 +149,10 @@ export async function renderDayInHistory(lat, lon, data) {
   try {
     clim = await getClimatology(lat, lon);
   } catch {
-    panel.classList.remove("show");
+    // Dřív tady bylo `remove("show")` — panel beze slova zmizel.
+    panelError(panel, "Klimatický kontext",
+      "Dlouhodobé normály se nepodařilo načíst.",
+      () => renderClimateAnomaly(lat, lon, data));
     return;
   }
   const md = new Date().toLocaleDateString("sv-SE", { timeZone: state.tz }).slice(5);

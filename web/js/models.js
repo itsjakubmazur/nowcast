@@ -10,6 +10,7 @@
 
 import { state, WORKER_BASE } from "./state.js";
 import { esc, num, haversine, ageMinutes, nowLocStr, locDateStr } from "./utils.js";
+import { panelError } from "./emptystate.js";
 
 // Čtvrtá položka je RODINA, ne provozovatel. Vážený průměr totiž předpokládá
 // nezávislé názory, a ty tu nejsou: ICON-D2 a ICON jsou obě DWD nad stejným
@@ -681,6 +682,12 @@ export async function renderModelsPanel(lat, lon, signal) {
       <div class="mdl-note">${note}</div>`;
     panel.classList.add("show");
   } catch (e) {
-    if (e.name !== "AbortError") panel.classList.remove("show");
+    // Přerušení kvůli novému dotazu není chyba — jen se překreslí něco jiného.
+    // Selhání sítě ale panel dřív TIŠE SKRYLO: uživatel nepoznal, jestli se
+    // něco pokazilo, nebo jestli tuhle funkci nikdy neměl.
+    if (e.name === "AbortError") return;
+    panelError(panel, "Modely pro tohle místo",
+      "Předpovědi modelů se nepodařilo načíst.",
+      () => renderModelsPanel(lat, lon));
   }
 }

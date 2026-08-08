@@ -48,6 +48,7 @@ import { initWorldTemps, renderWorldTemps } from "./worldtemp.js";
 import { esc, num } from "./utils.js";
 import { initUiIcons } from "./uiicons.js";
 import { initSections, markSectionAlerts } from "./sections.js";
+import { initRail } from "./rail.js";
 import { riseIn, resetChartAnim, withTransition } from "./motion.js";
 
 // ── Data fetch (graceful degradation — radar/grid kritické, zbytek volitelné) ─
@@ -491,6 +492,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   initEmbedMode();
   initUiIcons();   // emoji v tlačítkách → jednotná SVG ikonografie
   initSections();   // Teď / Dnes / Týden / Data — dělí dvacet panelů na čtyři pohledy
+  initRail();       // ve středních šířkách sloučí pravý panel do levé lišty
 
   try {
     await loadData();
