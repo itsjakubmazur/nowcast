@@ -2302,8 +2302,14 @@ async function main() {
 
     // Poloměry: povolené jsou tokeny, pilulka a proužky do 4 px (tam je
     // poloměr prostě půlka výšky, ne rozhodnutí o tvaru).
-    const rawR = [...body.matchAll(/border-radius:\s*([\d.]+)px/g)]
-      .map(m => parseFloat(m[1])).filter(v => v > 4 && v !== 999);
+    //
+    // Čte se KAŽDÁ hodnota v deklaraci, ne jen první. Předchozí verze brala
+    // `border-radius:\s*([\d.]+)px`, takže vícehodnotový zápis přeskočila
+    // úplně — `border-radius: 0 0 18px 18px` u našeptávače tak přežil jako
+    // jediný poloměr mimo stupnici a našel ho až audit.
+    const rawR = [...body.matchAll(/border-radius:\s*([^;}]+)/g)]
+      .flatMap(m => [...m[1].matchAll(/([\d.]+)px/g)].map(x => parseFloat(x[1])))
+      .filter(v => v > 4 && v !== 999);
     assertTrue(rawR.length === 0,
       `žádný poloměr mimo stupnici (${rawR.slice(0, 5).join(", ") || "0"})`);
 
