@@ -7,7 +7,11 @@
 const W_PATH = "icons/weather/";
 
 export function wImg(name, cls = "wicon") {
-  return `<img class="${cls}" src="${W_PATH}${name}.svg" alt="" decoding="async">`;
+  // `loading="lazy"` na všech: appka jich vykreslí kolem sedmatřiceti (týden,
+  // hodiny v rozbaleném dni, bubliny stanic) a drtivá většina leží mimo
+  // obrazovku nebo ve sbalených detailech. Ikonám, které v záběru JSOU, to
+  // nevadí — prohlížeč líné obrázky ve viewportu i tak natáhne hned.
+  return `<img class="${cls}" src="${W_PATH}${name}.svg" alt="" loading="lazy" decoding="async">`;
 }
 
 // WMO weather_code → název souboru (denní varianta)

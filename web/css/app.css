@@ -625,8 +625,18 @@ button.glass-btn svg { width: 17px; height: 17px; display: block; }
 #delta-line .d-anom { color: var(--red-text); }
 #delta-line .d-anom.cold { color: var(--teal-text); }
 
-.fc-stat-bar   { height: 2.5px; background: var(--rowline); border-radius: 2px; margin-top: .35rem; }
-.fc-stat-bar-fill { height: 100%; border-radius: 2px; transition: width .4s; }
+/* ══ PRUHY SE ANIMUJÍ TRANSFORMEM, NE ŠÍŘKOU ══════════════════════════════
+   `transition: width` vynutí layout v každém snímku animace: prohlížeč musí
+   přepočítat rozvržení šedesátkrát za vteřinu kvůli pruhu vysokému 2,5 px.
+   `transform: scaleX()` udělá totéž na kompozitoru, bez layoutu i bez malby.
+
+   Zaoblení se přesunulo na DRÁHU s `overflow: hidden`. Kdyby zůstalo na
+   výplni, škálování by ho vodorovně roztáhlo a konce pilulky by se při
+   krátkém pruhu protáhly do elipsy. Takhle tvar drží dráha a výplň je
+   prostý obdélník, kterému škálování nemá co pokazit.
+   ═══════════════════════════════════════════════════════════════════════ */
+.fc-stat-bar   { height: 2.5px; background: var(--rowline); border-radius: 2px; margin-top: .35rem; overflow: hidden; }
+.fc-stat-bar-fill { height: 100%; width: 100%; transform-origin: left center; transition: transform .4s; }
 .place { font-size: var(--fs-sm); font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; display: flex; align-items: center; gap: .3rem; }
 .dist  { display: none; }
 .verdict-text { font-size: var(--fs-body); line-height: 1.55; color: var(--text); margin-top: .5rem; }
@@ -849,8 +859,9 @@ button.glass-btn svg { width: 17px; height: 17px; display: block; }
 .sd-card-lbl { font-size: var(--fs-tiny); color:var(--muted); margin-bottom:.2rem; display:flex; align-items:center; gap:.25rem; }
 .sd-val { font-size: var(--fs-xl); font-weight:800; line-height:1; margin-bottom:.28rem; font-variant-numeric: tabular-nums; }
 .sd-val-unit { font-size: var(--fs-tiny); font-weight:500; color:var(--muted); margin-left:.1rem; }
-.sd-bar-track { height:3px; background:var(--rowline); border-radius:2px; margin-bottom:.25rem; }
-.sd-bar-fill  { height:100%; border-radius:2px; transition:width .4s; }
+/* Zaoblení na dráze, škálování na výplni — viz blok u .fc-stat-bar. */
+.sd-bar-track { height:3px; background:var(--rowline); border-radius:2px; margin-bottom:.25rem; overflow:hidden; }
+.sd-bar-fill  { height:100%; width:100%; transform-origin:left center; transition:transform .4s; }
 .sd-minmax { font-size: var(--fs-tiny); color:var(--muted); display:flex; gap:.5rem; margin-bottom:.3rem; }
 .sd-spark { display:block; width:100%; overflow:visible; }
 .sd-chart { background:var(--glass2);
@@ -1879,8 +1890,9 @@ button.ctrl.active {
 }
 #storm-summary.show { display: block; }
 #storm-summary b { font-variant-numeric: tabular-nums; }
-#btn-test-push { display: none; width: 100%; margin: .35rem 0 .2rem; justify-content: center; }
-#btn-test-push { display: flex; }
+/* Dvě deklarace pod sebou, druhá rušila první — `display: none` na řádku,
+   který o řádek níž přepsalo `display: flex`. Zbyla jedna. */
+#btn-test-push { display: flex; width: 100%; margin: .35rem 0 .2rem; justify-content: center; }
 
 #push-status {
   display: none; margin: .3rem 0 .1rem; font-size: var(--fs-sm);

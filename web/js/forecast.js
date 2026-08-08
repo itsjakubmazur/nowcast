@@ -326,7 +326,7 @@ export function renderFcNow(fc, minutely) {
       <div class="tile-l"><span class="dot" style="background:${s.color}"></span>${esc(s.label)}</div>
       <div class="tile-v">${esc(s.val)}${s.unit ? `<span class="u">${esc(s.unit)}</span>` : ""}</div>
       ${s.sub ? `<div class="tile-s">${esc(s.sub)}</div>` : ""}
-      ${s.pct != null ? `<div class="fc-stat-bar"><div class="fc-stat-bar-fill" style="width:${s.pct.toFixed(0)}%;background:${s.color}"></div></div>` : ""}
+      ${s.pct != null ? `<div class="fc-stat-bar"><div class="fc-stat-bar-fill" style="transform:scaleX(${(s.pct / 100).toFixed(3)});background:${s.color}"></div></div>` : ""}
     </div>`).join("")}
   </div>`;
 }

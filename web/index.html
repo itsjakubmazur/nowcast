@@ -116,7 +116,7 @@
 <!-- Topbar -->
 <div id="topbar">
   <div class="logo">
-    <div class="logo-icon"><img src="icons/icon-192.png" alt="" width="27" height="27"></div>
+    <div class="logo-icon"><img src="icons/icon-192.png" alt="" width="27" height="27" loading="lazy" decoding="async"></div>
     <span class="logo-text">nowcast</span>
   </div>
   <div class="search-wrap suggest">
@@ -396,6 +396,18 @@
       <h3>Nastavení</h3>
       <button id="settings-close" title="Zavřít" aria-label="Zavřít">✕</button>
     </div>
+    <!-- Motiv má TŘI stavy, ne dva. Tlačítko v topbaru umí jen rychlé
+         přepnutí světlý/tmavý, a kdo ho jednou zmáčkl, se k "podle systému"
+         nedostal zpátky — volba se uloží a od té chvíle vždycky vyhraje.
+         Třetí stav proto bydlí tady, kde je pojmenovaný. -->
+    <label class="set-row">
+      <span>Motiv</span>
+      <select id="set-theme">
+        <option value="">Podle systému</option>
+        <option value="light">Světlý</option>
+        <option value="dark">Tmavý</option>
+      </select>
+    </label>
     <label class="set-row">
       <span>Podkladová mapa</span>
       <select id="set-basemap">

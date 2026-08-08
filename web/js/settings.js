@@ -4,6 +4,7 @@
 import { state, PLAY } from "./state.js";
 import { BASEMAPS, getBasemap, setBasemap } from "./map.js";
 import { bindModal } from "./modal.js";
+import { getThemePref, setThemePref } from "./theme.js";
 
 const SETTINGS_KEY = "nowcast_settings_v1";
 const LOG_KEY = "nowcast_notif_log_v1";
@@ -88,6 +89,16 @@ export function initSettingsPanel() {
       .map(([k, b]) => `<option value="${k}">${b.label}</option>`).join("");
     baseSel.value = getBasemap();
     baseSel.addEventListener("change", () => setBasemap(baseSel.value));
+  }
+
+  // Motiv — třetí stav "podle systému", ke kterému se z topbaru nedá vrátit.
+  const themeSel = document.getElementById("set-theme");
+  if (themeSel) {
+    themeSel.value = getThemePref();
+    themeSel.addEventListener("change", () => setThemePref(themeSel.value));
+    // Přepnutí tlačítkem v topbaru musí posunout i tenhle výběr, jinak by
+    // ukazoval něco jiného, než co je na obrazovce.
+    window.addEventListener("nowcast:theme-changed", () => { themeSel.value = getThemePref(); });
   }
 
   if (layerSel) layerSel.value = s.layer;

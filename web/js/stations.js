@@ -478,7 +478,7 @@ function sdCard(key, label, icon, color, unit, fmtFn, series) {
   return `<div class="sd-card">
     <div class="sd-card-lbl">${uiIcon(icon)}${esc(label)}</div>
     <div class="sd-val">${esc(fmtFn(cur))}<span class="sd-val-unit">${esc(unit)}</span></div>
-    <div class="sd-bar-track"><div class="sd-bar-fill" style="width:${pct}%;background:${color}"></div></div>
+    <div class="sd-bar-track"><div class="sd-bar-fill" style="transform:scaleX(${(pct / 100).toFixed(3)});background:${color}"></div></div>
     <div class="sd-minmax"><span>MIN <b>${esc(fmtFn(mn))}</b></span><span>MAX <b>${esc(fmtFn(mx))}</b></span></div>
     ${makeSpark(vals, color)}
   </div>`;

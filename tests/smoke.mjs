@@ -2495,6 +2495,28 @@ async function main() {
     .filter(r => r.scrollWidth > r.clientWidth + 1).length);
   assertTrue(orez === 0, `žádný řádek 7denního výhledu se neořezává (${orez})`);
 
+  // ── Motiv má tři stavy ─────────────────────────────────────────────────
+  // Tlačítko v topbaru umí jen světlý/tmavý; kdo ho zmáčkl, se k "podle
+  // systému" nedostal zpátky, protože uložená volba vždy vyhraje.
+  const motiv = await page.evaluate(() => {
+    const sel = document.getElementById("set-theme");
+    if (!sel) return null;
+    return { volby: [...sel.options].map(o => o.value), aktualni: sel.value };
+  });
+  assertTrue(!!motiv && motiv.volby.length === 3 && motiv.volby.includes(""),
+    `motiv nabízí tři stavy včetně systémového (${motiv?.volby})`);
+
+  const prepnuto = await page.evaluate(() => {
+    const sel = document.getElementById("set-theme");
+    sel.value = "light"; sel.dispatchEvent(new Event("change"));
+    const po = document.documentElement.getAttribute("data-theme");
+    sel.value = ""; sel.dispatchEvent(new Event("change"));
+    return { light: po, system: document.documentElement.getAttribute("data-theme"),
+             ulozeno: localStorage.getItem("nowcast_theme") };
+  });
+  assertTrue(prepnuto.light === "light" && prepnuto.system === null && !prepnuto.ulozeno,
+    `návrat na systémový motiv smaže uloženou volbu (${JSON.stringify(prepnuto)})`);
+
   await browser.close();
   server.close();
   rmrf(SERVE);

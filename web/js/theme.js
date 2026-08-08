@@ -42,6 +42,7 @@ export function initTheme() {
     }
     applyThemeColorMeta(isLight);
   }
+  _render = render;
   render();
 
   if (btn) {
@@ -64,6 +65,30 @@ export function initTheme() {
     });
   }
 }
+
+/**
+ * Uložená PREFERENCE, ne aktuální motiv: "" znamená "podle systému".
+ *
+ * Tlačítko v topbaru umí jen rychlé přepnutí světlý/tmavý. Kdo ho jednou
+ * zmáčkl, se ale ke třetímu stavu nedostal zpátky — volba se uloží a od té
+ * chvíle vždy vyhraje nad `prefers-color-scheme`. Na telefonu, který v noci
+ * přepíná sám, to znamenalo ruční přepínání napořád.
+ */
+export function getThemePref() {
+  return localStorage.getItem(THEME_KEY) || "";
+}
+
+/** @param {"" | "light" | "dark"} pref  prázdný řetězec = podle systému */
+export function setThemePref(pref) {
+  if (pref === "light" || pref === "dark") localStorage.setItem(THEME_KEY, pref);
+  else localStorage.removeItem(THEME_KEY);
+  window.__nowcastTheme = pref || null;
+  _render?.();
+  window.dispatchEvent(new CustomEvent("nowcast:theme-changed"));
+}
+
+// initTheme() sem uloží svůj render(), aby ho setThemePref() mohl zavolat.
+let _render = null;
 
 export function isDarkTheme() {
   return document.documentElement.getAttribute("data-theme") !== "light"
