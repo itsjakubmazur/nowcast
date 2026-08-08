@@ -1,0 +1,323 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-08-08T07:05:00Z",
+  "title": "Design System: nowcast",
+  "extensions": {
+    "colorMeta": {
+      "nocni-obloha": {
+        "role": "neutral",
+        "displayName": "Noční obloha",
+        "canonical": "#080C14",
+        "tonalRamp": ["#04060A", "#080C14", "#0F1524", "#182034", "#26314A", "#3B4864", "#5A6883", "#8894AC"]
+      },
+      "radarova-modr": {
+        "role": "primary",
+        "displayName": "Radarová modř",
+        "canonical": "#0A84FF",
+        "tonalRamp": ["#002A55", "#003D7A", "#0055A8", "#006ED4", "#0A84FF", "#3D9EFF", "#7BBCFF", "#C2DEFF"]
+      },
+      "teplotni-jantar": {
+        "role": "secondary",
+        "displayName": "Teplotní jantár",
+        "canonical": "#FFB340",
+        "tonalRamp": ["#4A2E00", "#6B4300", "#8F5A00", "#B57400", "#DB9019", "#FFB340", "#FFCB7D", "#FFE4BC"]
+      },
+      "teplotni-ohen": {
+        "role": "secondary",
+        "displayName": "Teplotní oheň",
+        "canonical": "#FF6B2C",
+        "tonalRamp": ["#4A1600", "#6B2300", "#8F3200", "#B54200", "#DB5416", "#FF6B2C", "#FF9A6E", "#FFC8AE"]
+      },
+      "sucha-zelen": {
+        "role": "tertiary",
+        "displayName": "Suchá zeleň",
+        "canonical": "#30D158",
+        "tonalRamp": ["#00330F", "#004D19", "#006A26", "#008834", "#12A844", "#30D158", "#77E294", "#BDF1CB"]
+      },
+      "vystrazna-cerven": {
+        "role": "tertiary",
+        "displayName": "Výstražná červeň",
+        "canonical": "#FF453A",
+        "tonalRamp": ["#4A0500", "#6B0C03", "#8F1509", "#B52010", "#DB301F", "#FF453A", "#FF8279", "#FFBFBA"]
+      },
+      "pozorovaci-zlut": {
+        "role": "tertiary",
+        "displayName": "Pozorovací žluť",
+        "canonical": "#FFD60A",
+        "tonalRamp": ["#3D3300", "#5C4D00", "#7D6A00", "#9E8800", "#C0A700", "#FFD60A", "#FFE560", "#FFF3B5"]
+      },
+      "aerologicka-teal": {
+        "role": "tertiary",
+        "displayName": "Aerologická teal",
+        "canonical": "#40C8E0",
+        "tonalRamp": ["#00303A", "#004856", "#006174", "#007B93", "#1FA3BF", "#40C8E0", "#84DDEC", "#C3EFF6"]
+      },
+      "klimaticka-fialova": {
+        "role": "tertiary",
+        "displayName": "Klimatická fialová",
+        "canonical": "#BF5AF2",
+        "tonalRamp": ["#2E0047", "#450069", "#5D008C", "#7710AF", "#9B34D2", "#BF5AF2", "#D492F7", "#EBCBFB"]
+      },
+      "citelny-text": {
+        "role": "neutral",
+        "displayName": "Čitelný text",
+        "canonical": "#EDF2F9",
+        "tonalRamp": ["#1A1F26", "#2E353F", "#454D59", "#5F6874", "#8A929E", "#B6BDC7", "#D5DBE4", "#EDF2F9"]
+      },
+      "tlumeny-text": {
+        "role": "neutral",
+        "displayName": "Tlumený text",
+        "canonical": "#AAB7C9",
+        "tonalRamp": ["#1B2129", "#2C3540", "#404B5A", "#576476", "#7A8798", "#AAB7C9", "#CBD4E0", "#E7ECF3"]
+      },
+      "denni-obloha": {
+        "role": "neutral",
+        "displayName": "Denní obloha",
+        "canonical": "#E9EDF2",
+        "tonalRamp": ["#1B2129", "#2F3742", "#47515F", "#636F80", "#8C97A6", "#B7C0CB", "#D5DCE4", "#E9EDF2"]
+      },
+      "denni-text": {
+        "role": "neutral",
+        "displayName": "Denní text",
+        "canonical": "#0E1A2B",
+        "tonalRamp": ["#050A11", "#0E1A2B", "#16263D", "#213551", "#31486B", "#48628A", "#6A83AB", "#9DB0CB"]
+      },
+      "denni-tlumeny": {
+        "role": "neutral",
+        "displayName": "Denní tlumený",
+        "canonical": "#51607A",
+        "tonalRamp": ["#141A24", "#212938", "#333D50", "#45526B", "#51607A", "#71809A", "#9BA7BC", "#C8CFDB"]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "Teplota v hlavičce. Jediné číslo, které smí křičet, a jediné místo s gradientovou výplní textu."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Hodnota v dlaždici — velká čísla v kartách."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Nadpis karty, střední číslo."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Běžný text vět, verdikt, popisy."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Hlavička panelu a popisky nad hodnotami. Verzálky, prostrkání 0.07em, tlumená barva."
+      }
+    },
+    "shadows": [
+      {
+        "name": "skleneny-odstup",
+        "value": "0 18px 44px -14px rgba(0,0,0,.6)",
+        "purpose": "Jediný vržený stín v systému. Odděluje plovoucí skleněnou vrstvu od mapy pod ní. Světlá varianta: 0 18px 44px -18px rgba(14,26,43,.32)."
+      },
+      {
+        "name": "spekularni-hrana",
+        "value": "inset 0 1.2px 0 rgba(255,255,255,.16)",
+        "purpose": "Horní světlo na skle. Ve světlém motivu rgba(255,255,255,.85)."
+      },
+      {
+        "name": "prstenec-misto-borderu",
+        "value": "inset 0 0 0 1px rgba(255,255,255,.14)",
+        "purpose": "Obrys všech skleněných ploch. Nahrazuje border, aby okraj reagoval na obsah pod sklem."
+      },
+      {
+        "name": "zare-jezdce",
+        "value": "0 2px 10px color-mix(in srgb, var(--accent) 45%, transparent)",
+        "purpose": "Jediné místo, kde stín nese barvu — pod jezdcem segmentového přepínače."
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease-standard",
+        "value": "cubic-bezier(.32, .72, 0, 1)",
+        "purpose": "Jediná křivka zrychlení v systému. Jezdec navigace (280 ms), odvinutí dne (420 ms), skládání částí (340 ms)."
+      },
+      {
+        "name": "press",
+        "value": "transform .12s ease",
+        "purpose": "Stisk tlačítka na scale(.94). Ovládání má působit fyzicky."
+      },
+      {
+        "name": "state-shift",
+        "value": "background .15s, color .15s",
+        "purpose": "Přepnutí stavu segmentu a hover na tlačítku."
+      },
+      {
+        "name": "reveal-stagger",
+        "value": "60ms",
+        "purpose": "Rozestup mezi částmi rozbaleného obsahu; u panelů při prvním objevení 40 ms."
+      }
+    ],
+    "breakpoints": [
+      { "name": "mobile", "value": "768px" },
+      { "name": "desktop", "value": "769px" },
+      { "name": "desktop-narrow", "value": "1080px" }
+    ],
+    "materials": [
+      {
+        "name": "sklo",
+        "value": "backdrop-filter: blur(26px) saturate(1.7)",
+        "purpose": "Jediná skleněná hladina nad živou mapou. Nikdy se nevrství — sklo ve skle rozmaže hranici vrstvy."
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Glass Button",
+      "kind": "button",
+      "refersTo": "button-glass",
+      "description": "Základní ovládací prvek — pilulka ze skla s prstencem místo borderu. Stisk zmenší prvek na 94 %.",
+      "html": "<button class=\"ds-btn-glass\">Sdílet</button>",
+      "css": ".ds-btn-glass { height: 36px; min-width: 36px; padding: 0 .8rem; border: none; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; gap: .35rem; font-family: Figtree, system-ui, sans-serif; font-size: .82rem; font-weight: 600; color: #EDF2F9; background: rgba(24,32,50,.62); -webkit-backdrop-filter: blur(26px) saturate(1.7); backdrop-filter: blur(26px) saturate(1.7); box-shadow: 0 18px 44px -14px rgba(0,0,0,.6), inset 0 1.2px 0 rgba(255,255,255,.16), inset 0 0 0 1px rgba(255,255,255,.14); cursor: pointer; transition: transform .12s ease, background .15s; } .ds-btn-glass:hover { background: color-mix(in srgb, #EDF2F9 10%, rgba(24,32,50,.62)); } .ds-btn-glass:active { transform: scale(.94); } .ds-btn-glass:focus-visible { outline: 2px solid #0A84FF; outline-offset: 3px; }"
+    },
+    {
+      "name": "Icon Button",
+      "kind": "button",
+      "refersTo": "button-glass",
+      "description": "Čtvercová varianta pro samotnou ikonu. Ikonografie je tahové SVG 17×17, nikdy emoji.",
+      "html": "<button class=\"ds-btn-icon\" aria-label=\"Moje poloha\"><svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\"><circle cx=\"12\" cy=\"12\" r=\"3.2\"/><circle cx=\"12\" cy=\"12\" r=\"8\"/><path d=\"M12 1.8v3M12 19.2v3M1.8 12h3M19.2 12h3\"/></svg></button>",
+      "css": ".ds-btn-icon { width: 36px; height: 36px; padding: 0; border: none; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; color: #EDF2F9; background: rgba(24,32,50,.62); -webkit-backdrop-filter: blur(26px) saturate(1.7); backdrop-filter: blur(26px) saturate(1.7); box-shadow: 0 18px 44px -14px rgba(0,0,0,.6), inset 0 1.2px 0 rgba(255,255,255,.16), inset 0 0 0 1px rgba(255,255,255,.14); cursor: pointer; transition: transform .12s ease, background .15s; } .ds-btn-icon svg { width: 17px; height: 17px; display: block; } .ds-btn-icon:hover { background: color-mix(in srgb, #EDF2F9 10%, rgba(24,32,50,.62)); } .ds-btn-icon:active { transform: scale(.94); }"
+    },
+    {
+      "name": "Segmented Control",
+      "kind": "chip",
+      "refersTo": "segment-active",
+      "description": "Přepínač měřítka nebo záložky. Aktivní segment má plnou Radarovou modř; váha 700 v obou stavech, aby přepnutí neposouvalo šířku.",
+      "html": "<div class=\"ds-seg\"><button class=\"ds-seg-btn is-active\">2 h</button><button class=\"ds-seg-btn\">12 h</button></div>",
+      "css": ".ds-seg { display: inline-flex; gap: 2px; padding: 2px; border-radius: 999px; background: rgba(24,32,50,.42); box-shadow: inset 0 0 0 1px rgba(255,255,255,.14); } .ds-seg-btn { border: none; background: transparent; color: #AAB7C9; cursor: pointer; border-radius: 999px; font-family: Figtree, system-ui, sans-serif; font-size: .74rem; font-weight: 700; padding: .22rem .55rem; transition: background .15s, color .15s; } .ds-seg-btn.is-active { background: #0A84FF; color: #fff; } .ds-seg-btn:hover:not(.is-active) { color: #EDF2F9; } .ds-seg-btn:focus-visible { outline: 2px solid #0A84FF; outline-offset: 1px; }"
+    },
+    {
+      "name": "Section Nav",
+      "kind": "nav",
+      "refersTo": "segment-active",
+      "description": "Plovoucí lišta sekcí s jezdcem. Jezdec je široký přesně jeden segment a posouvá se násobkem vlastní šířky — proto nikdy nerozjede zarovnání.",
+      "html": "<nav class=\"ds-secnav\" style=\"--sec-i:1;--sec-n:4\"><button>Teď</button><button aria-pressed=\"true\">Dnes</button><button>Týden</button><button>Data</button></nav>",
+      "css": ".ds-secnav { --sec-pad: .25rem; position: relative; display: flex; width: 292px; padding: var(--sec-pad); border-radius: 999px; background: rgba(24,32,50,.62); -webkit-backdrop-filter: blur(26px) saturate(1.7); backdrop-filter: blur(26px) saturate(1.7); box-shadow: 0 18px 44px -14px rgba(0,0,0,.6), inset 0 1.2px 0 rgba(255,255,255,.16), inset 0 0 0 1px rgba(255,255,255,.14); } .ds-secnav::before { content: \"\"; position: absolute; z-index: 0; top: var(--sec-pad); bottom: var(--sec-pad); left: var(--sec-pad); width: calc((100% - 2 * var(--sec-pad)) / var(--sec-n)); border-radius: 999px; background: #0A84FF; box-shadow: 0 2px 10px color-mix(in srgb, #0A84FF 45%, transparent); transform: translateX(calc(var(--sec-i) * 100%)); transition: transform .28s cubic-bezier(.32,.72,0,1); } .ds-secnav button { position: relative; z-index: 1; flex: 1 1 0; min-width: 0; appearance: none; border: 0; background: transparent; cursor: pointer; color: #AAB7C9; font-family: Figtree, system-ui, sans-serif; font-size: .68rem; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; padding: .38rem 0; border-radius: 999px; transition: color .18s; } .ds-secnav button[aria-pressed=\"true\"] { color: #fff; } .ds-secnav button:hover { color: #EDF2F9; }"
+    },
+    {
+      "name": "Panel Card",
+      "kind": "card",
+      "refersTo": "panel-card",
+      "description": "Nosná karta s jednotnou hlavičkou. Vnitřní karty se odlišují tónem podkladu, ne dalším stínem.",
+      "html": "<div class=\"ds-card\"><div class=\"ds-card-title\">7 dní — Kitzbühel</div><div class=\"ds-card-body\">Obsah karty.</div></div>",
+      "css": ".ds-card { border-radius: 16px; padding: .8rem .9rem .7rem; background: rgba(24,32,50,.42); box-shadow: inset 0 1px 0 rgba(255,255,255,.16), inset 0 0 0 1px rgba(255,255,255,.14); color: #EDF2F9; font-family: Figtree, system-ui, sans-serif; } .ds-card-title { font-size: .68rem; font-weight: 700; color: #AAB7C9; text-transform: uppercase; letter-spacing: .07em; margin-bottom: .55rem; display: flex; align-items: center; gap: .35rem; white-space: nowrap; } .ds-card-body { font-size: .82rem; line-height: 1.45; }"
+    },
+    {
+      "name": "Search Field",
+      "kind": "input",
+      "refersTo": "button-glass",
+      "description": "Jediné textové pole v appce. Pilulka ze skla; fokus je obrys v barvě akcentu s odstupem.",
+      "html": "<div class=\"ds-search\"><input type=\"text\" placeholder=\"Hledat obec…\" /></div>",
+      "css": ".ds-search { display: flex; align-items: center; max-width: 320px; padding: .45rem 1rem; border-radius: 999px; background: rgba(24,32,50,.62); -webkit-backdrop-filter: blur(26px) saturate(1.7); backdrop-filter: blur(26px) saturate(1.7); box-shadow: 0 18px 44px -14px rgba(0,0,0,.6), inset 0 1.2px 0 rgba(255,255,255,.16), inset 0 0 0 1px rgba(255,255,255,.14); } .ds-search input { flex: 1; min-width: 0; border: 0; background: transparent; outline: none; color: #EDF2F9; font-family: Figtree, system-ui, sans-serif; font-size: .82rem; } .ds-search input::placeholder { color: #AAB7C9; } .ds-search:focus-within { box-shadow: 0 18px 44px -14px rgba(0,0,0,.6), inset 0 0 0 1px rgba(255,255,255,.14), 0 0 0 2px #0A84FF; }"
+    },
+    {
+      "name": "Hero Temperature",
+      "kind": "custom",
+      "refersTo": "display",
+      "description": "Jediné číslo, které smí křičet. Gradientová výplň textu; chladná varianta gradient vymění, takže teplo a chlad jsou rozeznatelné bez čtení.",
+      "html": "<div class=\"ds-hero\"><span class=\"ds-hero-temp\">18°</span><span class=\"ds-hero-note\">upraveno o 2 °C níž podle měření stanice</span></div>",
+      "css": ".ds-hero { display: flex; flex-direction: column; gap: .15rem; font-family: Figtree, system-ui, sans-serif; } .ds-hero-temp { font-size: 3.2rem; font-weight: 800; line-height: .95; letter-spacing: -.045em; font-variant-numeric: tabular-nums; background: linear-gradient(135deg, #FFB340, #FF6B2C); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; } .ds-hero-note { font-size: .6rem; font-style: italic; color: #AAB7C9; }"
+    },
+    {
+      "name": "Precipitation Bars",
+      "kind": "custom",
+      "refersTo": "radarova-modr",
+      "description": "Jedna gramatika pro obě časová měřítka. Suchý slot je tenký patník u dna, ne prázdno — prázdno se čte jako chybějící data.",
+      "html": "<div class=\"ds-pbars\"><i style=\"height:14%\"></i><i class=\"dry\"></i><i style=\"height:62%\"></i><i style=\"height:100%\"></i><i style=\"height:48%\"></i><i class=\"dry-good\"></i><i class=\"dry\"></i></div>",
+      "css": ".ds-pbars { display: flex; align-items: flex-end; gap: 2px; height: 46px; } .ds-pbars i { flex: 1; min-width: 0; border-radius: 4px 4px 2px 2px; background: #0A84FF; min-height: 3px; opacity: .92; } .ds-pbars i.dry { background: #AAB7C9; opacity: .22; height: 3px; } .ds-pbars i.dry-good { background: #30D158; opacity: .6; height: 5px; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "Řídicí věž",
+    "overview": "Klidná autorita nad provázanými daty. Řídicí věž je prosklená místnost nad živou krajinou: dovnitř je vidět počasí, které se venku právě děje, a uvnitř stojí přístroje, které mu dávají čísla. Rozhraní dělá přesně tohle — panely z rozostřeného skla plovou nad radarovou smyčkou, která se pod nimi hýbe. Materiál není dekorace, ale sdělení: data nikdy nezakryjí svět pod sebou.\n\nCharakter je živý a atmosférický. Podklad je téměř černá modř noční oblohy, skrz kterou prosvítá mapa; hloubka vzniká průsvitností a rozostřením toho, co leží pod panelem, ne stohem stínů. Barva se objevuje jen tam, kde nese význam — teplota, srážky, výstraha — takže poplach je vidět dřív, než ho člověk stihne přečíst. Hustota je tady kompetence, ne nepořádek: uživatel je nadšenec, který ví, co je echotop, a hodnota nástroje je právě v tom, že mu ukáže do stroje.\n\nJediné potvrzené odmítnutí: nikdy nesmí vypadat jako enterprise dashboard — šedé tabulky s linkami kolem každé buňky, boxy s výraznými bordery, hustota bez hierarchie.",
+    "keyCharacteristics": [
+      "Sklo nad živou mapou, jedna hladina — ne stupnice elevací",
+      "Barva výhradně nositelem významu, nikdy dekorací",
+      "Osm velikostí písma a pět poloměrů; devátý stupeň je signál chyby v roli prvku",
+      "Tabulární číslice všude, kde se čísla mění v čase",
+      "Tmavý motiv je výchozí, světlý je plnohodnotný, ne dodatek"
+    ],
+    "rules": [
+      {
+        "name": "Pravidlo významu",
+        "body": "Barva se přiděluje jevu, ne prvku. Zelená vždy znamená „sucho / v pořádku\", červená „výstraha\", modrá „interakce nebo srážky\". Použít zelenou proto, že se hodí k layoutu, je porušení systému.",
+        "section": "colors"
+      },
+      {
+        "name": "Pravidlo dvou motivů",
+        "body": "Žádná barva nesmí být zapsaná natvrdo mimo tokeny. Bílá na 9 % je v tmavém motivu decentní šeď a ve světlém bílá na bílé — přesně tak už jednou zmizel celý pruh dat. Každá plocha jede přes token, který má obě varianty.",
+        "section": "colors"
+      },
+      {
+        "name": "Pravidlo osmi stupňů",
+        "body": "Velikost písma smí být jen jedna z osmi hodnot škály. Appka jich kdysi měla 48 mezi .52rem a 3.7rem; rozdíl .72 proti .74 oko nepřečte jako záměr, ale jako nepořádek. Když se prvek do žádného stupně nevejde, má špatnou roli — škála devátý stupeň nedostane.",
+        "section": "typography"
+      },
+      {
+        "name": "Pravidlo tabulárních číslic",
+        "body": "Každé číslo, které se v čase mění nebo stojí pod sebou ve sloupci, dostane tabular-nums. Poskakující šířka číslic dělá z klidného panelu neklid.",
+        "section": "typography"
+      },
+      {
+        "name": "Pravidlo jedné hlavičky",
+        "body": "Nadpis panelu je vždy tentýž zápis: verzálky, prostrkání 0.07em, tlumená barva, 0.68rem. Panel, který se sází jako věta tučně a bíle, nevypadá důrazněji — vypadá, že do sestavy nepatří.",
+        "section": "typography"
+      },
+      {
+        "name": "Pravidlo dvou svitků",
+        "body": "Na desktopu roluje levá karta a pravý panel odděleně; nic nesmí předpokládat jeden společný svitek okna. Skok na sekci proto hledá kontejner, ve kterém cíl doopravdy roluje.",
+        "section": "layout"
+      },
+      {
+        "name": "Pravidlo neschovávání",
+        "body": "Navigace sekcí skáče, neskrývá. Filtrující verze kdysi po klepnutí palcem odstranila většinu obsahu a nikde nebylo vidět, že se něco skrylo. Všechno zůstává v jednom svitku.",
+        "section": "layout"
+      },
+      {
+        "name": "Pravidlo jedné hladiny",
+        "body": "Sklo je jednou. Panel uvnitř panelu nedostane další backdrop-filter ani další vržený stín — dvě skla přes sebe rozmažou hranici a vrstva přestane být čitelná.",
+        "section": "elevation"
+      },
+      {
+        "name": "Pravidlo obsaženého filtru",
+        "body": "backdrop-filter zakládá containing block pro position: fixed uvnitř. Cokoli, co se má lepit k oknu, musí ležet mimo skleněný panel — jinak se přilepí k panelu a rozmaže se proti jeho vlastnímu sklu.",
+        "section": "elevation"
+      },
+      {
+        "name": "Pravidlo pěti poloměrů",
+        "body": "Devět, deset, jedenáct a dvanáct pixelů vedle sebe nikdo nepřečte jako záměr. Nová hodnota mimo škálu znamená, že prvek patří do jiné velikostní třídy.",
+        "section": "shapes"
+      },
+      {
+        "name": "Pravidlo zaobleného vnitřku",
+        "body": "Zaoblený obal s hranatým obsahem uvnitř je horší než hranaté obojí — zaoblí se jen jeden konec a druhý vypadá useknutý. Co má zaoblený obal, má zaoblený i obsah.",
+        "section": "shapes"
+      }
+    ],
+    "dos": [
+      "Do používej barvu jako legendu: zelená = sucho a bezpečí, červená = výstraha, modrá = interakce nebo srážky.",
+      "Do sázej každou velikost písma z osmi stupňů škály a každý poloměr z pěti.",
+      "Do dej tabular-nums každému číslu, které se mění v čase nebo stojí ve sloupci.",
+      "Do používej pro pohyb jedinou křivku cubic-bezier(.32, .72, 0, 1) — systém má jeden rukopis zrychlení.",
+      "Do vypni pohyb úplně při prefers-reduced-motion: reduce. Vypni, ne zkrať.",
+      "Do označ každou úpravu zobrazených dat (korekce, dopočet) viditelnou poznámkou u čísla.",
+      "Do nech vodorovné dráhy dat rolovat; přeteklý sloupec je čitelnější než zalomená tabulka."
+    ],
+    "donts": [
+      "Don't stavěj šedé tabulky s linkami kolem buněk ani boxy s výraznými bordery — jediné potvrzené odmítnutí systému je vzhled enterprise dashboardu.",
+      "Don't zapisuj barvu natvrdo mimo tokeny; bílá na 9 % zmizí ve světlém motivu a data s ní.",
+      "Don't vkládej skleněný panel do skleněného panelu ani nepřidávej druhý vržený stín uvnitř karty.",
+      "Don't umísťuj position: fixed prvek dovnitř panelu s backdrop-filter — přilepí se k panelu, ne k oknu.",
+      "Don't používej emoji jako ikonu; ikonografie je tahové SVG.",
+      "Don't zobrazuj tutéž hodnotu ve dvou granularitách nad sebou.",
+      "Don't animuj napočítávání čísel — než hodnota „dojede\", ukazuje appka čísla, která nikdo nenaměřil."
+    ]
+  }
+}
