@@ -930,9 +930,22 @@ button.glass-btn svg { width: 17px; height: 17px; display: block; }
    se do něj navíc úhrn srážek i pravděpodobnost, které se dřív krčily pod
    sebou v drobném písmu. */
 .fc7-grid { display: flex; flex-direction: column; gap: 0; }
+/* ══ ŘÁDEK DNE — PĚT SLOUPCŮ, NE ŠEST ═════════════════════════════════════
+   Šestý sloupec (srážky) sem nepatřil rozměrově. Sečteno: 73,6 + 30 + 36,8 +
+   48 + 36,8 + 70,4 px stop a pět mezer po 7,2 = 331,6 px, ale panel je
+   v pravé liště široký 267 px. Nic v té sestavě nebylo pružné, takže se řádek
+   prostě nevešel a `overflow-x: hidden` uřízl 59 px — bez ellipsis, bez
+   posuvníku, bez čehokoli, co by naznačilo, že tam něco je. Uživatel si
+   odnesl předpověď bez údaje o srážkách a nedozvěděl se to.
+
+   Vodorovný posuvník by byl horší lék než nemoc: v seznamu sedmi řádků by
+   se scrollovalo v každém zvlášť. Srážky proto sestoupily na třetí řádek
+   k ensemble rozptylu — je to údaj stejného řádu ("kolik a jak jistě"),
+   patří k němu, a hlavní linka (den, ikona, min–max) se tím vejde s rezervou.
+   ═══════════════════════════════════════════════════════════════════════ */
 .fc7-day {
   display: grid;
-  grid-template-columns: 4.6rem 30px 2.3rem minmax(48px, 1fr) 2.3rem 4.4rem;
+  grid-template-columns: 4.6rem 30px 2.3rem minmax(48px, 1fr) 2.3rem;
   align-items: center; gap: .45rem;
   padding: .42rem .15rem;
   border-bottom: 1px solid var(--rowline);
@@ -1080,17 +1093,24 @@ button.glass-btn svg { width: 17px; height: 17px; display: block; }
   background: var(--rowline); margin: 0; }
 .fc7-range i { position: absolute; top: 0; bottom: 0; border-radius: 999px;
   background: linear-gradient(90deg, #63B4F6, var(--temp1), var(--temp2)); }
-.fc7-day-sub { grid-column: 6; grid-row: 1 / span 2; justify-self: end;
+/* Srážky na třetí řádek, vpravo — viz komentář u .fc7-day. Vodorovně,
+   ne pod sebe: na vlastním řádku je místo do šířky, a "4,2 mm · 70 %"
+   se čte jako jeden údaj, kdežto dvě čísla nad sebou jako dva. */
+.fc7-day-sub { grid-column: 3 / -1; grid-row: 3; justify-self: end;
   text-align: right; font-size: var(--fs-tiny); color: var(--muted);
-  display: flex; flex-direction: column; align-items: flex-end; gap: 0;
-  font-variant-numeric: tabular-nums; line-height: 1.25; }
+  display: flex; flex-direction: row; align-items: baseline; gap: .3rem;
+  min-width: 0; font-variant-numeric: tabular-nums; line-height: 1.25; }
 .fc7-day-sub .prec { color: var(--blue); font-weight: 700; }
 .fc7-day-sub .dry { opacity: .55; }
 .fc7-day-sun { display: none; }   /* východ/západ patří do panelu Obloha, ne sem */
 /* Ensemble vějíř se dopisuje asynchronně až po vykreslení řádku, takže musí
    mít v mřížce vlastní místo — jinak by spadl do první volné buňky a rozhodil
    sloupce. Třetí řádek přes celou šířku. */
-.fc7-ens { grid-column: 1 / -1; grid-row: 3; text-align: right;
+/* Rozptyl ensemble sdílí třetí řádek se srážkami: vlevo "jak jistě",
+   vpravo "kolik". Dřív zabíral celou šířku (1 / -1) a jeho nezalomitelný
+   obsah roztahoval mřížku na 331 px, takže byl spoluviníkem ořezu. */
+.fc7-ens { grid-column: 1 / 3; grid-row: 3; text-align: left;
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   font-size: var(--fs-micro); color: var(--muted); margin-top: -.1rem; }
 .fc7-ens .prec { color: var(--blue); font-weight: 600; }
 @media (min-width: 769px) {
@@ -1919,15 +1939,22 @@ button.ctrl.active {
 /* ── Zásah bouřkou — nápadný banner ─────────────────────────────────────── */
 #storm-impact { display: none; margin: 0 0 .5rem; padding: .6rem .8rem; border-radius: var(--r-card); }
 #storm-impact.show { display: block; animation: si-pulse 2s ease-in-out infinite; }
-#storm-impact.warn { background: rgba(255, 159, 10, .16); border: 1px solid rgba(255, 159, 10, .5); }
-#storm-impact.sev  { background: rgba(255, 69, 58, .18); border: 1px solid rgba(255, 69, 58, .6); }
+/* Tep má barvu ÚROVNĚ, ne pořád červenou. Dřív pulsoval `rgba(255,69,58)`
+   i na oranžovém `.warn`, takže se přes oranžové pozadí táhl červený nádech —
+   pulsovalo to, ale nekontrastovalo, a hlavně to popíralo Pravidlo významu:
+   červená v appce znamená "nebezpečí", ne "tady se něco hýbe". */
+#storm-impact.warn { --si-tep: 255, 159, 10; background: rgba(255, 159, 10, .16); border: 1px solid rgba(255, 159, 10, .5); }
+#storm-impact.sev  { --si-tep: 255, 69, 58;  background: rgba(255, 69, 58, .18);  border: 1px solid rgba(255, 69, 58, .6); }
 #storm-impact .si-title { font-weight: 800; font-size: var(--fs-md); }
 #storm-impact .si-title { display: flex; align-items: center; gap: .4rem; }
 #storm-impact .si-bolt { width: 1.05em; height: 1.05em; flex: none; }
 #lightning-chip .uicon { width: 1em; height: 1em; vertical-align: -2px; margin-right: .25rem; }
 
 #storm-impact .si-sub { font-size: var(--fs-sm); color: var(--muted); margin-top: .15rem; }
-@keyframes si-pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(255,69,58,0); } 50% { box-shadow: 0 0 0 4px rgba(255,69,58,.12); } }
+@keyframes si-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(var(--si-tep, 255, 69, 58), 0); }
+  50%      { box-shadow: 0 0 0 4px rgba(var(--si-tep, 255, 69, 58), .18); }
+}
 
 /* ── Jistota výhledu (shoda modelů) ─────────────────────────────────────── */
 #confidence-chip { display: none; align-items: center; gap: .4rem; font-size: var(--fs-sm); margin: .1rem 0 .35rem; }
@@ -2196,6 +2223,11 @@ body.embed #left-card { top: 100px; bottom: 1rem; }
   #alert-bar { top: 56px; left: 8px; max-width: calc(100vw - 16px); }
 
   /* sheet: levá karta začíná pod mapou a roluje přes ni */
+  /* Bouřkový banner vytažený z levé karty na úroveň <body> (viz rail.js).
+     Sdílí `order` s úchytem sheetu a v DOMu stojí hned za ním, takže je
+     první věcí ve svitku — ne pátou pod šestnácti přepínači mapy. */
+  body > #storm-impact { order: 1; margin: .5rem .6rem 0; }
+
   #sheet-grabber {
     order: 1;
     display: flex; justify-content: center; align-items: center;

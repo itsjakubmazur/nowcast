@@ -18,8 +18,43 @@
 // obsah i posluchače, takže se nemusí nic překreslovat ani přepojovat.
 
 const BAND = "(min-width: 769px) and (max-width: 1080px)";
+const PHONE = "(max-width: 768px)";
+
+/**
+ * Bouřkový banner nahoru — na mobilu.
+ *
+ * #storm-impact bydlí jako první prvek levé karty, což je na desktopu
+ * správně: karta je hned pod navigací a banner je v ní první. Na mobilu je
+ * ale karta až PÁTÝ blok stránky — pod ním dokem radaru se šestnácti
+ * přepínači vrstev, výběrem podkladu a legendou. Nejnaléhavější informace
+ * v celé appce tak ležela pod nejméně naléhavými ovladači a našla se až po
+ * dvou palcích rolování.
+ *
+ * Banner se proto na mobilu vytáhne na úroveň <body>, hned za úchyt sheetu —
+ * tedy jako první věc, kterou po mapě uvidíš. Když bouřka není, je banner
+ * `display: none` a nestojí nic.
+ */
+function initStormOnTop() {
+  const banner = document.getElementById("storm-impact");
+  const card = document.getElementById("left-card");
+  const grabber = document.getElementById("sheet-grabber");
+  const mq = window.matchMedia?.(PHONE);
+  if (!banner || !card || !grabber || !mq) return;
+
+  const apply = () => {
+    if (mq.matches) {
+      if (banner.parentElement !== document.body) grabber.after(banner);
+    } else if (banner.parentElement !== card) {
+      card.prepend(banner);
+    }
+  };
+  apply();
+  mq.addEventListener?.("change", apply);
+}
 
 export function initRail() {
+  initStormOnTop();
+
   const left = document.getElementById("left-card");
   const right = document.getElementById("right-panel");
   const mq = window.matchMedia?.(BAND);
