@@ -24,7 +24,7 @@ function skelFc7(n = 7) {
 
 function skelAq() {
   const item = `<div class="aq-item"><div>${shimmer("40%", "9px")}</div><div style="margin-top:.3rem">${shimmer("60%", "16px")}</div></div>`;
-  return `<div class="aq-title">${shimmer("120px", "11px")}</div>
+  return `<h2 class="aq-title">${shimmer("120px", "11px")}</h2>
     <div class="aq-grid">${item}${item}${item}${item}</div>`;
 }
 

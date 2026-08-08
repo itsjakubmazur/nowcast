@@ -610,6 +610,12 @@ button.glass-btn svg { width: 17px; height: 17px; display: block; }
   box-shadow: inset 0 1px 0 var(--spec), inset 0 0 0 1px var(--gring);
 }
 #ai-ask-row.show { display: flex; }
+/* Prstenec nese ŘÁDEK, ne políčko — stejně jako u hledání (.search-wrap).
+   Políčko samo je průhledné a bez rámečku, takže obrys kolem něj by visel
+   uvnitř pilulky a vypadal jako druhý, menší rámeček. */
+#ai-ask-row:focus-within {
+  box-shadow: inset 0 1px 0 var(--spec), inset 0 0 0 1.5px var(--accent);
+}
 #ai-ask { flex: 1; background: none; border: none; outline: none; color: var(--text); font-size: var(--fs-body); }
 #ai-ask::placeholder { color: var(--muted); }
 /* Dotykový cíl přes překryv — viz blok u .pp-tab. Tenhle stojí v řádku sám,
@@ -851,7 +857,10 @@ button.glass-btn svg { width: 17px; height: 17px; display: block; }
 #verif-panel .vf-title, .pfail-t {
   font-size: var(--fs-tiny); font-weight: 700; color: var(--muted);
   text-transform: uppercase; letter-spacing: .07em;
-  margin-bottom: .55rem; overflow: hidden;
+  /* Margin je zapsaný celý, ne jen zdola: hlavičky panelů jsou od té doby,
+     co appka dostala strukturu dokumentu, elementy <h2>. Ty si nesou vlastní
+     výchozí margin nahoře, a ten by panely rozestrkal. */
+  margin: 0 0 .55rem; overflow: hidden;
   display: flex; align-items: center; gap: .35rem; white-space: nowrap;
 }
 .fc7-title span { overflow: hidden; text-overflow: ellipsis; }
@@ -1512,6 +1521,29 @@ button.ctrl .uicon { width: 1.12em; height: 1.12em; }
   -webkit-appearance: none; appearance: none;
   background: var(--rowline); border-radius: 3px; outline: none;
 }
+/* ══ FOKUS NA POSUVNÍCÍCH ═════════════════════════════════════════════════
+   `outline: none` výš je napsané záměrně: prohlížeč kreslí obrys kolem celé
+   DRÁHY, a u pruhu vysokého 5 px z toho je plochý obdélník přes půl doku,
+   který vypadá jako chyba vykreslování. Nesmělo ale zůstat bez náhrady —
+   časová osa a průhlednost jsou dvě klíčová ovládání radaru a byly jediné
+   dva prvky v appce, u kterých nešlo poznat, že jsou zaostřené.
+
+   Náhradou je prstenec kolem JEZDCE. Tam se fokus doopravdy odehrává a je
+   to zároveň to, čím uživatel hýbe. Pravidla musí zůstat rozepsaná zvlášť
+   pro -webkit- a -moz-: prohlížeč, který jeden z těch pseudoelementů nezná,
+   zahodí celé pravidlo včetně druhého selektoru.
+   ═══════════════════════════════════════════════════════════════════════ */
+#timeline:focus-visible::-webkit-slider-thumb,
+#opacity-slider:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 1px 6px rgba(0, 0, 0, .35), 0 0 0 3px var(--accent);
+}
+#timeline:focus-visible::-moz-range-thumb {
+  box-shadow: 0 1px 6px rgba(0, 0, 0, .35), 0 0 0 3px var(--accent);
+}
+#opacity-slider:focus-visible::-moz-range-thumb {
+  box-shadow: 0 1px 4px rgba(0, 0, 0, .3), 0 0 0 3px var(--accent);
+}
+
 #timeline::-webkit-slider-thumb {
   -webkit-appearance: none; width: 18px; height: 18px;
   border-radius: 50%; background: #fff; cursor: pointer;

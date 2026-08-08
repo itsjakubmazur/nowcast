@@ -3,6 +3,7 @@ import { esc, num, ageMinutes, degToCompass, beaufortLabel } from "./utils.js";
 import { thinByZoom, capForBounds } from "./labelthin.js";
 import { uiIcon } from "./uiicons.js";
 import { withTransition, chartAnim } from "./motion.js";
+import { bindModal } from "./modal.js";
 
 /**
  * Bublina stanice — JEDEN tvar pro všechny tři sítě.
@@ -65,7 +66,6 @@ export function renderWuOwnPanel() {
 export async function openWuDetail(stationId) {
   const s = state.WU?.stations?.find(x => x.id === stationId);
   if (!s) return;
-  const overlay = document.getElementById("wu-detail-overlay");
   const box = document.getElementById("wu-detail-box");
   const age = s.time_utc ? ageMinutes(s.time_utc) : null;
   const ageStr = age != null ? `před ${age} min` : "";
@@ -120,13 +120,19 @@ export async function openWuDetail(stationId) {
       </div>`).join("")}
     </div>
     <div id="wu-history-charts"><div style="color:var(--muted);font-size:var(--fs-sm);margin-top:.75rem">Načítám historii…</div></div>`;
-  overlay.classList.add("open");
+  // Skutečný dialog — viz modal.js. Navázání je líné, protože kartu si
+  // tahle funkce pokaždé překreslí; bindModal si nadpis dohledá až při
+  // otevření, takže mu prázdná karta při startu nevadí.
+  _wuDlg ||= bindModal({ overlay: "wu-detail-overlay", box: "wu-detail-box", label: "Detail stanice" });
+  _wuDlg.open();
   box.querySelector("#wu-detail-close").addEventListener("click", closeWuDetail);
   await _loadAndRenderWuHistory(stationId);
 }
 
+let _wuDlg = null;
+
 export function closeWuDetail() {
-  document.getElementById("wu-detail-overlay").classList.remove("open");
+  _wuDlg?.close();
 }
 
 async function _loadAndRenderWuHistory(stationId) {

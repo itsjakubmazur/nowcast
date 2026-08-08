@@ -594,9 +594,8 @@ window.addEventListener("DOMContentLoaded", async () => {
     clearRainSnooze();
   });
 
-  document.getElementById("wu-detail-overlay").addEventListener("click", e => {
-    if (e.target.id === "wu-detail-overlay") closeWuDetail();
-  });
+  // Zavírání klikem na pozadí řeší bindModal v stations.js — jeden vlastník,
+  // ať se chování dialogů nerozchází napříč třemi soubory.
 
   // ── Sdílení / embed ───────────────────────────────────────────────────────
   document.getElementById("btn-share")?.addEventListener("click", () => shareCurrentView(state.currentLabel));

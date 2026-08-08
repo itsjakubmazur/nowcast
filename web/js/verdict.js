@@ -764,7 +764,7 @@ export function renderVerifCard() {
 
   const last = daily[daily.length - 1];
   el.innerHTML = `
-    <div class="vf-title">Trefili jsme se? <span class="vf-sub">shoda prší/neprší v +10 min, po dnech</span></div>
+    <h2 class="vf-title">Trefili jsme se? <span class="vf-sub">shoda prší/neprší v +10 min, po dnech</span></h2>
     <div class="vf-row">${bars}</div>
     <div class="vf-note">Poctivá out-of-sample verifikace: predikci vždy porovnáme s tím, co radar
     následně skutečně změřil. Včera: <b>${Math.round(last.hit_rate_pct)} %</b>.</div>`;

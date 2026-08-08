@@ -676,7 +676,7 @@ export async function renderModelsPanel(lat, lon, signal) {
         : `V okruhu ${STATION_MAX_KM} km není čerstvě hlásící meteostanice, takže přesnost modelů tu nejde poctivě ověřit — ukazuji jen dnešní předpovědi.` + bmNote;
 
     panel.innerHTML = `
-      <div class="mdl-title">Modely pro tohle místo <span class="mdl-sub">${rows.length} modelů · dnes max / srážky / přesnost</span></div>
+      <h2 class="mdl-title">Modely pro tohle místo <span class="mdl-sub">${rows.length} modelů · dnes max / srážky / přesnost</span></h2>
       <div class="mdl-head"><span></span><span>model</span><span>max</span><span>déšť</span><span>chyba</span></div>
       ${body}
       <div class="mdl-note">${note}</div>`;

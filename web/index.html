@@ -55,6 +55,12 @@
 </head>
 <body>
 
+<!-- Stránka neměla jediný nadpis (h1–h6) ani landmark, takže pro odečítač
+     byla jedna nerozlišená plocha o dvaceti panelech. Nadpis je vizuálně
+     skrytý: appku identifikuje ikona v launcheru a titulek okna, a místo
+     v topbaru je vzácné — ale ve stromu dokumentu musí kořen existovat. -->
+<h1 class="sr-only">Nowcast — radar, nowcast a předpověď pro Česko</h1>
+
 <!-- Fullscreen mapa — PRVNÍ, ostatní jsou přes ní -->
 <div id="map"></div>
 
@@ -74,7 +80,7 @@
       <div id="t0-tick"></div>
       <div id="t0-marker">teď</div>
     </div>
-    <div id="frame-time">—</div>
+    <div id="frame-time" role="status" aria-live="polite">—</div>
     <span id="radar-t0" style="font-size:var(--fs-body);font-weight:600;color:var(--text)"></span>
   </div>
   <!-- ŘÁDEK 2 — co se kreslí na mapu. Nezávislé vypínače, klidně všechny
@@ -114,7 +120,7 @@
     <span class="logo-text">nowcast</span>
   </div>
   <div class="search-wrap suggest">
-    <input id="search" type="text" placeholder="Hledat obec…" autocomplete="off" />
+    <input id="search" type="text" placeholder="Hledat obec…" aria-label="Hledat obec" autocomplete="off" />
     <ul id="suggestions"></ul>
   </div>
   <div class="topbar-right">
@@ -155,7 +161,7 @@
 </nav>
 
 <!-- Levá floating karta -->
-<div id="left-card">
+<div id="left-card" role="main" aria-label="Nowcast a předpověď pro zvolené místo">
   <!-- Zásah bouřkou — nápadný banner, když predikovaná dráha buňky protne místo.
        Je první, aby při aktivní bouřce vyhrál; jinak je skrytý (display:none)
        a nezabírá místo, takže proužek vlastních stanic níž je fakticky nahoře. -->
@@ -173,7 +179,7 @@
        uměly odporovat (a taky odporovaly: "Právě lije" nad "Sucho ještě 2 h").
        Teď je odpočet hlavou karty, graf tělem a ČHMÚ patičkou. -->
   <div id="precip-panel" data-sec="now">
-    <div id="rain-countdown">
+    <div id="rain-countdown" role="status" aria-live="polite">
       <div class="rc-icon" id="rc-icon"><img class="wicon" src="icons/weather/clear-day.svg" alt="" decoding="async"></div>
       <div class="rc-body">
         <div class="rc-title" id="rc-title">—</div>
@@ -181,7 +187,7 @@
       </div>
     </div>
     <div class="pp-head">
-      <span class="pp-title">Srážky</span>
+      <h2 class="pp-title">Srážky</h2>
       <div class="pp-tabs" id="pp-tabs">
         <button type="button" class="pp-tab active" data-scale="2h">2 h</button>
         <button type="button" class="pp-tab" data-scale="12h">12 h</button>
@@ -251,7 +257,7 @@
     </div>
     <!-- AI chat — zeptej se na počasí -->
     <div id="ai-ask-row">
-      <input id="ai-ask" type="text" placeholder="Zeptej se na počasí…" autocomplete="off" maxlength="200" />
+      <input id="ai-ask" type="text" placeholder="Zeptej se na počasí…" aria-label="Zeptej se na počasí" autocomplete="off" maxlength="200" />
       <button id="ai-ask-send" title="Odeslat" aria-label="Odeslat dotaz">↵</button>
     </div>
     <div id="ai-answer"></div>
@@ -288,13 +294,13 @@
 </div>
 
 <!-- Pravý floating panel -->
-<div id="right-panel">
+<div id="right-panel" role="region" aria-label="Týdenní výhled a podrobná data">
   <!-- JEDINÝ panel předpovědi. Proužek "Dnes" a samostatný meteogram tu
        stávaly nad ním a počítaly se z týchž hodin — po rozkliku dne v týdnu
        to byly tytéž hodnoty potřetí. Dnešek je teď prostě první rozbalený
        den; detail nese hodiny, fáze i přepínatelný graf. -->
   <div class="fc7" id="fc7" data-sec="week" style="display:none">
-    <div class="fc7-title">7 dní — <span id="fc7-place">—</span></div>
+    <h2 class="fc7-title">7 dní — <span id="fc7-place">—</span></h2>
     <div class="fc7-grid" id="fc7-grid"></div>
   </div>
   <!-- Pokročilá data — sbaleno, ať jádro (24h / průběh dne / meteogram / 7 dní)
@@ -311,42 +317,42 @@
       <div class="aq-panel" id="aq-panel" data-sec="today"></div>
       <!-- Astro — slunce, měsíc, kvalita noci -->
       <div id="astro-panel" data-sec="today">
-        <div class="astro-title">Obloha a astro</div>
+        <h2 class="astro-title">Obloha a astro</h2>
         <div id="astro-body"></div>
       </div>
       <!-- Zimní panel — jen v sezóně (sníh, náledí) -->
       <div id="winter-panel" data-sec="week">
-        <div class="astro-title">Zimní podmínky</div>
+        <h2 class="astro-title">Zimní podmínky</h2>
         <div id="winter-body"></div>
       </div>
       <!-- Tento den v historii — rekordy ERA5 1991–2020 -->
       <div id="history-panel" data-sec="week">
-        <div class="astro-title">Tento den v historii</div>
+        <h2 class="astro-title">Tento den v historii</h2>
         <div id="history-body"></div>
       </div>
       <!-- Měřená kvalita ovzduší — státní síť imisního monitoringu ČHMÚ -->
       <div id="air-panel" data-sec="today">
-        <div class="astro-title">Ovzduší — měřeno</div>
+        <h2 class="astro-title">Ovzduší — měřeno</h2>
         <div id="air-body"></div>
       </div>
       <!-- Normál 1991–2020 z nejbližší klimatologické stanice -->
       <div id="normal-panel" data-sec="week">
-        <div class="astro-title">Normál 1991–2020</div>
+        <h2 class="astro-title">Normál 1991–2020</h2>
         <div id="normal-body"></div>
       </div>
       <!-- Prostředí pro bouřky — aerologie + výška vrcholů -->
       <div id="convect-panel" data-sec="today">
-        <div class="astro-title">Prostředí pro bouřky</div>
+        <h2 class="astro-title">Prostředí pro bouřky</h2>
         <div id="convect-body"></div>
       </div>
       <!-- Letošní rok proti normálu 1991–2020 (areálové průměry ČHMÚ) -->
       <div id="regional-panel" data-sec="week">
-        <div class="astro-title">Letos proti normálu</div>
+        <h2 class="astro-title">Letos proti normálu</h2>
         <div id="regional-body"></div>
       </div>
       <!-- Oficiální textová předpověď ČHMÚ -->
       <div id="chmitext-panel" data-sec="week">
-        <div class="astro-title">Slovy ČHMÚ</div>
+        <h2 class="astro-title">Slovy ČHMÚ</h2>
         <div id="chmitext-body"></div>
       </div>
     </div>
@@ -354,7 +360,7 @@
 </div>
 
 <!-- Offline stav (service worker) -->
-<div id="offline-badge"><i></i><span id="offline-text">Offline — ukazuji poslední data</span></div>
+<div id="offline-badge" role="status" aria-live="polite"><i></i><span id="offline-text">Offline — ukazuji poslední data</span></div>
 
 <!-- Blesky — nejbližší úder -->
 <!-- Souhrn bouřek — kolik jich je vidět a jak daleko je nejbližší -->
@@ -373,7 +379,7 @@
 </div>
 
 <!-- Notif / toast bar -->
-<div id="notif-bar">
+<div id="notif-bar" role="status" aria-live="polite">
   <span id="notif-text"></span>
   <span class="notif-close" id="notif-close" title="Zavřít" role="button" tabindex="0">✕</span>
 </div>
@@ -429,7 +435,7 @@
         <option value="7.5">jen vydatného (7,5 mm/h)</option>
       </select>
     </label>
-    <div class="settings-log-title">Deník upozornění</div>
+    <h3 class="settings-log-title">Deník upozornění</h3>
     <div id="settings-log"></div>
   </div>
 </div>
@@ -469,7 +475,7 @@
   <!-- Bez "(dBZ)": hlavičky panelů se sázejí verzálkami a z dBZ by se stalo
        "DBZ", což je jiná jednotka než ta zamýšlená. Značka je stejně hned
        pod radarem v #radar-source, kde se sází normálně. -->
-  <div class="legend-title">Intenzita</div>
+  <h2 class="legend-title">Intenzita</h2>
   <div class="legend-bar"></div>
   <div class="legend-labels"></div>
 </div>

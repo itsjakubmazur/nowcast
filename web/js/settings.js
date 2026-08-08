@@ -3,6 +3,7 @@
 
 import { state, PLAY } from "./state.js";
 import { BASEMAPS, getBasemap, setBasemap } from "./map.js";
+import { bindModal } from "./modal.js";
 
 const SETTINGS_KEY = "nowcast_settings_v1";
 const LOG_KEY = "nowcast_notif_log_v1";
@@ -93,9 +94,12 @@ export function initSettingsPanel() {
   if (animSel) animSel.value = String(s.animMs);
   if (threshSel) threshSel.value = String(s.rainThresh);
 
-  btn.addEventListener("click", () => { renderLog(); overlay.classList.add("open"); });
-  document.getElementById("settings-close")?.addEventListener("click", () => overlay.classList.remove("open"));
-  overlay.addEventListener("click", e => { if (e.target === overlay) overlay.classList.remove("open"); });
+  // Skutečný dialog — fokus dovnitř, Tab cyklí, Escape zavírá, zbytek
+  // stránky je inert. Dřív to byl jen překryv s třídou `open`: fokus zůstal
+  // na tlačítku pod ním a Tab z dialogu utekl. Viz modal.js.
+  const dlg = bindModal({ overlay: "settings-overlay", box: "settings-box", label: "Nastavení" });
+  btn.addEventListener("click", () => { renderLog(); dlg.open(); });
+  document.getElementById("settings-close")?.addEventListener("click", () => dlg.close());
 
   layerSel?.addEventListener("change", () => {
     saveSettings({ layer: layerSel.value });

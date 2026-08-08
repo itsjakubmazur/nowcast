@@ -4,6 +4,7 @@
 import { state } from "./state.js";
 import { esc } from "./utils.js";
 import { wcLabel } from "./icons.js";
+import { bindModal } from "./modal.js";
 
 async function fetchCompact(lat, lon) {
   const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}`
@@ -74,16 +75,17 @@ export function initCompare() {
   const sugg = document.getElementById("compare-suggestions");
   const result = document.getElementById("compare-result");
 
+  // Skutečný dialog — viz modal.js. bindModal si sám dá fokus na první
+  // ovladač, což je tady právě to vyhledávací pole.
+  const dlg = bindModal({ overlay: "compare-overlay", box: "compare-box", label: "Porovnání míst" });
   btn.addEventListener("click", () => {
     if (state.currentLat == null) return;
-    overlay.classList.add("open");
     result.innerHTML = "";
     sugg.innerHTML = "";
     input.value = "";
-    setTimeout(() => input.focus(), 50);
+    dlg.open();
   });
-  document.getElementById("compare-close")?.addEventListener("click", () => overlay.classList.remove("open"));
-  overlay.addEventListener("click", e => { if (e.target === overlay) overlay.classList.remove("open"); });
+  document.getElementById("compare-close")?.addEventListener("click", () => dlg.close());
 
   let debounce = null;
   input.addEventListener("input", () => {

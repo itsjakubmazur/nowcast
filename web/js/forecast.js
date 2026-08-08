@@ -511,7 +511,7 @@ export function toggleDayDetail(dateStr) {
         <div class="fc7d-grow">${g.hours.map(hodinaHtml).join("")}</div>
       </div>`).join("")}</div>
     <div class="meteo-head">
-      <div class="meteo-title">Meteogram</div>
+      <h2 class="meteo-title">Meteogram</h2>
       <div class="meteo-tabs" id="fc7d-tabs">${DAY_TABS.map(([m, lbl, tip]) => `
         <button type="button" class="mtab${m === _dayMode ? " active" : ""}" data-mode="${m}"${
           tip ? ` title="${esc(tip)}"` : ""}>${esc(lbl)}</button>`).join("")}</div>
@@ -1187,7 +1187,7 @@ function renderAQ(data) {
   ];
 
   const anySpark = items.some(it => it.series);
-  revealSwap(panel, `<div class="aq-title">Ovzduší a pyl${lvl ? ` <span style="color:var(--muted);font-weight:400">· ${esc(lvl[3])}</span>` : ""}<span class="aq-title-days">vývoj 3 dny</span></div>
+  revealSwap(panel, `<h2 class="aq-title">Ovzduší a pyl${lvl ? ` <span style="color:var(--muted);font-weight:400">· ${esc(lvl[3])}</span>` : ""}<span class="aq-title-days">vývoj 3 dny</span></h2>
     <div class="aq-grid">${items.map(it => `<div class="aq-item">
       <div class="aq-item-label">${esc(it.label)}</div>
       <div class="aq-item-val">${it.val}${it.unit ? `<span class="u">${esc(it.unit)}</span>` : ""}</div>
