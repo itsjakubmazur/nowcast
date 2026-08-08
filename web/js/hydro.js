@@ -4,13 +4,14 @@
 
 import { state } from "./state.js";
 import { esc } from "./utils.js";
+import { gc } from "./palette.js";
 
 const SPA_STYLE = {
   "-1": { color: "#a16207", label: "sucho (pod limitem)" },
   "0":  { color: "#0A84FF", label: "normální stav" },
-  "1":  { color: "#eab308", label: "1. SPA — bdělost" },
-  "2":  { color: "#f97316", label: "2. SPA — pohotovost" },
-  "3":  { color: "#ef4444", label: "3. SPA — ohrožení" },
+  "1":  { color: gc("vystraha1"), label: "1. SPA — bdělost" },
+  "2":  { color: gc("teplo"), label: "2. SPA — pohotovost" },
+  "3":  { color: gc("horko"), label: "3. SPA — ohrožení" },
 };
 
 // Vrstva žije na state.hydroLayer (stejný vzorec jako state.windLayer/

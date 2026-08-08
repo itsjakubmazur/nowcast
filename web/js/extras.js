@@ -234,7 +234,24 @@ export function renderMinutely(ptId, minutely) {
 
 // ── Aktivitní indexy (0–10) ──────────────────────────────────────────────────
 function clamp10(v) { return Math.max(0, Math.min(10, Math.round(v))); }
-function scoreClass(s) { return s >= 7 ? "good" : s >= 4 ? "mid" : "bad"; }
+
+/**
+ * Barva skóre — a jedna výjimka, která odhalila chybu v pravidle.
+ *
+ * Barva v appce znamená STAV ("takhle na tom jsi"), ne potřebu akce. Skóre
+ * aktivit to porušovalo v jednom případě: zalévání dostane při vydatném dešti
+ * 2/10 a svítilo červeně — s podtitulem "příroda zalije sama". Červená
+ * u dobré zprávy. U ostatních aktivit nízké skóre opravdu znamená "dnes to
+ * nevyjde", u zalévání znamená "nemusíš", což je úleva, ne problém.
+ *
+ * Řešení není barvu obrátit (to by bylo jen jiné pravidlo pro jednu dlaždici),
+ * ale přiznat, že tu existují TŘI stavy, ne dva: dobré, špatné a netýká se.
+ * Třetí je tlumený a nekřičí ani jedním směrem.
+ */
+function scoreClass(s, nizkeJeUleva) {
+  if (nizkeJeUleva && s < 4) return "none";
+  return s >= 7 ? "good" : s >= 4 ? "mid" : "bad";
+}
 
 export function renderActivities(fc, data) {
   const panel = document.getElementById("activities-panel");
@@ -267,17 +284,24 @@ export function renderActivities(fc, data) {
   const nightCloud = night.length ? mean(night, "cloud") : 60;
   const stars = clamp10(10 * (1 - nightCloud / 100) - ((state._moonIllum ?? 0.5) * 3));
 
+  // Páté pole: nízké skóre je ÚLEVA, ne špatná zpráva — viz scoreClass().
   const items = [
     ["run", "Běhání", run, `pocitově až ${Math.round(feelsMax)} °C, srážky ${probMax} %`],
     ["bike", "Kolo", bike, `nárazy až ${Math.round(gustMax)} km/h`],
-    ["watering", "Zalévání", water, precSum > 1 ? `spadne ~${num(precSum)} mm — příroda zalije sama` : "beze srážek, zalij"],
+    ["watering", "Zalévání", water, precSum > 1 ? `spadne ~${num(precSum)} mm — příroda zalije sama` : "beze srážek, zalij", true],
     ["laundry", "Prádlo", laundry, `vlhkost ~${Math.round(humMean)} %`],
     ["grill", "Gril", grill, `večer srážky ${Math.round(mx(evening, "prob"))} %`],
     ["telescope", "Hvězdy", stars, `oblačnost v noci ~${Math.round(nightCloud)} %`],
   ];
-  revealSwap(grid, items.map(([icon, n, s, why]) =>
-    `<span class="act" title="${esc(why)}">${uiIcon(icon, "uicon a-e")}<span class="a-n">${esc(n)}</span><span class="a-s ${scoreClass(s)}">${s}/10</span></span>`
-  ).join(""));
+  revealSwap(grid, items.map(([icon, n, s, why, uleva]) => {
+    const cls = scoreClass(s, uleva);
+    // "2/10" u zalévání se čte jako selhání. Když je nízké skóre úleva,
+    // číslo mate a slovo ne.
+    const hodnota = cls === "none" ? "netřeba" : `${s}/10`;
+    return `<span class="act" title="${esc(why)}">${uiIcon(icon, "uicon a-e")}`
+      + `<span class="a-n">${esc(n)}</span>`
+      + `<span class="a-s ${cls}">${hodnota}</span></span>`;
+  }).join(""));
   panel.classList.add("show");
   void uvMax; void data;
 }

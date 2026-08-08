@@ -4,6 +4,7 @@ import { chartAnim, reducedMotion } from "./motion.js";
 import { uvClass, esc, num, revealSwap, nowLocStr, locDateStr } from "./utils.js";
 import { isDarkTheme } from "./theme.js";
 import { panelError } from "./emptystate.js";
+import { gc, gcAlpha } from "./palette.js";
 
 const N_HOURLY = 6;
 const CZ_DAY_FULL = ["neděle", "pondělí", "úterý", "středa", "čtvrtek", "pátek", "sobota"];
@@ -615,7 +616,7 @@ function dayModeConfig(hourly, textColor, gridColor) {
         ...(hasSnow ? [{ type: "bar", label: "Sníh (cm)", data: snow,
           backgroundColor: "rgba(172,196,255,.8)", yAxisID: "y", order: 3,
           barPercentage: 0.55, categoryPercentage: 1 }] : []),
-        { type: "line", label: "Pravděpodobnost (%)", data: prob, borderColor: "#5AC8FA",
+        { type: "line", label: "Pravděpodobnost (%)", data: prob, borderColor: gc("chladno"),
           backgroundColor: "transparent", borderWidth: 1.6, borderDash: [5, 3],
           pointRadius: 0, tension: 0.3, yAxisID: "y1", order: 1 },
       ],
@@ -631,10 +632,10 @@ function dayModeConfig(hourly, textColor, gridColor) {
     return {
       datasets: [
         { type: "line", label: "Vítr (km/h)", data: hourly.map(h => h.wind ?? null),
-          borderColor: "#06b6d4", backgroundColor: "rgba(6,182,212,.09)", fill: true,
+          borderColor: gc("vitr"), backgroundColor: gcAlpha("vitr", .09), fill: true,
           borderWidth: 2, pointRadius: 0, tension: 0.35, yAxisID: "y", order: 1 },
         { type: "line", label: "Nárazy (km/h)", data: hourly.map(h => h.gust ?? null),
-          borderColor: "#0A84FF", backgroundColor: "transparent", borderWidth: 1.4,
+          borderColor: gc("srazky"), backgroundColor: "transparent", borderWidth: 1.4,
           borderDash: [4, 3], pointRadius: 0, tension: 0.35, yAxisID: "y", order: 2 },
       ],
       scales: {
@@ -648,13 +649,13 @@ function dayModeConfig(hourly, textColor, gridColor) {
     return {
       datasets: [
         { type: "line", label: "Tlak (hPa)", data: hourly.map(h => h.pressure ?? null),
-          borderColor: "#BF5AF2", backgroundColor: "transparent", borderWidth: 2,
+          borderColor: gc("tlak"), backgroundColor: "transparent", borderWidth: 2,
           pointRadius: 0, tension: 0.35, yAxisID: "y", order: 1 },
         { type: "line", label: "Vlhkost (%)", data: hourly.map(h => h.humidity ?? null),
-          borderColor: "#22c55e", backgroundColor: "transparent", borderWidth: 1.4,
+          borderColor: gc("vlhkost"), backgroundColor: "transparent", borderWidth: 1.4,
           pointRadius: 0, tension: 0.35, yAxisID: "y1", order: 2 },
         { type: "line", label: "Oblačnost (%)", data: hourly.map(h => h.cloud ?? null),
-          borderColor: "#8b93ab", backgroundColor: "rgba(139,147,171,.10)", fill: true,
+          borderColor: gc("neutral"), backgroundColor: gcAlpha("neutral", .10), fill: true,
           borderWidth: 1.1, pointRadius: 0, tension: 0.35, yAxisID: "y1", order: 3 },
       ],
       scales: {
@@ -680,13 +681,13 @@ function dayModeConfig(hourly, textColor, gridColor) {
         { type: "line", label: "_p10", data: q("p10"), borderWidth: 0, pointRadius: 0,
           tension: 0.35, yAxisID: "y", order: 3 },
         { type: "line", label: `Medián teploty (${_ensMembers} členů)`, data: q("p50"),
-          borderColor: "#0A84FF", backgroundColor: "transparent", borderWidth: 2.2,
+          borderColor: gc("srazky"), backgroundColor: "transparent", borderWidth: 2.2,
           pointRadius: 0, tension: 0.35, yAxisID: "y", order: 1 },
         { type: "bar", label: "Srážky medián (mm)", data: q("prec50"),
           backgroundColor: "rgba(79,142,247,.55)", yAxisID: "y1", order: 7,
           barPercentage: 0.9, categoryPercentage: 1 },
         { type: "line", label: "Srážky 90. percentil", data: q("prec90"),
-          borderColor: "#5AC8FA", backgroundColor: "transparent", borderWidth: 1.2,
+          borderColor: gc("chladno"), backgroundColor: "transparent", borderWidth: 1.2,
           borderDash: [3, 3], pointRadius: 0, tension: 0.3, yAxisID: "y1", order: 2 },
       ],
       scales: {
@@ -707,13 +708,13 @@ function dayModeConfig(hourly, textColor, gridColor) {
     { type: "bar", label: "Srážky (mm)", data: precip, backgroundColor: precipColors,
       yAxisID: "y1", order: 3, barPercentage: 0.9, categoryPercentage: 1 },
     { type: "line", label: "Teplota (°C)", data: hourly.map(h => h.tempRaw ?? null),
-      borderColor: "#fb923c", backgroundColor: "transparent", borderWidth: 2.2,
+      borderColor: gc("teplo"), backgroundColor: "transparent", borderWidth: 2.2,
       pointRadius: 0, tension: 0.35, yAxisID: "y", order: 1, spanGaps: true },
     { type: "line", label: "Pocitová (°C)", data: hourly.map(h => h.feelsRaw ?? null),
-      borderColor: "#fb923c", backgroundColor: "transparent", borderWidth: 1.3,
+      borderColor: gc("teplo"), backgroundColor: "transparent", borderWidth: 1.3,
       borderDash: [4, 3], pointRadius: 0, tension: 0.35, yAxisID: "y", order: 2 },
     { type: "line", label: "Nárazy větru (km/h)", data: hourly.map(h => h.gust ?? null),
-      borderColor: "#06b6d4", backgroundColor: "transparent", borderWidth: 1.3,
+      borderColor: gc("vitr"), backgroundColor: "transparent", borderWidth: 1.3,
       pointRadius: 0, borderDash: [1, 3], tension: 0.2, yAxisID: "y2", order: 4 },
   ];
   datasets.push(...spreadDatasets(hourly));
@@ -739,10 +740,10 @@ function spreadDatasets(hourly) {
     return vals.length ? fn(...vals) : null;
   });
   return [
-    { type: "line", label: "ECMWF (°C)", data: ec, borderColor: "#30B0C7",
+    { type: "line", label: "ECMWF (°C)", data: ec, borderColor: gc("vitr"),
       backgroundColor: "transparent", borderWidth: 1.1, borderDash: [4, 4],
       pointRadius: 0, tension: 0.35, yAxisID: "y", order: 5 },
-    { type: "line", label: "GFS (°C)", data: gf, borderColor: "#BF5AF2",
+    { type: "line", label: "GFS (°C)", data: gf, borderColor: gc("tlak"),
       backgroundColor: "transparent", borderWidth: 1.1, borderDash: [4, 4],
       pointRadius: 0, tension: 0.35, yAxisID: "y", order: 6 },
     { type: "line", label: "rozptyl modelů", data: band(Math.max), borderWidth: 0,
@@ -767,7 +768,9 @@ function drawDayChart(hodiny) {
 
   const isDark = isDarkTheme();
   const grid = isDark ? "rgba(255,255,255,.07)" : "rgba(0,0,0,.06)";
-  const txt = isDark ? "#8b93ab" : "#56606f";
+  // Popisky os jsou --muted; motiv už řeší token sám, tak se na něj
+  // neptáme podruhé.
+  const txt = gc("neutral");
 
   const note = document.getElementById("fc7d-note");
   note?.remove();
@@ -1168,17 +1171,17 @@ function renderAQ(data) {
   // "8 µg/m³" mělo jednotku stejně velkou jako číslo a sloupec čísel
   // přestal lícovat.
   const items = [
-    { label: "PM2,5", series: hourlySlice(h, "pm2_5"), color: "#f59e0b",
+    { label: "PM2,5", series: hourlySlice(h, "pm2_5"), color: gc("zareni"),
       val: pm25 != null ? `<span class="aq-badge aq-${lvl?.[2] || "good"}"></span>${pm25.toFixed(0)}` : "—",
       unit: pm25 != null ? "µg/m³" : "" },
-    { label: "PM10", series: hourlySlice(h, "pm10"), color: "#f59e0b",
+    { label: "PM10", series: hourlySlice(h, "pm10"), color: gc("zareni"),
       val: cur.pm10 != null ? cur.pm10.toFixed(0) : "—", unit: cur.pm10 != null ? "µg/m³" : "" },
-    { label: "Ozón O₃", series: hourlySlice(h, "ozone"), color: "#30B0C7",
+    { label: "Ozón O₃", series: hourlySlice(h, "ozone"), color: gc("vitr"),
       val: cur.ozone != null ? cur.ozone.toFixed(0) : "—", unit: cur.ozone != null ? "µg/m³" : "" },
-    { label: "Evropský AQI", series: hourlySlice(h, "european_aqi"), color: "#0A84FF",
+    { label: "Evropský AQI", series: hourlySlice(h, "european_aqi"), color: gc("srazky"),
       val: cur.european_aqi != null ? String(Math.round(cur.european_aqi)) : "—", unit: "" },
     ...pollenItems.map(p => ({
-      label: `Pyl · ${p.label}`, series: p.series, color: "#22c55e",
+      label: `Pyl · ${p.label}`, series: p.series, color: gc("vlhkost"),
       val: p.now != null && p.now > 0
         ? p.now.toFixed(0)
         : `<span style="color:var(--muted)">0</span>`,

@@ -11,6 +11,8 @@ colors:
   pozorovaci-zlut: "#FFD60A"
   aerologicka-teal: "#40C8E0"
   klimaticka-fialova: "#BF5AF2"
+  stanicni-oranz: "#FF9F0A"
+  plna-radarova-modr: "#0068D6"
   citelny-text: "#EDF2F9"
   tlumeny-text: "#AAB7C9"
   denni-obloha: "#E9EDF2"
@@ -136,7 +138,15 @@ přiřazený jev a mimo něj se nepoužívá.
   **Klimatická fialová** (`#BF5AF2`): odbornější vrstvy — konvekce, aerologie,
   klimatický kontext a tlak v meteogramu.
 
+- **Stanicní oranž** (`#FF9F0A`, ve světlém `#FF9500`): vlastní a sledovaná
+  čidla — proužek WU stanic, jejich značky na mapě, uložené místo. Odlišuje
+  „co jsem si přidal já" od „co appka umí sama".
+
 ### Neutral
+- **Plná radarová modř** (`#0068D6`): plocha, na které leží BÍLÝ text —
+  jezdec navigace sekcí, aktivní záložka, aktivní vrstva, tlačítko přehrávání.
+  Je to tatáž modř o dva stupně tmavší, protože bílá na `#0A84FF` dává jen
+  3,65:1 a na `#007AFF` 4,02:1, tedy pod WCAG AA. Tahle dává 5,31:1.
 - **Noční obloha** (`#080C14`): podklad celé appky v tmavém motivu; mapa pod
   ním prosvítá.
 - **Čitelný text** (`#EDF2F9`) a **Tlumený text** (`#AAB7C9`): primární a
@@ -150,10 +160,25 @@ přiřazený jev a mimo něj se nepoužívá.
 „sucho / v pořádku", červená „výstraha", modrá „interakce nebo srážky".
 Použít zelenou proto, že se hodí k layoutu, je porušení systému.
 
+**Pravidlo plochy a textu.** Sytá barva, která je čitelná jako PLOCHA, není
+automaticky čitelná jako TEXT. Paleta vznikla dark-first; ve světlém motivu má
+oranžová `#FF9500` jako drobný text kontrast 2,09:1 a zelená `#34C759` 2,11:1.
+Každá sémantická barva proto má dvojče `--X-text`, které je v tmavém motivu
+totožné a ve světlém ztmavené nad 4,5:1. Barva zůstává legendou, jen
+v čitelné variantě.
+
+**Pravidlo tří stavů.** Barva znamená STAV, ne potřebu akce — a stavy jsou tři,
+ne dva. Vedle „dobré" a „špatné" existuje „netýká se tě to", a ten je tlumený.
+Bez něj svítilo v aktivitách zalévání červeně přesně tehdy, když ho déšť udělal
+zbytečným: červená u dobré zprávy.
+
 **Pravidlo dvou motivů.** Žádná barva nesmí být zapsaná natvrdo mimo tokeny.
 Bílá na 9 % je v tmavém motivu decentní šeď a ve světlém bílá na bílé — přesně
 tak už jednou zmizel celý pruh dat. Každá plocha jede přes token, který má obě
-varianty.
+varianty. Platí to i pro JavaScript: grafy si dřív psaly tailwindovou paletu
+(`#f97316`, `#22c55e`, `#a855f7`, …) a designový systém tím končil na hranici
+CSS. Barvy grafů se čtou z `:root` přes `palette.js`; přidat barvu do grafu,
+aniž by byla v systému, tím přestává jít.
 
 ## Typography
 

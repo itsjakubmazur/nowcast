@@ -1,7 +1,8 @@
 import { state } from "./state.js";
 import { esc, localHM } from "./utils.js";
+import { gc } from "./palette.js";
 
-const COLOR_HEX = { yellow: "#fbbf24", orange: "#f97316", red: "#ef4444", unknown: "#9ca3af" };
+const COLOR_HEX = { yellow: gc("vystraha1"), orange: gc("teplo"), red: gc("horko"), unknown: gc("neutral") };
 
 export function renderWarningsLayer() {
   if (state.warningsLayerGroup) {

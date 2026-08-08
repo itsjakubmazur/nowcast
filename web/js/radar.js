@@ -4,6 +4,7 @@ import { haversine, bearing, num, esc } from "./utils.js";
 import { uiIcon } from "./uiicons.js";
 import { isDarkTheme } from "./theme.js";
 import { showToast } from "./toast.js";
+import { gc } from "./palette.js";
 
 const RAINVIEWER_API = "https://api.rainviewer.com/public/weather-maps.json";
 
@@ -505,7 +506,7 @@ function _drawRainSparkCanvas(ptId, wrap, canvas) {
   ctx.beginPath(); ctx.moveTo(t0x, 0); ctx.lineTo(t0x, H); ctx.stroke();
   ctx.setLineDash([]);
 
-  ctx.fillStyle = "#9ca3af";
+  ctx.fillStyle = gc("neutral");
   ctx.font = "11px system-ui";
   ctx.textAlign = "right";
   ctx.fillText(hasRain ? `max ${num(Math.max(...vals))} mm/h` : "žádné srážky", W - 4, 12);

@@ -71,7 +71,7 @@ function addStrike(lat, lon, timeMs) {
   if (!state.map || typeof L === "undefined") return;
   const icon = L.divIcon({
     className: "lightning-marker",
-    html: `<svg width="16" height="16" viewBox="0 0 24 24"><path d="M13.5 2 6 13.5h4.5L9 22l8.5-11.5H13z" fill="#FFD60A"/></svg>`,
+    html: `<svg width="16" height="16" viewBox="0 0 24 24"><path d="M13.5 2 6 13.5h4.5L9 22l8.5-11.5H13z" fill="var(--yellow)"/></svg>`,
     iconSize: [16, 16], iconAnchor: [8, 8],
   });
   const marker = L.marker([lat, lon], { icon, interactive: false, zIndexOffset: 400 }).addTo(state.map);

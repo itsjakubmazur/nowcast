@@ -4,6 +4,7 @@ import { thinByZoom, capForBounds } from "./labelthin.js";
 import { uiIcon } from "./uiicons.js";
 import { withTransition, chartAnim } from "./motion.js";
 import { bindModal } from "./modal.js";
+import { gc } from "./palette.js";
 
 /**
  * Bublina stanice — JEDEN tvar pro všechny tři sítě.
@@ -99,8 +100,8 @@ export async function openWuDetail(stationId) {
           <span class="wu-compass-label w">Z</span>
           <div class="wu-detail-arrow">
             <svg width="44" height="44" viewBox="-22 -22 44 44">
-              <polygon points="0,-19 3,7 0,3 -3,7" fill="#ef4444" transform="rotate(${deg})"/>
-              <polygon points="0,19 3,-7 0,-3 -3,-7" fill="#94a3b8" transform="rotate(${deg})"/>
+              <polygon points="0,-19 3,7 0,3 -3,7" fill="var(--red)" transform="rotate(${deg})"/>
+              <polygon points="0,19 3,-7 0,-3 -3,-7" fill="var(--muted)" transform="rotate(${deg})"/>
               <circle cx="0" cy="0" r="2.5" fill="var(--text)"/>
             </svg>
           </div>
@@ -158,7 +159,7 @@ function _renderWuHistory(stationId) {
   const series = hist.series;
   const isDark = document.documentElement.getAttribute("data-theme") !== "light";
   const gc = isDark ? "rgba(255,255,255,.07)" : "rgba(0,0,0,.07)";
-  const tc = isDark ? "#6b7280" : "#9ca3af";
+  const tc = isDark ? "#6b7280" : gc("neutral");
 
   const firstDt = new Date(series[0].dt);
   const lastDt = new Date(series[series.length - 1].dt);
@@ -172,10 +173,10 @@ function _renderWuHistory(stationId) {
 
   const chartCfgs = [
     { key: "temp", label: "Teplota", color: "#f87171", unit: "°C", bar: false },
-    { key: "humidity", label: "Vlhkost", color: "#22c55e", unit: "%", bar: false },
-    { key: "pressure", label: "Tlak", color: "#a855f7", unit: "hPa", bar: false },
-    { key: "wind_kmh", label: "Vítr", color: "#06b6d4", unit: "km/h", bar: false, key2: "gust_kmh", color2: "#38bdf8", label2: "Nárazy" },
-    { key: "precip_rate", label: "Srážky/hod", color: "#3b82f6", unit: "mm", bar: true },
+    { key: "humidity", label: "Vlhkost", color: gc("vlhkost"), unit: "%", bar: false },
+    { key: "pressure", label: "Tlak", color: gc("tlak"), unit: "hPa", bar: false },
+    { key: "wind_kmh", label: "Vítr", color: gc("vitr"), unit: "km/h", bar: false, key2: "gust_kmh", color2: gc("chladno"), label2: "Nárazy" },
+    { key: "precip_rate", label: "Srážky/hod", color: gc("srazky"), unit: "mm", bar: true },
   ];
 
   container.innerHTML = `<div style="font-size:var(--fs-sm);font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-top:1rem;margin-bottom:.5rem">Historie · ${series.length} záznamů</div>`;
@@ -264,71 +265,71 @@ export function renderWuMarkers() {
 // ── ČHMÚ stanice ──────────────────────────────────────────────────────────────
 
 export function chmiMarkerColor(layer, value) {
-  if (value == null) return "#94a3b8";
+  if (value == null) return gc("neutral");
   if (layer === "temp" || layer === "dewpoint") {
     if (value <= -15) return "#bfdbfe";
-    if (value <= -5) return "#38bdf8";
+    if (value <= -5) return gc("chladno");
     if (value <= 0) return "#67e8f9";
     if (value <= 5) return "#34d399";
     if (value <= 10) return "#86efac";
     if (value <= 15) return "#fde68a";
-    if (value <= 20) return "#fbbf24";
-    if (value <= 25) return "#f97316";
-    if (value <= 30) return "#ef4444";
+    if (value <= 20) return gc("vystraha1");
+    if (value <= 25) return gc("teplo");
+    if (value <= 30) return gc("horko");
     return "#b91c1c";
   }
   if (layer === "humidity") {
-    if (value < 30) return "#f97316";
-    if (value < 50) return "#fbbf24";
+    if (value < 30) return gc("teplo");
+    if (value < 50) return gc("vystraha1");
     if (value < 70) return "#34d399";
-    if (value < 85) return "#38bdf8";
-    return "#3b82f6";
+    if (value < 85) return gc("chladno");
+    return gc("srazky");
   }
   if (layer === "wind_kmh") {
     if (value < 10) return "#34d399";
-    if (value < 30) return "#fbbf24";
-    if (value < 50) return "#f97316";
-    if (value < 75) return "#ef4444";
+    if (value < 30) return gc("vystraha1");
+    if (value < 50) return gc("teplo");
+    if (value < 75) return gc("horko");
     return "#b91c1c";
   }
   if (layer === "precip_1h") {
-    if (value === 0 || value == null) return "#94a3b8";
+    if (value === 0 || value == null) return gc("neutral");
     if (value < 0.3) return "#bfdbfe";
     if (value < 1) return "#7dd3fc";
-    if (value < 3) return "#3b82f6";
+    if (value < 3) return gc("srazky");
     if (value < 10) return "#1d4ed8";
     return "#1e3a8a";
   }
   if (layer === "snow_cm") {
-    if (value <= 0) return "#94a3b8";
+    if (value <= 0) return gc("neutral");
     if (value < 2) return "#e0f2fe";
     if (value < 10) return "#bae6fd";
     if (value < 30) return "#7dd3fc";
-    if (value < 60) return "#38bdf8";
+    if (value < 60) return gc("chladno");
     return "#0284c7";
   }
   if (layer === "pressure") {
-    if (value < 985) return "#f97316";
-    if (value < 1000) return "#fbbf24";
+    if (value < 985) return gc("teplo");
+    if (value < 1000) return gc("vystraha1");
     if (value < 1015) return "#34d399";
-    if (value < 1025) return "#38bdf8";
-    return "#3b82f6";
+    if (value < 1025) return gc("chladno");
+    return gc("srazky");
   }
   if (layer === "solar") {
-    if (value < 20) return "#94a3b8";
+    if (value < 20) return gc("neutral");
     if (value < 100) return "#fde68a";
-    if (value < 300) return "#fbbf24";
-    if (value < 600) return "#f59e0b";
+    if (value < 300) return gc("vystraha1");
+    if (value < 600) return gc("zareni");
     return "#d97706";
   }
   if (layer === "visibility_m") {
     if (value < 200) return "#7c3aed";
-    if (value < 1000) return "#ef4444";
-    if (value < 5000) return "#f97316";
-    if (value < 10000) return "#fbbf24";
+    if (value < 1000) return gc("horko");
+    if (value < 5000) return gc("teplo");
+    if (value < 10000) return gc("vystraha1");
     return "#34d399";
   }
-  return "#10b981";
+  return gc("dobre");
 }
 
 function chmiMarkerText(layer, s) {
@@ -575,15 +576,15 @@ function _renderTabDnes(body, stationId) {
   const fmt0 = v => v != null ? Math.round(v) : "—";
   const cards = [
     sdCard("temp", "Teplota", "thermometer", "#f87171", "°C", fmt1, series),
-    sdCard("humidity", "Vlhkost", "droplet", "#22c55e", "%", fmt0, series),
-    sdCard("dewpoint", "Rosný bod", "mist", "#a78bfa", "°C", fmt1, series),
-    sdCard("pressure", "Tlak", "gauge", "#a855f7", "hPa", fmt0, series),
-    sdCard("wind_kmh", "Vítr", "wind", "#06b6d4", "km/h", fmt0, series),
-    sdCard("gust_kmh", "Nárazy", "gust", "#38bdf8", "km/h", fmt0, series),
-    sdCard("precip_1h", "Srážky/h", "rain", "#3b82f6", "mm", fmt1, series),
+    sdCard("humidity", "Vlhkost", "droplet", gc("vlhkost"), "%", fmt0, series),
+    sdCard("dewpoint", "Rosný bod", "mist", gc("tlak"), "°C", fmt1, series),
+    sdCard("pressure", "Tlak", "gauge", gc("tlak"), "hPa", fmt0, series),
+    sdCard("wind_kmh", "Vítr", "wind", gc("vitr"), "km/h", fmt0, series),
+    sdCard("gust_kmh", "Nárazy", "gust", gc("chladno"), "km/h", fmt0, series),
+    sdCard("precip_1h", "Srážky/h", "rain", gc("srazky"), "mm", fmt1, series),
     sdCard("snow_cm", "Sníh", "snow", "#bae6fd", "cm", fmt0, series),
-    sdCard("solar", "Záření", "sun", "#f59e0b", "W/m²", fmt0, series),
-    sdCard("visibility_m", "Viditelnost", "eye", "#94a3b8", "m", fmt0, series),
+    sdCard("solar", "Záření", "sun", gc("zareni"), "W/m²", fmt0, series),
+    sdCard("visibility_m", "Viditelnost", "eye", gc("neutral"), "m", fmt0, series),
   ].filter(Boolean);
 
   if (cards.length) {
@@ -595,11 +596,11 @@ function _renderTabDnes(body, stationId) {
 
   const chartCfgs = [
     { key: "temp", label: "Teplota", color: "#f87171", fill: true, unit: "°C", bar: false },
-    { key: "humidity", label: "Vlhkost vzduchu", color: "#22c55e", fill: true, unit: "%", bar: false },
-    { key: "pressure", label: "Tlak", color: "#a855f7", fill: false, unit: "hPa", bar: false },
-    { key: "wind_kmh", label: "Vítr", color: "#06b6d4", fill: true, unit: "km/h", bar: false, key2: "gust_kmh", color2: "#38bdf8", label2: "Nárazy" },
-    { key: "precip_1h", label: "Srážky / hod", color: "#3b82f6", fill: true, unit: "mm", bar: true },
-    { key: "solar", label: "Sluneční záření", color: "#f59e0b", fill: true, unit: "W/m²", bar: false },
+    { key: "humidity", label: "Vlhkost vzduchu", color: gc("vlhkost"), fill: true, unit: "%", bar: false },
+    { key: "pressure", label: "Tlak", color: gc("tlak"), fill: false, unit: "hPa", bar: false },
+    { key: "wind_kmh", label: "Vítr", color: gc("vitr"), fill: true, unit: "km/h", bar: false, key2: "gust_kmh", color2: gc("chladno"), label2: "Nárazy" },
+    { key: "precip_1h", label: "Srážky / hod", color: gc("srazky"), fill: true, unit: "mm", bar: true },
+    { key: "solar", label: "Sluneční záření", color: gc("zareni"), fill: true, unit: "W/m²", bar: false },
   ];
 
   for (const cfg of chartCfgs) {
@@ -614,7 +615,7 @@ function _renderTabDnes(body, stationId) {
 
     const isDark2 = document.documentElement.getAttribute("data-theme") !== "light";
     const gc = isDark2 ? "rgba(255,255,255,.07)" : "rgba(0,0,0,.07)";
-    const tc = isDark2 ? "#6b7280" : "#9ca3af";
+    const tc = isDark2 ? "#6b7280" : gc("neutral");
     const valid = vals.filter(v => v != null);
     const vMin = valid.length ? Math.min(...valid) : 0;
     const vMax = valid.length ? Math.max(...valid) : 1;
@@ -714,14 +715,14 @@ function _renderTabKlima(body, stationId) {
     block.className = "chmi-chart-block";
     block.innerHTML = `<h4>Průměrná teplota (°C) — měsíční normál</h4><div class="chmi-chart-block-inner"><canvas></canvas></div>`;
     body.appendChild(block);
-    _makeChart(block.querySelector("canvas"), "bar", months, avgTemps, "#f59e0b", false, "°C");
+    _makeChart(block.querySelector("canvas"), "bar", months, avgTemps, gc("zareni"), false, "°C");
   }
   if (precips.some(v => v !== null)) {
     const block = document.createElement("div");
     block.className = "chmi-chart-block";
     block.innerHTML = `<h4>Průměrné srážky (mm) — měsíční normál</h4><div class="chmi-chart-block-inner"><canvas></canvas></div>`;
     body.appendChild(block);
-    _makeChart(block.querySelector("canvas"), "bar", months, precips, "#06b6d4", false, "mm");
+    _makeChart(block.querySelector("canvas"), "bar", months, precips, gc("vitr"), false, "mm");
   }
 }
 
@@ -838,7 +839,7 @@ function _renderTabHistorie(body, stationId) {
     });
 
     const barva = _histKey.startsWith("precip") || _histKey.startsWith("snow")
-      ? "#06b6d4" : _histKey.startsWith("gust") ? "#a78bfa" : "#f59e0b";
+      ? gc("vitr") : _histKey.startsWith("gust") ? gc("tlak") : gc("zareni");
     const typ = _histKey.endsWith("_SUM") || _histKey.startsWith("snow") ? "bar" : "line";
     _makeChart(body.querySelector("#hist-t"), typ, roky, hodnoty, barva,
                typ === "line", rada.unit,
@@ -865,14 +866,14 @@ function _renderTabRocni(body, stationId) {
     block.className = "chmi-chart-block";
     block.innerHTML = `<h4>Průměrná roční teplota (°C)</h4><div class="chmi-chart-block-inner"><canvas></canvas></div>`;
     body.appendChild(block);
-    _makeChart(block.querySelector("canvas"), "line", years, avgTemps, "#f59e0b", true, "°C");
+    _makeChart(block.querySelector("canvas"), "line", years, avgTemps, gc("zareni"), true, "°C");
   }
   if (precipTot.some(v => v !== null)) {
     const block = document.createElement("div");
     block.className = "chmi-chart-block";
     block.innerHTML = `<h4>Roční úhrn srážek (mm)</h4><div class="chmi-chart-block-inner"><canvas></canvas></div>`;
     body.appendChild(block);
-    _makeChart(block.querySelector("canvas"), "bar", years, precipTot, "#06b6d4", false, "mm");
+    _makeChart(block.querySelector("canvas"), "bar", years, precipTot, gc("vitr"), false, "mm");
   }
   if (maxTemps.some(v => v !== null) && minTemps.some(v => v !== null)) {
     const block = document.createElement("div");
@@ -886,8 +887,8 @@ function _renderTabRocni(body, stationId) {
       type: "line",
       data: {
         labels: years, datasets: [
-          { label: "Max", data: maxTemps, borderColor: "#ef4444", backgroundColor: "transparent", borderWidth: 1.5, pointRadius: 2, tension: 0.3, spanGaps: true },
-          { label: "Min", data: minTemps, borderColor: "#38bdf8", backgroundColor: "transparent", borderWidth: 1.5, pointRadius: 2, tension: 0.3, spanGaps: true },
+          { label: "Max", data: maxTemps, borderColor: gc("horko"), backgroundColor: "transparent", borderWidth: 1.5, pointRadius: 2, tension: 0.3, spanGaps: true },
+          { label: "Min", data: minTemps, borderColor: gc("chladno"), backgroundColor: "transparent", borderWidth: 1.5, pointRadius: 2, tension: 0.3, spanGaps: true },
         ],
       },
       options: {

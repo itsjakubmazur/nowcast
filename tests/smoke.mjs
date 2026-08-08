@@ -2385,6 +2385,116 @@ async function main() {
       `korekce platí i pro týdenní maxima (${tydenBez}° → ${parseInt(sK.tyden, 10)}°)`);
   }
 
+  // ══ REGRESNÍ HLÍDKY Z AUDITU A KRITIKY ═════════════════════════════════
+  // Tyhle nálezy se snadno vrací: jsou to plošná rozhodnutí (paleta, stopy
+  // mřížky, atributy dialogu), která se dají zrušit jedním nedbalým řádkem
+  // a na screenshotu nejsou vidět. Proto se měří, ne prohlížejí.
+
+  // ── Kontrast v obou motivech ───────────────────────────────────────────
+  // Paleta vznikla dark-first a světlé varianty se ověřovaly jako PLOCHY.
+  // Jako text propadly: oranžová 2,09:1, zelená 2,11:1. Bílý text na akcentu
+  // dával 3,65:1 a týkal se každého aktivního ovladače v appce.
+  const zmerKontrast = (motiv) => page.evaluate((m) => {
+    const puvodni = document.documentElement.getAttribute("data-theme");
+    document.documentElement.setAttribute("data-theme", m);
+    const lin = c => { c /= 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
+    // POZOR: color-mix() se počítá na `color(srgb 0.8 0.9 1 / .7)` — složky
+    // jsou 0–1, ne 0–255. Čtení téhle formy jako 0–255 udělá z bílého skla
+    // skoro černé pozadí a vyrobí desítky falešných selhání.
+    const parse = s => {
+      s = s.trim();
+      let g = s.match(/^rgba?\(([^)]+)\)/);
+      if (g) { const p = g[1].split(/[,\s\/]+/).map(Number); return [p[0], p[1], p[2], p[3] ?? 1]; }
+      g = s.match(/^color\(srgb ([^)]+)\)/);
+      if (g) { const p = g[1].split(/[\s\/]+/).map(Number); return [p[0]*255, p[1]*255, p[2]*255, p[3] ?? 1]; }
+      if (s.startsWith("#")) { const h = s.slice(1); return [0,2,4].map(i => parseInt(h.slice(i,i+2),16)).concat([1]); }
+      return null;
+    };
+    const L = ([r,g2,b]) => .2126*lin(r) + .7152*lin(g2) + .0722*lin(b);
+    const cr = (a,b) => { const l1=L(a), l2=L(b), [hi,lo]=l1>l2?[l1,l2]:[l2,l1]; return (hi+.05)/(lo+.05); };
+    const smes = (fg, bg) => fg.map((v,i) => i<3 ? v*fg[3] + bg[i]*(1-fg[3]) : 1);
+    const root = getComputedStyle(document.documentElement);
+    const sklo = smes(parse(root.getPropertyValue("--glass").trim()),
+                      parse(root.getPropertyValue("--bg").trim()));
+    const out = {};
+    for (const t of ["blue","red","orange","green","teal","purple"])
+      out[`--${t}-text`] = +cr(parse(root.getPropertyValue(`--${t}-text`).trim()), sklo).toFixed(2);
+    out["bílá na --accent-solid"] =
+      +cr([255,255,255,1], parse(root.getPropertyValue("--accent-solid").trim())).toFixed(2);
+    if (puvodni) document.documentElement.setAttribute("data-theme", puvodni);
+    else document.documentElement.removeAttribute("data-theme");
+    return out;
+  }, motiv);
+
+  for (const motiv of ["dark", "light"]) {
+    const r = await zmerKontrast(motiv);
+    const propadly = Object.entries(r).filter(([, v]) => v < 4.5);
+    assertTrue(propadly.length === 0,
+      `${motiv}: všech ${Object.keys(r).length} barev splňuje AA `
+      + `(nejnižší ${Math.min(...Object.values(r))}:1)`);
+  }
+
+  // ── Grafy kreslí ze systému, ne tailwindovou paletou ───────────────────
+  const tailwind = await page.evaluate(() => {
+    const zle = [];
+    document.querySelectorAll("canvas").forEach(c => {
+      window.Chart?.getChart?.(c)?.data?.datasets?.forEach(d => {
+        for (const k of ["borderColor", "backgroundColor"]) {
+          if (typeof d[k] === "string"
+            && /^#(f97316|ef4444|22c55e|a855f7|06b6d4|38bdf8|3b82f6|f59e0b)$/i.test(d[k]))
+            zle.push(`${d.label}:${d[k]}`);
+        }
+      });
+    });
+    return zle;
+  });
+  assertTrue(tailwind.length === 0, `žádný graf nekreslí tailwindovou paletou (${tailwind.length})`);
+
+  // ── Dotykové cíle ──────────────────────────────────────────────────────
+  const cile = await page.evaluate(() => {
+    const out = {};
+    for (const sel of [".pp-tab", ".mtab", "#ai-ask-send"]) {
+      const el = document.querySelector(sel);
+      if (el) out[sel] = parseFloat(getComputedStyle(el, "::after").height) || 0;
+    }
+    return out;
+  });
+  for (const [sel, h] of Object.entries(cile))
+    assertTrue(h >= 44, `${sel} má dotykový cíl ${h} px (WCAG 2.5.8 minimum je 24)`);
+
+  // ── Struktura dokumentu ────────────────────────────────────────────────
+  const struktura = await page.evaluate(() => ({
+    h1: document.querySelectorAll("h1").length,
+    h2: document.querySelectorAll("h2").length,
+    main: document.querySelectorAll('[role="main"], main').length,
+    live: document.querySelectorAll("[aria-live]").length,
+  }));
+  assertTrue(struktura.h1 === 1 && struktura.main === 1 && struktura.h2 >= 8
+    && struktura.live >= 4,
+    `dokument má strukturu (h1 ${struktura.h1}, h2 ${struktura.h2}, `
+    + `main ${struktura.main}, aria-live ${struktura.live})`);
+
+  // ── Dialog nastavení je doopravdy modální ──────────────────────────────
+  await page.click("#btn-settings");
+  await page.waitForTimeout(120);
+  let uniku = 0;
+  for (let i = 0; i < 16; i++) {
+    await page.keyboard.press("Tab");
+    if (!await page.evaluate(() =>
+      document.getElementById("settings-box").contains(document.activeElement))) uniku++;
+  }
+  assertTrue(uniku === 0, `fokus zůstal v dialogu (16 Tabů, úniků ${uniku})`);
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(120);
+  assertTrue(!await page.evaluate(() =>
+    document.getElementById("settings-overlay").classList.contains("open")),
+    "Escape dialog zavře");
+
+  // ── Řádek týdne se neořezává ───────────────────────────────────────────
+  const orez = await page.evaluate(() => [...document.querySelectorAll("#fc7-grid .fc7-day")]
+    .filter(r => r.scrollWidth > r.clientWidth + 1).length);
+  assertTrue(orez === 0, `žádný řádek 7denního výhledu se neořezává (${orez})`);
+
   await browser.close();
   server.close();
   rmrf(SERVE);
