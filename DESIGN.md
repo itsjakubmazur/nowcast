@@ -310,6 +310,33 @@ Popisky verzálkami, `0.68rem`, váha 800, prostrkání 0.05em. Aktivní stav ne
 který se posouvá násobkem vlastní šířky přes `transform`. Na desktopu je lišta
 vlevo nahoře, pod 768 px se mění v pilulku přilepenou k dolní hraně okna.
 
+### Bublina stanice
+Jediné místo, kde je karta zároveň mapovým prvkem. Sklo má **slabší rozostření
+(20px místo 26px)**, aby pod bublinou zůstala čitelná mapa — je to jediná
+odchylka od jednotné skleněné hladiny a má důvod.
+
+- **Hlavička:** název (`0.92rem`), štítek sítě jako pilulka verzálkami
+  (`ČHMÚ` v suché zeleni, vlastní stanice v oranžové) a stáří údaje zarovnané
+  doprava
+- **Řádek údaje:** pevná mřížka `1.05em / 1fr / auto` — ikona, název veličiny,
+  hodnota. Díky pevné mřížce stojí hodnoty ve sloupci i při různě dlouhých
+  názvech, a to napříč všemi sítěmi (ČHMÚ, WU, METAR)
+- **Akce:** tlačítko přes celou šířku v suché zeleni, výška ≥ 32 px
+
+### Legenda radaru
+Vodorovný pruh (160×7 px, poloměr 4 px) s popiskem „slabé / intenzivní".
+**Gradient není zapsaný v CSS** — skládá se za běhu ze zarážek v manifestu,
+tedy z týchž hodnot, kterými pipeline vykreslila radarové dlaždice. Legenda
+proto nemůže tvrdit něco jiného, než co je na mapě. Pod 768 px se pruh
+roztáhne do řádku a popisek „slabé" zmizí, protože je z barvy zřejmý.
+
+### Karta verifikace
+Sloupce shody predikce se skutečností po dnech, výška = procento shody.
+Barva je **práh, ne škála**: ≥ 90 % suchá zeleň, ≥ 75 % oranžová, níž výstražná
+červeň. Karta je doslovné provedení zásady o přiznané nejistotě — když se
+nástroj netrefil, je to vidět stejně jasně jako když ano. Podnadpis se sází
+malými písmeny a normálním řezem, aby s hlavičkou nesoupeřil.
+
 ### Signature Component: Meteogram v rozbaleném dni
 Řádek týdne se klepnutím **odvine** — výška najíždí přes
 `grid-template-rows: 0fr → 1fr` (420 ms), vnitřek se skládá po částech
