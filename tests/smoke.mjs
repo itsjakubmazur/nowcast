@@ -377,10 +377,9 @@ async function main() {
   // same-origin fixture routy (vendor/leaflet-velocity.min.js) — dřívější
   // fixtures byly všechny cross-origin, kde SW záměrně nezasahuje.
   const context = await browser.newContext({ serviceWorkers: "block" });
-  // Pokročilé panely (modely/ovzduší/obloha/…) jsou defaultně ve sbalené sekci
-  // "Podrobnější data" (display:none) → rozbal je, ať jsou viditelné pro
-  // waitForSelector(...show) v testech i pro vizuální kontrolu.
-  await context.addInitScript(() => localStorage.setItem("nowcast_more_open", "1"));
+  // Sekce "Podrobnější data" byla zrušená (panely dělí navigace Teď/Dnes/
+  // Týden/Data), takže se nic rozbalovat nemusí. Klíč nowcast_more_open už
+  // nikdo nečte — nastavovat ho byl zbytek po komponentě, která neexistuje.
   await context.grantPermissions(["clipboard-read", "clipboard-write"]).catch(() => {});
   const page = await context.newPage();
 

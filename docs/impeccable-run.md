@@ -68,9 +68,18 @@ Poslední aktualizace: 2026-08-09
       rizikem a příkazem. Návrh vyhodit tři: pevné šířky na `clamp()`,
       přerozdělení typografických rolí, předělání dialogu Nastavení.
 - [ ] 7. BRÁNA B — schválení backlogu **← ZDE POKRAČUJ**
-- [ ] 8. shape hlavního přehledu
-- [ ] 9. BRÁNA C — schválení plánu
-- [ ] 10.–11. implementace po obrazovkách (doplň seznam po BRÁNĚ B)
+- [~] 8. shape — **přeskočeno** rozhodnutím z BRÁNY B. Backlog jsou opravy
+      konkrétních míst, ne nová obrazovka; `shape` plánuje UX/UI před psaním
+      kódu a neměl by co plánovat.
+- [~] 9. BRÁNA C — **odpadá** společně s krokem 8.
+- [x] 10. implementace — pět bloků v pořadí schváleném na BRÁNĚ B, každý
+      ve vlastním commitu: `clarify` (jedna pravda o dešti v plné variantě,
+      světový režim, dvě jistoty), `colorize` (barva na tónu sebe sama,
+      teplotní dvojčata, zbylé tailwindové barvy), `harden` (díra v testu,
+      klávesnice, stav přepínačů, prázdné stavy ČHMÚ, pořadí fokusu),
+      `adapt` (dotykové cíle posuvníků 5→45 px, sticky popisek dráhy),
+      `polish` (ořezy, mrtvé selektory, `DESIGN.md`).
+- [ ] 11. BRÁNA D — shrnutí diffu **← ZDE POKRAČUJ**
 - [ ] 12. harden — chybové a zastaralé stavy dat
 - [ ] 13. onboard — prázdné stavy a metodika
 - [ ] 14. animate — radarová animace

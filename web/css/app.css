@@ -256,15 +256,15 @@ img.wicon { filter: var(--wicon-shadow); vertical-align: middle; }
 /* .layer-btn tady schválně NENÍ: sklo nese jeho kontejner #layer-selector,
    protože je to výběr jedné veličiny (rádio), ne sada nezávislých vypínačů.
    Volné skleněné pilulky jsou vyhrazené přepínačům vrstev v doku radaru. */
-/* #accum-legend a #more-toggle si sklo dřív skládaly samy:
-   blur(18px) místo 26 a `1px solid var(--glass-border)` — jenže --glass-border
-   nikdy neexistovala (prstenec se jmenuje --gring). Neplatná var() bez
-   fallbacku shodí celou deklaraci, takže ty panely neměly ani ohraničení,
-   ani stejné sklo jako sousedi. Teď dědí ze společného mixinu. */
+/* #accum-legend si sklo dřív skládal sám: blur(18px) místo 26 a
+   `1px solid var(--glass-border)` — jenže --glass-border nikdy neexistovala
+   (prstenec se jmenuje --gring). Neplatná var() bez fallbacku shodí celou
+   deklaraci, takže panel neměl ani ohraničení, ani stejné sklo jako sousedi.
+   Teď dědí ze společného mixinu. */
 #left-card, #right-panel, #radar-bar-inner, #storm-bar, #radar-legend,
 button.glass-btn, .search-wrap, #suggestions, .logo,
 #chmi-detail, #wu-detail-box, #notif-bar, button.ctrl, #alert-bar,
-#accum-legend, #more-toggle,
+#accum-legend,
 #refresh-time {
   background: var(--glass);
   -webkit-backdrop-filter: blur(26px) saturate(1.7);
@@ -1680,6 +1680,36 @@ button.ctrl .uicon { width: 1.12em; height: 1.12em; }
    pro -webkit- a -moz-: prohlížeč, který jeden z těch pseudoelementů nezná,
    zahodí celé pravidlo včetně druhého selektoru.
    ═══════════════════════════════════════════════════════════════════════ */
+/* ══ DOTYKOVÝ CÍL POSUVNÍKŮ ═══════════════════════════════════════════════
+   Naměřeno na 390 px: #timeline je 248,4 × 5 px, #opacity-slider 72 × 4 px.
+   Scrubber radarové smyčky je přitom nejpřirozenější jednoruční gesto v celé
+   appce a spodní hranice WCAG 2.5.8 je 24×24. Jezdce mají 18 a 15 px, dráha
+   pět a čtyři.
+
+   Roste jen PLOCHA, ne vzhled — stejný trik jako u záložek: neviditelný
+   překryv nad dráhou. Vizuálně zůstává vlásek, prstem se trefíš do 44 px.
+   Překryv musí mít `pointer-events: none`, jinak by ukradl tažení samotnému
+   inputu; jeho jediný úkol je rozšířit plochu, na kterou míří prst, a to
+   obstará zvětšená dráha pod ním.
+
+   Proč ne prostě vyšší input: dráha JE vidět. Pruh vysoký 44 px uprostřed
+   doku vypadá jako progress bar, ne jako časová osa. */
+.timeline-wrap, .opacity-group { position: relative; }
+.timeline-wrap::after, .opacity-group::after {
+  content: ""; position: absolute; left: 0; right: 0; top: 50%;
+  height: 44px; transform: translateY(-50%);
+  pointer-events: none;
+}
+#timeline, #opacity-slider {
+  /* Sama dráha je tenká, ale klikatelná plocha inputu smí být vyšší.
+     `content-box` je tu nutný: globální `* { box-sizing: border-box }` by
+     výplň schroustal dovnitř výšky a plocha by nevyrostla (naměřeno 38 px
+     místo 45). `background-clip: content-box` drží vidět jen tenkou dráhu,
+     `margin` zápornou hodnotou vrátí zabrané místo rozvržení. */
+  box-sizing: content-box;
+  padding: 20px 0; margin: -20px 0; background-clip: content-box;
+}
+
 #timeline:focus-visible::-webkit-slider-thumb,
 #opacity-slider:focus-visible::-webkit-slider-thumb {
   box-shadow: 0 1px 6px rgba(0, 0, 0, .35), 0 0 0 3px var(--accent);
@@ -2109,14 +2139,9 @@ button.ctrl.active {
    sekcí. Dřív se zapínal třídou has-content z MutationObserveru; s tím
    zmizel i důvod, proč by měl být defaultně schovaný. */
 #more-panels { display: block; }
-#more-toggle {
-  width: 100%; display: flex; align-items: center; justify-content: space-between;
-  color: var(--text);
-  border-radius: var(--r-card); padding: .62rem .9rem; font: inherit;
-  font-size: var(--fs-body); font-weight: 700; cursor: pointer;
-  transition: background .15s;
-}
-#more-toggle:hover { background: color-mix(in srgb, var(--text) 6%, var(--glass)); }
+/* Pravidla pro #more-toggle jsou pryč i s komentářem, který popisoval bug
+   prvku, co v index.html neexistuje — sekce "Podrobnější data" byla zrušená
+   a zbylo po ní jen CSS pro tlačítko, které nemá co rozbalovat. */
 .more-caret {
   width: 7px; height: 7px; flex: none;
   border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted);
@@ -2195,9 +2220,14 @@ button.ctrl.active {
 .mdl-title, .fc7-title { flex-wrap: wrap; white-space: normal; }
 .mdl-sub { font-weight: 400; text-transform: none; letter-spacing: 0; }
 #models-panel .mdl-sub { font-weight: 500; color: var(--muted); font-size: var(--fs-tiny); }
+/* Sloupce byly 1.4 + 1fr + 2.4 + 3.2 + 3.2 rem a jméno modelu se v tom 1fr
+   ořezávalo (120 px obsahu v 85px boxu) — v panelu, jehož celý smysl je
+   žebříček modelů. Číselné sloupce mají pevný obsah ("22°", "3,6 mm",
+   "±1,4"), takže se smějí stáhnout na to, co opravdu potřebují; ušetřená
+   šířka jde jménu. */
 #models-panel .mdl-head, #models-panel .mdl-row {
-  display: grid; grid-template-columns: 1.4rem 1fr 2.4rem 3.2rem 3.2rem;
-  gap: .3rem; align-items: center; font-size: var(--fs-sm); padding: .14rem 0;
+  display: grid; grid-template-columns: 1.2rem minmax(0, 1fr) 2.1rem 2.8rem 2.8rem;
+  gap: .25rem; align-items: center; font-size: var(--fs-sm); padding: .14rem 0;
 }
 #models-panel .mdl-head { color: var(--muted); font-size: var(--fs-tiny); text-transform: uppercase; letter-spacing: .04em; }
 #models-panel .mdl-row.best { background: rgba(10, 132, 255, .08); border-radius: var(--r-mini); }
@@ -2217,8 +2247,10 @@ button.ctrl.active {
 #models-panel .mdl-note { font-size: var(--fs-tiny); color: var(--muted); line-height: 1.45; margin-top: .4rem; }
 
 /* ── Ensemble rozptyl v 7denním výhledu ─────────────────────────────────── */
-.fc7-ens { font-size: var(--fs-tiny); color: var(--muted); margin-top: .15rem; }
-.fc7-ens .prec { color: var(--blue-text); font-weight: 600; }
+/* Druhá deklarace .fc7-ens zrušená: přebíjela velikost z prvního bloku
+   (--fs-tiny místo --fs-micro), ale zdědila z něj `white-space: nowrap`,
+   takže rozptyl ensemblu se ořízl přesně na podílu členů se srážkami —
+   tedy na čísle o nejistotě. Platí jediná deklarace výš. */
 
 /* ── Hlásné profily (hydrologie) ────────────────────────────────────────── */
 .hydro-popup { font-size: var(--fs-body); max-width: 240px; }
@@ -2461,6 +2493,9 @@ body.embed #left-card { top: 100px; bottom: 1rem; }
   }
   #radar-row-layers::-webkit-scrollbar { display: none; }
   #radar-row-layers > * { flex: 0 0 auto; }
+  /* Sticky popisek drží kotvu, když dráha odjede — bez něj uživatel neví,
+     že vpravo jsou další ovladače. Dvě identicky vypadající dráhy se musí
+     chovat stejně; tahle ho neměla a tři přepínače mizely bez stopy. */
   .rl-label { position: sticky; left: 0; z-index: 1; margin-left: 0;
     background: linear-gradient(90deg, var(--glass) 72%, transparent); padding-right: .5rem; }
   #frame-time { text-align: right; }
