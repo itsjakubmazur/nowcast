@@ -50,7 +50,10 @@ export function renderWuOwnPanel() {
       ? Math.round(s.wind_kmh) + " km/h" + (s.wind_dir != null ? " " + degToCompass(s.wind_dir) : "")
       : "";
     const meta = [loc, windStr].filter(Boolean).map(esc).join(" · ");
-    return `<div class="wu-mini-row" data-station-id="${esc(s.id)}">
+    // role+tabindex, ne holý div: tenhle řádek otevírá dialog Detail stanice
+    // a bez nich k němu z klávesnice nevedla cesta. Modálnost dialogu byla
+    // opravená, ale neměla co modalizovat.
+    return `<div class="wu-mini-row" role="button" tabindex="0" data-station-id="${esc(s.id)}">
       <div class="wu-mini-dot"></div>
       <div class="wu-mini-name">${esc(s.name || s.id)}</div>
       <div class="wu-mini-temp">${s.temp != null ? esc(num(s.temp)) + "°" : "—"}</div>
@@ -60,7 +63,12 @@ export function renderWuOwnPanel() {
   }).join("");
 
   panel.querySelectorAll(".wu-mini-row").forEach(row => {
-    row.addEventListener("click", () => openWuDetail(row.dataset.stationId));
+    const otevri = () => openWuDetail(row.dataset.stationId);
+    row.addEventListener("click", otevri);
+    // div nesyntetizuje click z Enteru ani mezerníku — musí se obsloužit ručně.
+    row.addEventListener("keydown", e => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); otevri(); }
+    });
   });
 }
 

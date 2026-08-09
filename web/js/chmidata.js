@@ -10,6 +10,7 @@
 // znamenalo chybu.
 
 import { state } from "./state.js";
+import { panelError, panelEmpty } from "./emptystate.js";
 import { esc, haversine, localHM } from "./utils.js";
 
 // ── Druhý názor: COTREC ČHMÚ ────────────────────────────────────────────────
@@ -233,7 +234,13 @@ export function renderAirMeasured() {
   if (!state.inCZ) return;
 
   const st = nearestAirStation(state.currentLat, state.currentLon);
-  if (!st) return;
+  // Data ze sítě ČHMÚ jsou, jen v dosahu není měřicí stanice. Tichý zmizelý
+  // panel by se četl jako porucha; tohle je vysvětlitelný prázdný stav.
+  if (!st) {
+    panelEmpty(panel, "Ovzduší — měřeno",
+      "V dosahu není měřicí stanice kvality ovzduší.");
+    return;
+  }
   const vals = st.v || {};
   const keys = AIR_ORDER.filter(k => vals[k]).concat(
     Object.keys(vals).filter(k => !AIR_ORDER.includes(k)));
@@ -435,17 +442,40 @@ export function renderChmiText() {
 
 // ── Jeden vstupní bod pro app.js ────────────────────────────────────────────
 
+// Panel, jeho zdroj a soubor — kvůli rozlišení "nemám co říct" od "nedojelo".
+// Bez toho zmizelo při výpadku ČHMÚ open dat pět panelů beze slova a uživatel
+// nerozlišil "tuhle funkci nemám", "tady zrovna nic není" a "něco se rozbilo".
+const PANELY = [
+  ["cotrec",   () => renderCotrec(),      "cotrec-card",    "Druhý názor ČHMÚ",   "COTREC",        "chmi_fct"],
+  ["convect",  () => renderConvect(),     "convect-panel",  "Prostředí pro bouřky", "CHMI_AERO",   "chmi_aero"],
+  ["air",      () => renderAirMeasured(), "air-panel",      "Ovzduší — měřeno",   "CHMI_AIR",      "chmi_air"],
+  ["normals",  null,                      "normal-panel",   "Normál 1991–2020",   "CHMI_NORMALS",  "chmi_normals"],
+  ["regional", () => renderRegionalClimate(), "regional-panel", "Letos proti normálu", "CHMI_REGIONAL", "chmi_regional"],
+  ["chmitext", () => renderChmiText(),    "chmitext-panel", "Slovy ČHMÚ",         "CHMI_TEXT",     "chmi_forecast"],
+];
+
 export function renderChmiExtras(todayMaxC) {
-  // Každý panel zvlášť: výjimka v jednom nesmí sebrat ostatní.
-  const jobs = [
-    ["cotrec", () => renderCotrec()],
-    ["convect", () => renderConvect()],
-    ["air", () => renderAirMeasured()],
-    ["normals", () => renderNormals(todayMaxC)],
-    ["regional", () => renderRegionalClimate()],
-    ["chmitext", () => renderChmiText()],
-  ];
-  for (const [name, fn] of jobs) {
+  for (const [name, fn0, panelId, titulek, klic, soubor] of PANELY) {
+    const fn = fn0 || (() => renderNormals(todayMaxC));
     try { fn(); } catch (e) { console.error(`chmidata/${name}:`, e); }
+
+    // Panel po vykreslení nesvítí. Rozliš PROČ: když zdroj vůbec nedorazil,
+    // je to porucha a musí to říct; když dorazil a jen pro tohle místo nic
+    // nemá, je prázdno samo informací a skrytí je správná odpověď.
+    const el = document.getElementById(panelId);
+    if (!el || el.classList.contains("show")) continue;
+    if (state[klic] != null) continue;   // data jsou, jen tu nic není → skryj
+
+    panelError(el, titulek, "Data ČHMÚ se nepodařilo načíst.", async () => {
+      try {
+        const r = await fetch(`data/${soubor}.json?v=${Date.now()}`, { cache: "no-store" });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        state[klic] = await r.json();
+        el.classList.remove("show");
+        fn();
+      } catch {
+        panelError(el, titulek, "Nepodařilo se ani na druhý pokus.");
+      }
+    });
   }
 }

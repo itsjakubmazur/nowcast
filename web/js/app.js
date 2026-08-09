@@ -49,6 +49,7 @@ import { esc, num } from "./utils.js";
 import { initUiIcons } from "./uiicons.js";
 import { initSections, markSectionAlerts } from "./sections.js";
 import { initRail } from "./rail.js";
+import { initToggleState } from "./togglestate.js";
 import { riseIn, resetChartAnim, withTransition } from "./motion.js";
 
 // ── Data fetch (graceful degradation — radar/grid kritické, zbytek volitelné) ─
@@ -497,6 +498,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   initUiIcons();   // emoji v tlačítkách → jednotná SVG ikonografie
   initSections();   // Teď / Dnes / Týden / Data — dělí dvacet panelů na čtyři pohledy
   initRail();       // ve středních šířkách sloučí pravý panel do levé lišty
+  initToggleState();// .active → aria-pressed / aria-checked, jeden vlastník
 
   try {
     await loadData();

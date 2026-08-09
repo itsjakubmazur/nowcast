@@ -64,7 +64,43 @@
 <!-- Fullscreen mapa — PRVNÍ, ostatní jsou přes ní -->
 <div id="map"></div>
 
-<!-- Radar bar — plovoucí skleněný dok -->
+<!-- Topbar -->
+<div id="topbar">
+  <div class="logo">
+    <div class="logo-icon"><img src="icons/icon-192.png" alt="" width="27" height="27" loading="lazy" decoding="async"></div>
+    <span class="logo-text">nowcast</span>
+  </div>
+  <div class="search-wrap suggest">
+    <input id="search" type="text" placeholder="Hledat obec…" aria-label="Hledat obec" autocomplete="off" />
+    <ul id="suggestions"></ul>
+  </div>
+  <div class="topbar-right">
+    <button class="glass-btn icon-only embed-hide" id="geo" title="Moje poloha" aria-label="Moje poloha">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="3.2"/><circle cx="12" cy="12" r="8"/><path d="M12 1.8v3M12 19.2v3M1.8 12h3M19.2 12h3"/></svg>
+    </button>
+    <button class="glass-btn icon-only embed-hide" id="btn-share" title="Sdílet" aria-label="Sdílet">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3.5"/><path d="M8 7l4-3.5L16 7"/><path d="M5 11v8.5A1.5 1.5 0 0 0 6.5 21h11a1.5 1.5 0 0 0 1.5-1.5V11"/></svg>
+    </button>
+    <button class="glass-btn icon-only" id="btn-settings" title="Nastavení" aria-label="Nastavení">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.03 1.56V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1.11-1.56 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.56-1.03H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.56-1.11 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h.01A1.7 1.7 0 0 0 10 3.09V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v.01c.26.63.87 1.04 1.56 1.04H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.51 1.94Z"/></svg>
+    </button>
+    <button class="glass-btn icon-only" id="btn-theme" title="Přepnout motiv" aria-label="Přepnout motiv">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.5a9.5 9.5 0 1 0 0 19V2.5Z"/><circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>
+    </button>
+    <!-- icon-only: v topbaru je sedm prvků a jediný pružný je vyhledávací
+         pole. Cokoli, co si tady vezme šířku navíc, ji sebere jemu. -->
+    <button class="glass-btn icon-only embed-hide" id="btn-refresh" title="Aktualizovat" aria-label="Aktualizovat">↺</button>
+    <span id="refresh-time" class="embed-hide"></span>
+  </div>
+</div>
+
+<!-- Radar bar — plovoucí skleněný dok.
+     STOJÍ ZA TOPBAREM ZÁMĚRNĚ. Byl první v dokumentu a vizuálně je přitom
+     přilepený ke SPODNÍ hraně okna, takže pořadí fokusu začínalo uprostřed
+     ovládání mapy a teprve pak přišlo vyhledávání v hlavičce — WCAG 2.4.3.
+     Polohu doku řeší výhradně CSS (position: fixed), pořadí v DOMu tedy
+     smí sledovat pořadí vizuální. Mobilní rozvržení má na každém bloku
+     explicitní `order`, takže přesunem netrpí. -->
 <div id="radar-bar" style="display:none">
   <div id="radar-bar-inner">
   <!-- ŘÁDEK 1 — přehrávač: převíjení, osa, čas. Dřív byla osa sama na řádku
@@ -113,38 +149,12 @@
   </div>
 </div>
 
-<!-- Topbar -->
-<div id="topbar">
-  <div class="logo">
-    <div class="logo-icon"><img src="icons/icon-192.png" alt="" width="27" height="27" loading="lazy" decoding="async"></div>
-    <span class="logo-text">nowcast</span>
-  </div>
-  <div class="search-wrap suggest">
-    <input id="search" type="text" placeholder="Hledat obec…" aria-label="Hledat obec" autocomplete="off" />
-    <ul id="suggestions"></ul>
-  </div>
-  <div class="topbar-right">
-    <button class="glass-btn icon-only embed-hide" id="geo" title="Moje poloha" aria-label="Moje poloha">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="3.2"/><circle cx="12" cy="12" r="8"/><path d="M12 1.8v3M12 19.2v3M1.8 12h3M19.2 12h3"/></svg>
-    </button>
-    <button class="glass-btn icon-only embed-hide" id="btn-share" title="Sdílet" aria-label="Sdílet">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3.5"/><path d="M8 7l4-3.5L16 7"/><path d="M5 11v8.5A1.5 1.5 0 0 0 6.5 21h11a1.5 1.5 0 0 0 1.5-1.5V11"/></svg>
-    </button>
-    <button class="glass-btn icon-only" id="btn-settings" title="Nastavení" aria-label="Nastavení">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.03 1.56V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1.11-1.56 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.56-1.03H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.56-1.11 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h.01A1.7 1.7 0 0 0 10 3.09V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v.01c.26.63.87 1.04 1.56 1.04H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.51 1.94Z"/></svg>
-    </button>
-    <button class="glass-btn icon-only" id="btn-theme" title="Přepnout motiv" aria-label="Přepnout motiv">
-      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.5a9.5 9.5 0 1 0 0 19V2.5Z"/><circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>
-    </button>
-    <!-- icon-only: v topbaru je sedm prvků a jediný pružný je vyhledávací
-         pole. Cokoli, co si tady vezme šířku navíc, ji sebere jemu. -->
-    <button class="glass-btn icon-only embed-hide" id="btn-refresh" title="Aktualizovat" aria-label="Aktualizovat">↺</button>
-    <span id="refresh-time" class="embed-hide"></span>
-  </div>
-</div>
-
 <!-- Výstrahy ČHMÚ — první informace dne, vždy nahoře pod topbarem -->
-<div id="alert-bar" role="button" tabindex="0" aria-label="Aktivní výstrahy"></div>
+<!-- BEZ statického aria-label: přebíjel obsah, takže odečítač přečetl
+     "Aktivní výstrahy, tlačítko" a nic o tom, KTERÉ výstrahy ani kolik.
+     Jméno teď nese obsah pruhu, stav nese aria-expanded (nastavuje
+     renderAlertBar). -->
+<div id="alert-bar" role="button" tabindex="0" aria-expanded="false"></div>
 
 <!-- úchyt sheetu — jen mobil: tažením dolů zvětšíš mapu, klepnutím přepneš -->
 <div id="sheet-grabber" aria-hidden="true"><i></i></div>
@@ -381,7 +391,10 @@
 <!-- Notif / toast bar -->
 <div id="notif-bar" role="status" aria-live="polite">
   <span id="notif-text"></span>
-  <span class="notif-close" id="notif-close" title="Zavřít" role="button" tabindex="0">✕</span>
+  <!-- <button>, ne <span role="button">. Span click z Enteru ani mezerníku
+       nesyntetizuje, takže se pruh upozornění nedal zavřít klávesnicí —
+       role a tabindex to jen předstíraly. -->
+  <button type="button" class="notif-close" id="notif-close" title="Zavřít" aria-label="Zavřít upozornění">✕</button>
 </div>
 
 <!-- WU detail overlay -->

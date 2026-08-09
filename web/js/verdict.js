@@ -652,6 +652,7 @@ function renderAlertBar(chips) {
     bar.innerHTML = "";
     bar.classList.remove("show", "expanded");
     bar.removeAttribute("title");
+    bar.setAttribute("aria-expanded", "false");
     return;
   }
 
@@ -660,6 +661,10 @@ function renderAlertBar(chips) {
   bar.innerHTML = expanded ? chips.allHtml : chips.html;
   bar.classList.add("show");
   bar.title = expanded ? "Klepnutím sbalit" : `Aktivní výstrahy: ${chips.count} — klepnutím rozbalit`;
+  // Role button, jejímž jediným úkolem je přepínání, musí říct, v jakém je
+  // stavu. Počet patří do textu, ne jen do `title` — ten se na dotyku
+  // nezobrazí nikdy.
+  bar.setAttribute("aria-expanded", expanded ? "true" : "false");
 
   if (_alertWired) return;
   _alertWired = true;
