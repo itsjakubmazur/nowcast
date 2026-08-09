@@ -51,6 +51,9 @@ const P = {
   gust: '<path d="M3 8h10a2.5 2.5 0 1 0-2.5-2.5"/><path d="M3 12h14a2.5 2.5 0 1 1-2.5 2.5"/><path d="M3 16h8"/>',
   moon: '<path d="M20 14.5A8.5 8.5 0 0 1 9.5 4 8.5 8.5 0 1 0 20 14.5Z"/>',
   pause: '<path d="M9 5v14M15 5v14"/>',
+  // Trojúhelník se sází výplní, ne tahem: tahová varianta má u špičky
+  // spoj tří čar a v 16 px z toho je klika, ne šipka.
+  play: '<path d="M8 5.5v13l11-6.5z" fill="currentColor" stroke-linejoin="round"/>',
 };
 
 export function uiIcon(name, cls = "uicon") {

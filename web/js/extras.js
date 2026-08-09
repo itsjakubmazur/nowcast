@@ -166,6 +166,28 @@ export function renderMinutely(ptId, minutely) {
     const idx = Math.min(Math.floor(t / 15), minutely.length - 1);
     return minutely[idx]?.precip ?? null;
   };
+
+  // ── Radarová řada se indexuje ČASEM RADARU, ne časem "teď" ────────────────
+  // Tady byl posun, kvůli kterému hlava karty a její vlastní graf hlásily
+  // jiný začátek deště (naměřeno 14:54 proti 14:45). Sloty se kreslí od
+  // Date.now(), ale `series` je indexovaná od `GRID.t0_utc`: prvek k je
+  // hodnota v čase t0 + (k+1)·step — přesně stejná konvence, jakou používá
+  // `act` v assessRain(), odkud čte odpočet v hlavě.
+  //
+  // Původní `Math.floor(t / stepMin)` obojí ztotožnilo, takže celá dvouhodinová
+  // dráha byla posunutá o (stáří radaru + jeden krok). Když je radar deset
+  // minut starý, graf tvrdil, že déšť začne o deset minut dřív, než říkala
+  // hlava nad ním — a obě čísla přitom pocházela z týchž dat.
+  const nowMs = Date.now();
+  const radarT0 = state.GRID?.t0_utc ? new Date(state.GRID.t0_utc).getTime() : null;
+  const radarIdx = ms => radarT0 == null
+    ? -1 : Math.round((ms - radarT0) / (stepMin * 60000)) - 1;
+  const radarAt = ms => {
+    if (!series?.length) return null;
+    const k = radarIdx(ms);
+    return k >= 0 && k < series.length ? series[k] : null;
+  };
+
   if (series?.length) {
     // Seamless blending: do 30 min věříme radarové extrapolaci naplno,
     // pak její váha lineárně klesá k nule ve 120. minutě — přesně tam,
@@ -175,8 +197,7 @@ export function renderMinutely(ptId, minutely) {
     let blended = false;
     for (let i = 0; i < SLOTS; i++) {
       const t = i * 10; // minuta slotu
-      const idx = Math.floor(t / stepMin);
-      const radar = idx < series.length ? series[idx] : null;
+      const radar = radarAt(nowMs + t * 60000);
       const model = modelAt(t);
       if (radar == null) { vals.push(model); continue; }
       if (model == null) { vals.push(radar); continue; }
@@ -198,10 +219,11 @@ export function renderMinutely(ptId, minutely) {
 
   // P(déšť) z ensemble perturbované advekce (grid.prob, % po 10min krocích)
   const prob = state.GRID?.prob?.[String(ptId)] || null;
+  // Stejná konvence jako u `series` — indexováno časem radaru, ne "teď".
   const probAt = i => {
     if (!prob) return null;
-    const idx = Math.floor(i * 10 / stepMin);
-    return idx < prob.length ? prob[idx] : null;
+    const k = radarIdx(nowMs + i * 10 * 60000);
+    return k >= 0 && k < prob.length ? prob[k] : null;
   };
 
   const known = vals.filter(v => v != null);
@@ -212,8 +234,7 @@ export function renderMinutely(ptId, minutely) {
   if (Math.max(...known) < WET_RATE && maxProb < 30) { markPrecipBody("2h", false); return; }
 
   // Sloupce i osa jsou společné s 12h záložkou — viz precipbars.js.
-  const t0 = Date.now();
-  const slots = vals.map((v, i) => ({ rate: v, prob: probAt(i), ms: t0 + i * 10 * 60000 }));
+  const slots = vals.map((v, i) => ({ rate: v, prob: probAt(i), ms: nowMs + i * 10 * 60000 }));
   revealSwap(barsEl, precipBarsHtml(slots));
   // Věta i popisek pro odečítač vychází ze STEJNÝCH slotů jako sloupce nad
   // nimi — viz precipSummary(). Dřív tady žádná věta nebyla a nad dráhou
@@ -415,7 +436,7 @@ export function renderAstro(data, fc) {
       ? `<div class="astro-row"><span class="a-k">Astro noc</span><span class="a-v">${hm(sg.duskAstro)}–${hm(sg.dawnAstro)}</span><span class="a-d">slunce pod −18°</span></div>`
       : `<div class="astro-row"><span class="a-k">Astro noc</span><span class="a-v" style="color:var(--muted)">nenastává</span><span class="a-d">letní světlé noci</span></div>`}
     ${sg?.darkStart && sg?.darkEnd
-      ? `<div class="astro-row"><span class="a-k">Tmavé okno</span><span class="a-v" style="color:var(--green)">${hm(sg.darkStart)}–${hm(sg.darkEnd)}</span><span class="a-d">bez Slunce i Měsíce</span></div>` : ""}
+      ? `<div class="astro-row"><span class="a-k">Tmavé okno</span><span class="a-v" style="color:var(--green-text)">${hm(sg.darkStart)}–${hm(sg.darkEnd)}</span><span class="a-d">bez Slunce i Měsíce</span></div>` : ""}
     ${strip}
     ${sg?.planets?.length ? `<div class="astro-row"><span class="a-k">Planety</span><span class="a-v">${sg.planets.map(p => `${esc(p.name)} <span style="color:var(--muted);font-weight:400">(${esc(p.when)})</span>`).join(" · ")}</span></div>` : ""}
     ${showerStr ? `<div class="astro-row"><span class="a-k">Met. roj</span><span class="a-v">${esc(showerStr)}</span><span class="a-d">radiant po půlnoci${moonWarns}</span></div>` : ""}`);
@@ -446,7 +467,7 @@ export function renderWinter(fc, data) {
   const rows = [];
   if (next48snow >= 0.2) rows.push(`<div class="astro-row"><span class="a-k">Sněžení</span><span class="a-v">~${num(next48snow)} cm / 48 h</span></div>`);
   if (frostHours > 0) rows.push(`<div class="astro-row"><span class="a-k">Mráz</span><span class="a-v">${frostHours} h pod 0 °C</span><span class="a-d">z příštích 24 h</span></div>`);
-  if (iceRisk) rows.push(`<div class="astro-row"><span class="a-k">Náledí</span><span class="a-v" style="color:var(--red)">riziko</span><span class="a-d">srážky při teplotě ≤ 1 °C</span></div>`);
+  if (iceRisk) rows.push(`<div class="astro-row"><span class="a-k">Náledí</span><span class="a-v" style="color:var(--red-text)">riziko</span><span class="a-d">srážky při teplotě ≤ 1 °C</span></div>`);
   revealSwap(body, rows.join(""));
   panel.classList.add("show");
 }

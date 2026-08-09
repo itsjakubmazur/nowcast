@@ -6,3 +6,7 @@ data/
 node_modules/
 tests/.serve-tmp/
 tests/.serve-shot/
+# Dočasné sondy: kopie smoke.mjs s vloženým měřicím blokem těsně před
+# browser.close(). Vznikají při každém auditu i kritice a vždycky se mažou —
+# do repa nepatří ani omylem.
+tests/_*.mjs

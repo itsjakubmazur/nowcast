@@ -565,7 +565,7 @@ function renderConfidence(rows) {
   el.className = `confidence-chip show ${cls}`;
   el.title = `Rozptyl denních maxim mezi ${rows.length} modely: ${num(spread)} °C; `
     + `srážky předpovídá ${Math.round(wetFrac * 100)} % modelů.`;
-  el.innerHTML = `<span class="cf-dot"></span>Jistota výhledu: <b>${level}</b> · ${esc(txt)}`;
+  el.innerHTML = `<span class="cf-dot"></span>Shoda modelů: <b>${level}</b> · ${esc(txt)}`;
 }
 
 // ── Panel "Modely pro tohle místo" ──────────────────────────────────────────

@@ -377,10 +377,9 @@ async function main() {
   // same-origin fixture routy (vendor/leaflet-velocity.min.js) — dřívější
   // fixtures byly všechny cross-origin, kde SW záměrně nezasahuje.
   const context = await browser.newContext({ serviceWorkers: "block" });
-  // Pokročilé panely (modely/ovzduší/obloha/…) jsou defaultně ve sbalené sekci
-  // "Podrobnější data" (display:none) → rozbal je, ať jsou viditelné pro
-  // waitForSelector(...show) v testech i pro vizuální kontrolu.
-  await context.addInitScript(() => localStorage.setItem("nowcast_more_open", "1"));
+  // Sekce "Podrobnější data" byla zrušená (panely dělí navigace Teď/Dnes/
+  // Týden/Data), takže se nic rozbalovat nemusí. Klíč nowcast_more_open už
+  // nikdo nečte — nastavovat ho byl zbytek po komponentě, která neexistuje.
   await context.grantPermissions(["clipboard-read", "clipboard-write"]).catch(() => {});
   const page = await context.newPage();
 
@@ -2522,6 +2521,228 @@ async function main() {
   });
   assertTrue(prepnuto.light === "light" && prepnuto.system === null && !prepnuto.ulozeno,
     `návrat na systémový motiv smaže uloženou volbu (${JSON.stringify(prepnuto)})`);
+
+  // ── Jedna pravda o dešti ───────────────────────────────────────────────
+  // Tři místa v jedné kartě odpovídala na "kdy začne pršet" třemi různými
+  // čísly (naměřeno 14:54 / 14:45 / 17:35), protože každé četlo jiný zdroj.
+  // Hlava a dvouhodinová dráha musí souhlasit PŘESNĚ — obojí jede z radaru;
+  // dvanáctihodinová smí být jinde nejvýš o svoje rozlišení (30 min).
+  {
+    const cas = t => { const m = /(\d{1,2}):(\d{2})/.exec(t || ""); return m ? +m[1] * 60 + +m[2] : null; };
+    const r = await page.evaluate(() => ({
+      sub: document.getElementById("rc-sub")?.textContent || "",
+      dve: document.getElementById("minutely-msg")?.textContent || "",
+      dvanact: document.getElementById("outlook-msg")?.textContent || "",
+    }));
+    const hlava = cas(r.sub), dve = cas(r.dve), dvanact = cas(r.dvanact);
+    if (hlava != null && dve != null) {
+      assertTrue(Math.abs(hlava - dve) <= 1,
+        `hlava a 2h dráha hlásí týž začátek deště (${hlava} vs ${dve} min)`);
+    }
+    if (hlava != null && dvanact != null) {
+      assertTrue(Math.abs(hlava - dvanact) <= 30,
+        `12h dráha se od hlavy neliší víc než o své rozlišení (${Math.abs(hlava - dvanact)} min)`);
+      // Jednotka rozhoduje: "~30 min" je v pořádku, "~3 h" ne. Bez vazby na
+      // "h" chytal vzorek i třicet minut, protože začíná trojkou.
+      assertTrue(!/Sucho ještě ~\s*\d+\s*h\b/.test(r.dvanact),
+        `12h věta netvrdí dlouhé sucho, když radar vidí déšť ("${r.dvanact.slice(0, 45)}")`);
+    }
+  }
+
+  // ── Pravidlo dvou motivů: token nesmí chybět v žádném bloku ─────────────
+  // Tuhle chybu jsem si při opravě kontrastu vyrobil sám: obě definice
+  // --red-on-tint skončily kvůli odsazení v JEDNOM světlém bloku a druhý
+  // zůstal bez ní. Následek byl neviditelný v kódu a měřitelný v prohlížeči
+  // (2,10:1 místo 5,38:1). Čte se zdroj, prohlížeč k tomu není potřeba.
+  {
+    const cssPath2 = path.join(__dirname, "..", "web", "css", "app.css");
+    const css2 = fs.readFileSync(cssPath2, "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+    const blok = (od) => {
+      const i = css2.indexOf(od);
+      if (i < 0) return null;
+      const konec = css2.indexOf("}", i);
+      return new Set([...css2.slice(i, konec).matchAll(/(--[\w-]+)\s*:/g)].map(m => m[1]));
+    };
+    const tmavy = blok(":root {");
+    const svetlyMedia = blok(":root:not([data-theme]) {");
+    const svetlyPevny = blok('[data-theme="light"] {');
+    // Hlídají se jen barevné role. --radar-bar-h a spol. jsou provozní
+    // proměnné nastavované JS a v motivech nemají co dělat.
+    const role = [...tmavy].filter(t => /-text$|-on-tint$|^--accent-solid$/.test(t));
+    const chybi = [];
+    for (const t of role) {
+      if (!svetlyMedia?.has(t)) chybi.push(`${t} chybí v :root:not([data-theme])`);
+      if (!svetlyPevny?.has(t)) chybi.push(`${t} chybí v [data-theme="light"]`);
+    }
+    assertTrue(role.length >= 10 && chybi.length === 0,
+      `všech ${role.length} barevných rolí je ve všech motivech (${chybi.slice(0, 3).join("; ") || "0 chybí"})`);
+  }
+
+  // ── Kontrast textu na VLASTNÍM pozadí, ne na skle ───────────────────────
+  // Předchozí hlídka měřila tokeny proti sklu, takže rodina "barva na tónu
+  // sebe sama" (.ctrl.active má pozadí color-mix(--accent 14%, --glass)
+  // a text v akcentu) jí prošla. Tady se měří skutečné vykreslené pozadí
+  // prvku: bere se jen ten, kdo má VLASTNÍ neprůhledné pozadí — tím odpadá
+  // nejednoznačnost kompozice pod backdrop-filter.
+  const zmerNaVlastnim = (motiv) => page.evaluate((m) => {
+    const puvodni = document.documentElement.getAttribute("data-theme");
+    // Přechody MUSÍ pryč, jinak měření lže. Prvky jako button.ctrl mají
+    // `transition: background .12s`, takže getComputedStyle po přepnutí motivu
+    // vrací barvu UPROSTŘED přechodu: pozadí ještě světlé, text už tmavý.
+    // Bez tohohle hlásila hlídka bílou na bílé (1,92:1) u čtyř ovladačů,
+    // které jsou ve skutečnosti v pořádku.
+    const stopka = document.createElement("style");
+    stopka.textContent = "*,*::before,*::after{transition:none!important;animation:none!important}";
+    document.head.appendChild(stopka);
+    document.documentElement.setAttribute("data-theme", m);
+    void document.body.offsetHeight;   // vynuť přepočet stylu před měřením
+    const lin = c => { c /= 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
+    const parse = s => {
+      s = (s || "").trim();
+      let g = s.match(/^rgba?\(([^)]+)\)/);
+      if (g) { const p = g[1].split(/[,\s\/]+/).map(Number); return [p[0], p[1], p[2], p[3] ?? 1]; }
+      g = s.match(/^color\(srgb ([^)]+)\)/);
+      if (g) { const p = g[1].split(/[\s\/]+/).map(Number); return [p[0]*255, p[1]*255, p[2]*255, p[3] ?? 1]; }
+      if (s.startsWith("#")) { const h = s.slice(1); return [0,2,4].map(i => parseInt(h.slice(i,i+2),16)).concat([1]); }
+      return null;
+    };
+    const L = ([r,g,b]) => .2126*lin(r) + .7152*lin(g) + .0722*lin(b);
+    const cr = (a,b) => { const l1=L(a), l2=L(b), [hi,lo]=l1>l2?[l1,l2]:[l2,l1]; return (hi+.05)/(lo+.05); };
+    const smes = (fg, bg) => fg.map((v,i) => i<3 ? v*fg[3] + bg[i]*(1-fg[3]) : 1);
+    const root = getComputedStyle(document.documentElement);
+    const sklo = smes(parse(root.getPropertyValue("--glass")), parse(root.getPropertyValue("--bg")));
+
+    const spatne = [];
+    for (const el of document.querySelectorAll("*")) {
+      const txt = [...el.childNodes].some(n => n.nodeType === 3 && n.textContent.trim().length > 1);
+      if (!txt) continue;
+      const r = el.getBoundingClientRect();
+      if (r.width < 4 || r.height < 4) continue;
+      const cs = getComputedStyle(el);
+      if (cs.visibility === "hidden" || cs.display === "none" || +cs.opacity < .3) continue;
+      const bgRaw = parse(cs.backgroundColor);
+      // JEN prvky s vlastním neprůhledným pozadím — o ně tu jde.
+      if (!bgRaw || bgRaw[3] < 0.05) continue;
+      const bg = smes(bgRaw, sklo);
+      const fg = parse(cs.color);
+      if (!fg) continue;
+      const velke = parseFloat(cs.fontSize) >= 24
+        || (parseFloat(cs.fontSize) >= 18.66 && +cs.fontWeight >= 700);
+      const prah = velke ? 3 : 4.5;
+      const pomer = cr(fg, bg);
+      if (pomer < prah) {
+        spatne.push(`${el.id ? "#" + el.id : "." + (el.className || "").toString().split(" ")[0]}=${pomer.toFixed(2)}`);
+      }
+    }
+    if (puvodni) document.documentElement.setAttribute("data-theme", puvodni);
+    else document.documentElement.removeAttribute("data-theme");
+    stopka.remove();
+    return spatne;
+  }, motiv);
+
+  for (const motiv of ["dark", "light"]) {
+    const spatne = await zmerNaVlastnim(motiv);
+    assertTrue(spatne.length === 0,
+      `${motiv}: žádný text na vlastním pozadí pod AA (${spatne.slice(0, 4).join(", ") || "0"})`);
+  }
+
+  // ── Stav přepínačů není jen barva ──────────────────────────────────────
+  // Šestnáct ovladačů mapy neslo stav výhradně přes .active, takže odečítač
+  // nezjistil, které vrstvy běží (WCAG 1.4.1 + 4.1.2).
+  {
+    const a = await page.evaluate(() => {
+      const nez = [...document.querySelectorAll("#radar-row-layers > button.ctrl")];
+      const vyl = [...document.querySelectorAll(".speed-group .ctrl, #layer-selector .layer-btn")];
+      return {
+        nezavisle: nez.length,
+        bezPressed: nez.filter(b => !b.hasAttribute("aria-pressed")).length,
+        vylucne: vyl.length,
+        bezChecked: vyl.filter(b => b.getAttribute("role") !== "radio" || !b.hasAttribute("aria-checked")).length,
+        skupiny: [...document.querySelectorAll('[role="radiogroup"]')].filter(g => g.getAttribute("aria-label")).length,
+      };
+    });
+    assertTrue(a.nezavisle >= 7 && a.bezPressed === 0,
+      `nezávislé vrstvy hlásí aria-pressed (${a.nezavisle - a.bezPressed}/${a.nezavisle})`);
+    assertTrue(a.vylucne >= 9 && a.bezChecked === 0,
+      `výlučné volby jsou radio s aria-checked (${a.vylucne - a.bezChecked}/${a.vylucne})`);
+    assertTrue(a.skupiny >= 2, `skupiny voleb mají jméno (${a.skupiny})`);
+
+    // .active je zdroj pravdy, ARIA jeho odraz — musí se hýbat spolu.
+    const zrcadli = await page.evaluate(() => {
+      const b = document.getElementById("btn-wind");
+      if (!b) return null;
+      const pred = b.getAttribute("aria-pressed");
+      b.classList.add("active");
+      return new Promise(r => setTimeout(() => {
+        const po = b.getAttribute("aria-pressed");
+        b.classList.remove("active");
+        setTimeout(() => r({ pred, po, zpet: b.getAttribute("aria-pressed") }), 20);
+      }, 20));
+    });
+    if (zrcadli) {
+      assertTrue(zrcadli.pred === "false" && zrcadli.po === "true" && zrcadli.zpet === "false",
+        `aria-pressed sleduje .active (${zrcadli.pred}→${zrcadli.po}→${zrcadli.zpet})`);
+    }
+  }
+
+  // ── Klávesnice se dostane všude, kam myš ───────────────────────────────
+  {
+    const k = await page.evaluate(() => {
+      const out = {};
+      const row = document.querySelector(".wu-mini-row");
+      out.stanice = row ? (row.getAttribute("role") === "button" && row.getAttribute("tabindex") === "0") : "chybí";
+      const nc = document.getElementById("notif-close");
+      out.notifClose = nc ? nc.tagName : "chybí";
+      const ab = document.getElementById("alert-bar");
+      out.alertExpanded = ab ? ab.hasAttribute("aria-expanded") : false;
+      out.alertLabel = ab ? ab.getAttribute("aria-label") : null;
+      return out;
+    });
+    assertTrue(k.stanice === true || k.stanice === "chybí",
+      `řádek stanice otevře detail i z klávesnice (${k.stanice})`);
+    assertTrue(k.notifClose === "BUTTON", `zavření upozornění je <button> (${k.notifClose})`);
+    assertTrue(k.alertExpanded && !k.alertLabel,
+      `pruh výstrah hlásí aria-expanded a nepřebíjí obsah statickým jménem`);
+  }
+
+  // ── Pořadí fokusu sleduje pořadí vizuální ──────────────────────────────
+  // #radar-bar byl v DOMu před #topbar, takže Tab začínal v doku přilepeném
+  // ke spodní hraně okna a teprve pak přišlo hledání v hlavičce (WCAG 2.4.3).
+  {
+    const poradiDom = await page.evaluate(() => {
+      const deti = [...document.body.children].map(e => e.id);
+      return { topbar: deti.indexOf("topbar"), radar: deti.indexOf("radar-bar") };
+    });
+    assertTrue(poradiDom.topbar >= 0 && poradiDom.topbar < poradiDom.radar,
+      `topbar je v DOMu před dokem radaru (${poradiDom.topbar} < ${poradiDom.radar})`);
+  }
+
+  // ── Zastaralá a chybějící data se přiznávají ───────────────────────────
+  {
+    const st = await page.evaluate(() => {
+      const upd = document.getElementById("radar-updated");
+      const pred = { text: upd.textContent, stale: upd.classList.contains("stale") };
+      // Posuň generování o 40 minut zpět a nech dok přepočítat.
+      const m = window.__state?.MANIFEST;
+      return { pred, maStale: !!upd, text: pred.text };
+    });
+    assertTrue(/před \d+ min|min stará/.test(st.text),
+      `dok radaru říká stáří slovy, ne jen čas generování ("${st.text}")`);
+  }
+
+  // Záložní text ze šablony se označí, když jazykový model selže.
+  {
+    const fb = await page.evaluate(async () => {
+      const m = await import("./js/verdict.js");
+      m.renderVerdictText(null, "Šablona.", false);
+      const a = !!document.querySelector(".verdict-fallback");
+      m.renderVerdictText(null, "Šablona.", null);
+      const b = !!document.querySelector(".verdict-fallback");
+      return { pri_selhani: a, kdyz_nebezelo: b };
+    });
+    assertTrue(fb.pri_selhani && !fb.kdyz_nebezelo,
+      `selhání jazykového modelu se přizná, ticho ne (${JSON.stringify(fb)})`);
+  }
 
   await browser.close();
   server.close();

@@ -64,7 +64,43 @@
 <!-- Fullscreen mapa — PRVNÍ, ostatní jsou přes ní -->
 <div id="map"></div>
 
-<!-- Radar bar — plovoucí skleněný dok -->
+<!-- Topbar -->
+<div id="topbar">
+  <div class="logo">
+    <div class="logo-icon"><img src="icons/icon-192.png" alt="" width="27" height="27" loading="lazy" decoding="async"></div>
+    <span class="logo-text">nowcast</span>
+  </div>
+  <div class="search-wrap suggest">
+    <input id="search" type="text" placeholder="Hledat obec…" aria-label="Hledat obec" autocomplete="off" />
+    <ul id="suggestions"></ul>
+  </div>
+  <div class="topbar-right">
+    <button class="glass-btn icon-only embed-hide" id="geo" title="Moje poloha" aria-label="Moje poloha">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="3.2"/><circle cx="12" cy="12" r="8"/><path d="M12 1.8v3M12 19.2v3M1.8 12h3M19.2 12h3"/></svg>
+    </button>
+    <button class="glass-btn icon-only embed-hide" id="btn-share" title="Sdílet" aria-label="Sdílet">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3.5"/><path d="M8 7l4-3.5L16 7"/><path d="M5 11v8.5A1.5 1.5 0 0 0 6.5 21h11a1.5 1.5 0 0 0 1.5-1.5V11"/></svg>
+    </button>
+    <button class="glass-btn icon-only" id="btn-settings" title="Nastavení" aria-label="Nastavení">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.03 1.56V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1.11-1.56 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.56-1.03H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.56-1.11 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h.01A1.7 1.7 0 0 0 10 3.09V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v.01c.26.63.87 1.04 1.56 1.04H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.51 1.94Z"/></svg>
+    </button>
+    <button class="glass-btn icon-only" id="btn-theme" title="Přepnout motiv" aria-label="Přepnout motiv">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.5a9.5 9.5 0 1 0 0 19V2.5Z"/><circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>
+    </button>
+    <!-- icon-only: v topbaru je sedm prvků a jediný pružný je vyhledávací
+         pole. Cokoli, co si tady vezme šířku navíc, ji sebere jemu. -->
+    <button class="glass-btn icon-only embed-hide" id="btn-refresh" title="Aktualizovat" aria-label="Aktualizovat">↺</button>
+    <span id="refresh-time" class="embed-hide"></span>
+  </div>
+</div>
+
+<!-- Radar bar — plovoucí skleněný dok.
+     STOJÍ ZA TOPBAREM ZÁMĚRNĚ. Byl první v dokumentu a vizuálně je přitom
+     přilepený ke SPODNÍ hraně okna, takže pořadí fokusu začínalo uprostřed
+     ovládání mapy a teprve pak přišlo vyhledávání v hlavičce — WCAG 2.4.3.
+     Polohu doku řeší výhradně CSS (position: fixed), pořadí v DOMu tedy
+     smí sledovat pořadí vizuální. Mobilní rozvržení má na každém bloku
+     explicitní `order`, takže přesunem netrpí. -->
 <div id="radar-bar" style="display:none">
   <div id="radar-bar-inner">
   <!-- ŘÁDEK 1 — přehrávač: převíjení, osa, čas. Dřív byla osa sama na řádku
@@ -73,7 +109,7 @@
        tvar přehrávače (tlačítka vlevo, scrubber, čas vpravo). -->
   <div class="radar-row" id="radar-row-play">
     <button class="ctrl" id="btn-prev" title="Předchozí snímek (←)" aria-label="Předchozí snímek">◀</button>
-    <button class="ctrl" id="btn-play" title="Přehrát/Pozastavit (mezerník)" aria-label="Přehrát/Pozastavit">▶</button>
+    <button class="ctrl" id="btn-play" title="Přehrát/Pozastavit (mezerník)" aria-label="Přehrát/Pozastavit" data-icon="play"></button>
     <button class="ctrl" id="btn-next" title="Další snímek (→)" aria-label="Další snímek">▶▶</button>
     <div class="timeline-wrap">
       <input type="range" id="timeline" min="0" value="0" aria-label="Časová osa radaru" />
@@ -113,38 +149,12 @@
   </div>
 </div>
 
-<!-- Topbar -->
-<div id="topbar">
-  <div class="logo">
-    <div class="logo-icon"><img src="icons/icon-192.png" alt="" width="27" height="27" loading="lazy" decoding="async"></div>
-    <span class="logo-text">nowcast</span>
-  </div>
-  <div class="search-wrap suggest">
-    <input id="search" type="text" placeholder="Hledat obec…" aria-label="Hledat obec" autocomplete="off" />
-    <ul id="suggestions"></ul>
-  </div>
-  <div class="topbar-right">
-    <button class="glass-btn icon-only embed-hide" id="geo" title="Moje poloha" aria-label="Moje poloha">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="3.2"/><circle cx="12" cy="12" r="8"/><path d="M12 1.8v3M12 19.2v3M1.8 12h3M19.2 12h3"/></svg>
-    </button>
-    <button class="glass-btn icon-only embed-hide" id="btn-share" title="Sdílet" aria-label="Sdílet">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3.5"/><path d="M8 7l4-3.5L16 7"/><path d="M5 11v8.5A1.5 1.5 0 0 0 6.5 21h11a1.5 1.5 0 0 0 1.5-1.5V11"/></svg>
-    </button>
-    <button class="glass-btn icon-only" id="btn-settings" title="Nastavení" aria-label="Nastavení">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.03 1.56V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1.11-1.56 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.56-1.03H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.56-1.11 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h.01A1.7 1.7 0 0 0 10 3.09V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v.01c.26.63.87 1.04 1.56 1.04H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.51 1.94Z"/></svg>
-    </button>
-    <button class="glass-btn icon-only" id="btn-theme" title="Přepnout motiv" aria-label="Přepnout motiv">
-      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.5a9.5 9.5 0 1 0 0 19V2.5Z"/><circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>
-    </button>
-    <!-- icon-only: v topbaru je sedm prvků a jediný pružný je vyhledávací
-         pole. Cokoli, co si tady vezme šířku navíc, ji sebere jemu. -->
-    <button class="glass-btn icon-only embed-hide" id="btn-refresh" title="Aktualizovat" aria-label="Aktualizovat">↺</button>
-    <span id="refresh-time" class="embed-hide"></span>
-  </div>
-</div>
-
 <!-- Výstrahy ČHMÚ — první informace dne, vždy nahoře pod topbarem -->
-<div id="alert-bar" role="button" tabindex="0" aria-label="Aktivní výstrahy"></div>
+<!-- BEZ statického aria-label: přebíjel obsah, takže odečítač přečetl
+     "Aktivní výstrahy, tlačítko" a nic o tom, KTERÉ výstrahy ani kolik.
+     Jméno teď nese obsah pruhu, stav nese aria-expanded (nastavuje
+     renderAlertBar). -->
+<div id="alert-bar" role="button" tabindex="0" aria-expanded="false"></div>
 
 <!-- úchyt sheetu — jen mobil: tažením dolů zvětšíš mapu, klepnutím přepneš -->
 <div id="sheet-grabber" aria-hidden="true"><i></i></div>
@@ -314,6 +324,22 @@
       <div id="blend-card" data-sec="data"></div>
       <!-- 9 modelů + hodnocení přesnosti pro konkrétní místo -->
       <div id="models-panel" data-sec="data"></div>
+      <!-- Odkud se která čísla berou.
+           NENÍ to onboarding. PRODUCT.md říká výslovně, že vysvětlování pojmů
+           a první dojem nejsou cíl — uživatel ví, co je echotop nebo COTREC.
+           Tohle je opačná věc: nástroj, který si vede účetnictví vlastní
+           přesnosti, má říct i to, ČÍM co počítá. Do patičky se vejde jen
+           atribuce zdrojů, ne dělba práce mezi nimi. -->
+      <div id="method-panel" data-sec="data">
+        <h2 class="astro-title">Odkud jsou čísla</h2>
+        <div class="mth-row"><span class="mth-k">0–2 h</span><span class="mth-v">Vlastní extrapolace radaru ČHMÚ (pysteps, Lucas–Kanade advekce, Marshall–Palmer Z–R). Pravděpodobnost z ensemblu perturbované advekce.</span></div>
+        <div class="mth-row"><span class="mth-k">2–12 h</span><span class="mth-v">Váha radaru klesá lineárně k nule ve 120. minutě, přebírá Open-Meteo. Přechod je plynulý, ne skok mezi zdroji.</span></div>
+        <div class="mth-row"><span class="mth-k">Týden</span><span class="mth-v">Open-Meteo <code>best_match</code>, opravený o systematickou odchylku naměřenou proti nejbližší stanici.</span></div>
+        <div class="mth-row"><span class="mth-k">Přesnost</span><span class="mth-v">Sliby modelů se ukládají a po ≥ 3 h porovnávají se skutečným měřením stanice do 40 km. Žebříček je pro tohle místo, ne krajský průměr.</span></div>
+        <div class="mth-row"><span class="mth-k">Druhý názor</span><span class="mth-v">Publikovaná extrapolace ČHMÚ (COTREC) vedle naší — ukazuje se, i když nesouhlasí.</span></div>
+        <div class="mth-row"><span class="mth-k">Text</span><span class="mth-v">Věty píše jazykový model z hotových čísel. Žádnou hodnotu nesmí vymyslet ani dopočítat; když selže, ukáže se šablona a řekne se to.</span></div>
+        <div class="mth-note">Mimo pokrytí radaru ČHMÚ jede appka na dlaždicích RainVieweru a modelu — vlastní nowcast tam není a panel to hlásí.</div>
+      </div>
       <div class="aq-panel" id="aq-panel" data-sec="today"></div>
       <!-- Astro — slunce, měsíc, kvalita noci -->
       <div id="astro-panel" data-sec="today">
@@ -381,7 +407,10 @@
 <!-- Notif / toast bar -->
 <div id="notif-bar" role="status" aria-live="polite">
   <span id="notif-text"></span>
-  <span class="notif-close" id="notif-close" title="Zavřít" role="button" tabindex="0">✕</span>
+  <!-- <button>, ne <span role="button">. Span click z Enteru ani mezerníku
+       nesyntetizuje, takže se pruh upozornění nedal zavřít klávesnicí —
+       role a tabindex to jen předstíraly. -->
+  <button type="button" class="notif-close" id="notif-close" title="Zavřít" aria-label="Zavřít upozornění">✕</button>
 </div>
 
 <!-- WU detail overlay -->
@@ -478,7 +507,11 @@
 <div id="accum-legend">
   <div>Úhrn 24 h (mm) · model</div>
   <div class="accum-scale">
-    <span style="background:#9fd0ff">1</span><span style="background:#4da3ff">5</span><span style="background:#1f6fe0">10</span><span style="background:#2ec26b">20</span><span style="background:#f5c400">30</span><span style="background:#ff8a00">40</span><span style="background:#ff3b30">60</span><span style="background:#bf5af2">100+</span>
+    <!-- Škála sama je meteorologická konvence a nemění se. Mění se barva
+         POPISKU: bílá na ní dávala 1,62:1 na #9fd0ff a 1,64:1 na #f5c400.
+         Každý stupeň proto nese tu ze dvou, která je na něm čitelnější —
+         tmavá vyhrává na sedmi z osmi, bílá jen na #1f6fe0. -->
+    <span style="background:#9fd0ff;color:#0E1A2B">1</span><span style="background:#4da3ff;color:#0E1A2B">5</span><span style="background:#1f6fe0;color:#fff">10</span><span style="background:#2ec26b;color:#0E1A2B">20</span><span style="background:#f5c400;color:#0E1A2B">30</span><span style="background:#ff8a00;color:#0E1A2B">40</span><span style="background:#ff3b30;color:#0E1A2B">60</span><span style="background:#bf5af2;color:#0E1A2B">100+</span>
   </div>
 </div>
 

@@ -49,17 +49,33 @@ import { esc, num } from "./utils.js";
 import { initUiIcons } from "./uiicons.js";
 import { initSections, markSectionAlerts } from "./sections.js";
 import { initRail } from "./rail.js";
+import { initToggleState } from "./togglestate.js";
 import { riseIn, resetChartAnim, withTransition } from "./motion.js";
 
 // ── Data fetch (graceful degradation — radar/grid kritické, zbytek volitelné) ─
 async function loadData() {
   const v = `?v=${Date.now()}`;
+  // Časový strop na každý požadavek. Bez něj se na mrtvém nebo velmi pomalém
+  // spojení nestane NIC: fetch visí bez limitu, skeletony se točí dál a appka
+  // vypadá, že pracuje. Patnáct vteřin je dost i na EDGE a málo na to, aby si
+  // toho člověk venku nevšiml. `navigator.onLine` tenhle případ nezachytí —
+  // hlásí připojení k síti, ne že za ní něco odpovídá.
+  const TIMEOUT_MS = 15000;
   const opts = { cache: "no-store" };
   const fetchJson = async (name, versionKey) => {
     const url = `data/${name}${versionKey ? `?v=${encodeURIComponent(versionKey)}` : v}`;
-    const r = await fetch(url, opts);
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    return r.json();
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
+    try {
+      const r = await fetch(url, { ...opts, signal: ctrl.signal });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return await r.json();
+    } catch (e) {
+      if (e.name === "AbortError") throw new Error(`${name}: spojení neodpovědělo do 15 s`);
+      throw e;
+    } finally {
+      clearTimeout(t);
+    }
   };
 
   const [manifest, grid] = await Promise.all([
@@ -246,10 +262,12 @@ function renderLocationVerdict(fc, lat, lon, label) {
   renderVerdictText(chips, templateText, null);
 
   // AI verdikt doplní/nahradí šablonu, jakmile dorazí (progressive enhancement)
+  // `false` znamená "zkusili jsme a nedopadlo", `null` "neběželo". Bez toho
+  // rozdílu vypadá výpadek Gemini úplně stejně jako stav, kdy se narace
+  // nevolala — a uživatel nepozná, že čte záložní text.
   fetchAiVerdict(lat, lon, label).then(aiText => {
-    if (aiText && state.currentLat === lat && state.currentLon === lon) {
-      renderVerdictText(chips, templateText, aiText);
-    }
+    if (state.currentLat !== lat || state.currentLon !== lon) return;
+    renderVerdictText(chips, templateText, aiText || false);
   });
 
   renderAccuracyLine();
@@ -277,9 +295,13 @@ function showForecast(lat, lon, label) {
   renderRainCountdown(id);
 
   document.getElementById("place").textContent = label || "Vybrané místo";
-  document.getElementById("dist").textContent = inCZ
+  // Vzdálenost k bodu mřížky je provozní detail (zůstává skrytá), ale
+  // přepnutí do světového režimu mění, co appka umí — to se říct musí.
+  const distEl = document.getElementById("dist");
+  distEl.textContent = inCZ
     ? `Nejbližší bod mřížky: ${num(near.dist)} km`
-    : "Světový režim — radar RainViewer + model";
+    : "Světový režim — RainViewer + model, ne vlastní nowcast";
+  distEl.classList.toggle("mode-world", !inCZ);
   updateFavBtn(lat, lon, label, () => renderFavRow(showForecast));
   showAiAsk();
 
@@ -460,7 +482,13 @@ async function refreshAll() {
     renderStormTracks();
     if (state.currentLat !== null) loadForecast(state.currentLat, state.currentLon, state.currentLabel);
   } catch (e) {
-    document.getElementById("refresh-time").textContent = "Chyba: " + e.message;
+    // Do topbaru se vejde věta, ne odstavec — ale musí říct, co se stalo
+    // a co s tím. Panel verdiktu nese delší vysvětlení.
+    document.getElementById("refresh-time").textContent = "Data nedorazila";
+    renderVerdictText(null,
+      `<span class="hint">Nepodařilo se načíst radarová data (${esc(e.message)}). `
+      + `Zkus obnovit; pokud to trvá, pipeline nejspíš zrovna neproběhla — `
+      + `appka mezitím ukazuje poslední uložený stav.</span>`, null);
   } finally {
     btn.classList.remove("spinning");
     btn.removeAttribute("aria-busy");
@@ -493,6 +521,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   initUiIcons();   // emoji v tlačítkách → jednotná SVG ikonografie
   initSections();   // Teď / Dnes / Týden / Data — dělí dvacet panelů na čtyři pohledy
   initRail();       // ve středních šířkách sloučí pravý panel do levé lišty
+  initToggleState();// .active → aria-pressed / aria-checked, jeden vlastník
 
   try {
     await loadData();

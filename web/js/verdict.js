@@ -1,4 +1,4 @@
-import { state, WORKER_BASE } from "./state.js";
+import { state, WORKER_BASE, RADAR_STALE_MIN } from "./state.js";
 import { wImg, wcLabel } from "./icons.js";
 import { haversine, localHM, esc, num } from "./utils.js";
 import { uiIcon } from "./uiicons.js";
@@ -433,7 +433,7 @@ export function renderRainCountdown(ptId, minutely) {
   const radarT0 = ptId != null ? state.GRID.t0_utc
     : (state._globalRadar?.frames?.[0] ? new Date(state._globalRadar.frames[0].tMs).toISOString() : null);
   const radarHM = radarT0 ? localHM(radarT0) : null;
-  const staleNote = as && as.radarAgeMin != null && as.radarAgeMin > 20 && radarHM
+  const staleNote = as && as.radarAgeMin != null && as.radarAgeMin >= RADAR_STALE_MIN && radarHM
     ? ` · radar ${radarHM} (${as.radarAgeMin} min starý!)` : "";
 
   if (as && (as.status === "raining" || as.status === "soon")) {
@@ -507,7 +507,10 @@ function sourcesClause({ source, modelAgrees, prob }) {
   if (modelAgrees === true) parts.push("radar i model se shodují");
   else if (modelAgrees === false) parts.push("jen radar, model zatím nic nevidí");
   else parts.push("radarová extrapolace");
-  if (prob != null) parts.push(`jistota ~${prob} %`);
+  // "jistota" samotná se v appce používala dvakrát pro dvě různé veličiny:
+  // tady je to pravděpodobnost z ensemblu nowcastu, o dvacet panelů níž shoda
+  // mezi modely. Obojí zůstává, jen se každé pojmenuje tím, čím je.
+  if (prob != null) parts.push(`ensemble ~${prob} %`);
   return " · " + parts.join(", ");
 }
 
@@ -522,7 +525,7 @@ function _tickCountdown() {
   document.getElementById("rc-icon").innerHTML = wImg(descr.icon);
 
   const nearStr = nearKm != null && nearKm > 5 ? ` · jádro ~${nearKm} km odtud` : "";
-  const staleStr = radarAgeMin > 20 ? ` · radar ${radarAgeMin} min starý` : "";
+  const staleStr = radarAgeMin >= RADAR_STALE_MIN ? ` · radar ${radarAgeMin} min starý` : "";
   const srcStr = sourcesClause({ source, modelAgrees, prob });
 
   if (now < startMs) {
@@ -633,7 +636,10 @@ export function renderVerdictText(chips, templateText, aiText) {
   const el = document.getElementById("verdict");
   const body = aiText
     ? `<div class="verdict-ai-badge">${uiIcon("sparkle")}AI meteorolog</div><div class="verdict-text">${esc(aiText).replace(/\n\n/g, "<br><br>")}</div>`
-    : `<div class="verdict-text">${templateText}</div>`;
+    : `<div class="verdict-text">${templateText}</div>`
+      + (aiText === false
+        ? `<div class="verdict-fallback">Shrnutí psal jazykový model, teď se nepodařilo — tohle je záložní text ze šablony.</div>`
+        : "");
   el.innerHTML = body;
 
   // Výstrahy patří na první pohled — do glass pruhu pod topbarem, ne dovnitř karty
@@ -649,6 +655,7 @@ function renderAlertBar(chips) {
     bar.innerHTML = "";
     bar.classList.remove("show", "expanded");
     bar.removeAttribute("title");
+    bar.setAttribute("aria-expanded", "false");
     return;
   }
 
@@ -657,6 +664,10 @@ function renderAlertBar(chips) {
   bar.innerHTML = expanded ? chips.allHtml : chips.html;
   bar.classList.add("show");
   bar.title = expanded ? "Klepnutím sbalit" : `Aktivní výstrahy: ${chips.count} — klepnutím rozbalit`;
+  // Role button, jejímž jediným úkolem je přepínání, musí říct, v jakém je
+  // stavu. Počet patří do textu, ne jen do `title` — ten se na dotyku
+  // nezobrazí nikdy.
+  bar.setAttribute("aria-expanded", expanded ? "true" : "false");
 
   if (_alertWired) return;
   _alertWired = true;

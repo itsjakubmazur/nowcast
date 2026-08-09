@@ -50,7 +50,10 @@ export function renderWuOwnPanel() {
       ? Math.round(s.wind_kmh) + " km/h" + (s.wind_dir != null ? " " + degToCompass(s.wind_dir) : "")
       : "";
     const meta = [loc, windStr].filter(Boolean).map(esc).join(" · ");
-    return `<div class="wu-mini-row" data-station-id="${esc(s.id)}">
+    // role+tabindex, ne holý div: tenhle řádek otevírá dialog Detail stanice
+    // a bez nich k němu z klávesnice nevedla cesta. Modálnost dialogu byla
+    // opravená, ale neměla co modalizovat.
+    return `<div class="wu-mini-row" role="button" tabindex="0" data-station-id="${esc(s.id)}">
       <div class="wu-mini-dot"></div>
       <div class="wu-mini-name">${esc(s.name || s.id)}</div>
       <div class="wu-mini-temp">${s.temp != null ? esc(num(s.temp)) + "°" : "—"}</div>
@@ -60,7 +63,12 @@ export function renderWuOwnPanel() {
   }).join("");
 
   panel.querySelectorAll(".wu-mini-row").forEach(row => {
-    row.addEventListener("click", () => openWuDetail(row.dataset.stationId));
+    const otevri = () => openWuDetail(row.dataset.stationId);
+    row.addEventListener("click", otevri);
+    // div nesyntetizuje click z Enteru ani mezerníku — musí se obsloužit ručně.
+    row.addEventListener("keydown", e => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); otevri(); }
+    });
   });
 }
 
@@ -172,7 +180,7 @@ function _renderWuHistory(stationId) {
   });
 
   const chartCfgs = [
-    { key: "temp", label: "Teplota", color: "#f87171", unit: "°C", bar: false },
+    { key: "temp", label: "Teplota", color: gc("teplota"), unit: "°C", bar: false },
     { key: "humidity", label: "Vlhkost", color: gc("vlhkost"), unit: "%", bar: false },
     { key: "pressure", label: "Tlak", color: gc("tlak"), unit: "hPa", bar: false },
     { key: "wind_kmh", label: "Vítr", color: gc("vitr"), unit: "km/h", bar: false, key2: "gust_kmh", color2: gc("chladno"), label2: "Nárazy" },
@@ -559,7 +567,7 @@ function _renderTabDnes(body, stationId) {
     const hero = document.createElement("div");
     hero.className = "sd-hero";
     hero.innerHTML = `
-      <div class="sd-hero-temp" style="color:#f87171">${obs.temp != null ? esc(obs.temp) + "°C" : "—"}</div>
+      <div class="sd-hero-temp" style="color:var(--temp2-text)">${obs.temp != null ? esc(obs.temp) + "°C" : "—"}</div>
       <div class="sd-hero-row">
         ${tMax ? `<span>▲ <b>${esc(tMax)}°</b></span>` : ""}
         ${tMin ? `<span>▼ <b>${esc(tMin)}°</b></span>` : ""}
@@ -575,7 +583,7 @@ function _renderTabDnes(body, stationId) {
   const fmt1 = v => num(v);
   const fmt0 = v => v != null ? Math.round(v) : "—";
   const cards = [
-    sdCard("temp", "Teplota", "thermometer", "#f87171", "°C", fmt1, series),
+    sdCard("temp", "Teplota", "thermometer", gc("teplota"), "°C", fmt1, series),
     sdCard("humidity", "Vlhkost", "droplet", gc("vlhkost"), "%", fmt0, series),
     sdCard("dewpoint", "Rosný bod", "mist", gc("tlak"), "°C", fmt1, series),
     sdCard("pressure", "Tlak", "gauge", gc("tlak"), "hPa", fmt0, series),
@@ -595,7 +603,7 @@ function _renderTabDnes(body, stationId) {
   }
 
   const chartCfgs = [
-    { key: "temp", label: "Teplota", color: "#f87171", fill: true, unit: "°C", bar: false },
+    { key: "temp", label: "Teplota", color: gc("teplota"), fill: true, unit: "°C", bar: false },
     { key: "humidity", label: "Vlhkost vzduchu", color: gc("vlhkost"), fill: true, unit: "%", bar: false },
     { key: "pressure", label: "Tlak", color: gc("tlak"), fill: false, unit: "hPa", bar: false },
     { key: "wind_kmh", label: "Vítr", color: gc("vitr"), fill: true, unit: "km/h", bar: false, key2: "gust_kmh", color2: gc("chladno"), label2: "Nárazy" },

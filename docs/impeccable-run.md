@@ -1,7 +1,7 @@
 # Impeccable run — stav
 
 Branch: design/impeccable
-Poslední aktualizace: 2026-08-09
+Poslední aktualizace: 2026-08-09 (běh uzavřen na BRÁNĚ E)
 
 > **Poznámka k předvyplnění.** Tenhle soubor nevznikl na začátku běhu, ale až
 > potom, co část práce proběhla mimo `/design-run` — přímo v konverzaci. Kroky
@@ -22,9 +22,14 @@ Poslední aktualizace: 2026-08-09
   shrnutím generovaným Gemini 2.5 Flash
 - Publikum: já a pár lidí, kteří chtějí vědět, jestli teď vyjít z domu.
   Mobil, venku, pár sekund pozornosti, opakované návraty během dne
-- Obrazovky: hlavní přehled (aktuální situace + narativ), radarová
-  mapa/animace, timeline srážek na příští hodiny, detail/graf,
-  metodika a zdroje dat
+- Obrazovky: appka je **jednostránková**. „Obrazovky" jsou čtyři sekce jedné
+  stránky, mezi kterými navigace skáče (nic neskrývá): **Teď** (nowcast,
+  odpočet do deště, srážkové sloupce 2 h / 12 h, druhý názor ČHMÚ), **Dnes**
+  (rozbalený detail dneška — hodiny, fáze, meteogram), **Týden** (7 dní
+  s rozklikem dne), **Data** (konsenzus modelů, žebříček přesnosti, verifikace,
+  ovzduší, astro, klima, historie). Nad tím vším živá radarová mapa
+  s časovou osou a vrstvami. Samostatná obrazovka „metodika a zdroje dat"
+  **neexistuje** — metodika žije v poznámkách pod panely a v patičce.
 - Osobnost: meteorologický nástroj — data first, vysoká informační hustota
   bez chaosu, střízlivé, dark mode výchozí, důvěryhodné.
   NE roztomilé, NE velké ikonové sluníčko, NE gradienty přes celou obrazovku
@@ -43,24 +48,73 @@ Poslední aktualizace: 2026-08-09
       principů, explicitně nerozhodnuto „bez runtime serveru".
 - [x] 2. document — `DESIGN.md` + sidecar `.impeccable/design.json`
       (schemaVersion 2, 11 komponent, 8stupňové tonální rampy).
-- [ ] 3. BRÁNA A — kontrola kontextu **← ZDE POKRAČUJ**
-- [x] 4. critique po obrazovkách — cíl `web/index.html`, dvouagentní běh,
-      **25/40**, 2× P0, 4× P1. Snímek:
-      `.impeccable/critique/2026-08-08T11-47-07Z__web-index-html.md`.
-- [x] 5. audit — **13/20**. A11y 2, Performance 3, Theming 2, Responsive 3,
-      Implementation Integrity 3. Report zůstal v konverzaci, do repu zapsaný
-      nebyl (viz Otevřené otázky, bod 3).
-- [ ] 6. backlog
-- [ ] 7. BRÁNA B — schválení backlogu
-- [ ] 8. shape hlavního přehledu
-- [ ] 9. BRÁNA C — schválení plánu
-- [ ] 10.–11. implementace po obrazovkách (doplň seznam po BRÁNĚ B)
-- [ ] 12. harden — chybové a zastaralé stavy dat
-- [ ] 13. onboard — prázdné stavy a metodika
-- [ ] 14. animate — radarová animace
-- [ ] 15. extract + polish
-- [ ] 16. finální audit
-- [ ] 17. BRÁNA E — souhrn a merge
+- [x] 3. BRÁNA A — kontrola kontextu. Doložený původ všech 16 barev, 5 typo
+      rolí a 5 poloměrů proti `web/css/app.css`; našly se dvě nepřesnosti
+      v komponentách `DESIGN.md`. Odpověď „vše default" → 5 rozhodnutí níž.
+- [x] 4. critique — druhý běh nad `web/index.html`, dvouagentní (A design
+      review bez detektoru, B detektor + pixelová měření). **27/40**, 1× P0,
+      3× P1. Trend 25 → 27. Snímek:
+      `.impeccable/critique/2026-08-09T12-39-06Z__web-index-html.md`.
+      **Vyvrací moje dřívější tvrzení**, že „jedna pravda o dešti" je hotová:
+      změřeno 14:54 (hlava) / 14:45 (2h tělo) / 17:35 (12h tělo) v jedné kartě.
+      První běh: `.impeccable/critique/2026-08-08T11-47-07Z__web-index-html.md`.
+- [x] 5. audit — druhý běh, **15/20** (z 13/20). A11y 3, Performance 3,
+      Theming 3, Responsive 3, Implementation Integrity 3 — Accessibility
+      a Theming se zvedly z 2, obojí drží na trojce jen kvůli světlému motivu.
+      0× P0, 3× P1, 5× P2, 4× P3. Report zapsaný do repu podle rozhodnutí 3:
+      `.impeccable/audit/2026-08-09T12-45-00Z__web-index-html.md`.
+- [x] 6. backlog — `docs/design-backlog.md`. 17 položek sloučených z kritiky
+      a auditu (duplicity označené jako shoda dvou metod), každá s dopadem,
+      rizikem a příkazem. Návrh vyhodit tři: pevné šířky na `clamp()`,
+      přerozdělení typografických rolí, předělání dialogu Nastavení.
+- [x] 7. BRÁNA B — schváleno „vše default kromě čísla 2, které chci hned
+      v plné variantě". Tři položky vyhozené, P0 v plné variantě, hlídka
+      kontrastu jako první krok `harden`, pořadí bloků
+      clarify → colorize → harden → adapt → polish, `shape` přeskočen.
+- [~] 8. shape — **přeskočeno** rozhodnutím z BRÁNY B. Backlog jsou opravy
+      konkrétních míst, ne nová obrazovka; `shape` plánuje UX/UI před psaním
+      kódu a neměl by co plánovat.
+- [~] 9. BRÁNA C — **odpadá** společně s krokem 8.
+- [x] 10. implementace — pět bloků v pořadí schváleném na BRÁNĚ B, každý
+      ve vlastním commitu: `clarify` (jedna pravda o dešti v plné variantě,
+      světový režim, dvě jistoty), `colorize` (barva na tónu sebe sama,
+      teplotní dvojčata, zbylé tailwindové barvy), `harden` (díra v testu,
+      klávesnice, stav přepínačů, prázdné stavy ČHMÚ, pořadí fokusu),
+      `adapt` (dotykové cíle posuvníků 5→45 px, sticky popisek dráhy),
+      `polish` (ořezy, mrtvé selektory, `DESIGN.md`).
+- [x] 11. BRÁNA D — shrnutí diffu předloženo, odpověď „pokračuj".
+- [x] 12. harden datové vrstvy — sdílený práh `RADAR_STALE_MIN = 15` (dřív
+      dvakrát natvrdo 20 a jen v odpočtu), dok radaru říká stáří slovy
+      a nad prahem se označí; selhání Gemini se přizná místo tichého
+      záložního textu; hlavní fetch dostal 15s strop, protože
+      `navigator.onLine` mrtvé spojení nezachytí; chybová hláška říká,
+      co dál. Nulové srážky a čitelnost v obou motivech pokryté dřív.
+- [x] 13. onboard — **záměrně úzký rozsah.** `PRODUCT.md` říká výslovně, že
+      onboarding a vysvětlování pojmů nejsou cíl, takže žádný tutoriál ani
+      průvodce. První návštěva už řešená byla (poslední místo → oblíbené →
+      geolokace, jinak "Zvolte místo"), prázdné stavy pokryl krok 12.
+      Přibyl panel „Odkud jsou čísla" v sekci Data: dělba práce mezi zdroji
+      (0–2 h radar, 2–12 h přechod, týden model, přesnost, druhý názor,
+      text) — to patičkou s atribucí říct nejde a nástroj, který si vede
+      účetnictví vlastní přesnosti, to říct má.
+- [x] 14. animate — crossfade mezi snímky radaru už existoval a je udělaný
+      správně (dva overlaye, odkrytí až po `load`, pojistka 260 ms), takže
+      se nesahalo. Opravena regrese: tlačítko přehrávání se na pauze vracelo
+      k textovému glyfu „▶" uprostřed řady tahových SVG, což `DESIGN.md`
+      zakazuje výslovně. Do sady přibyla ikona `play`.
+- [x] 15. extract + polish — `extract` měl rovnou co dělat: panel „Odkud jsou
+      čísla" z kroku 13 byl čtvrtá kopie sdíleného vzoru „klíč : hodnota",
+      dopsaná do systému omylem mnou. Složená do jedné deklarace s astro,
+      historií a klimatem. `polish` sloučil duplicitní `#storm-impact
+      .si-title` na sousedních řádcích.
+- [x] 16. finální audit — **18/20** (13 → 15 → 18). Theming, Responsive
+      a Implementation Integrity na 4; Accessibility drží na 3 kvůli jedinému
+      ověřenému zbytku pod AA (proužek hodin 4,32:1).
+      `.impeccable/audit/2026-08-09T14-05-00Z__web-index-html.md`.
+- [x] 17. BRÁNA E — souhrn předložen, merge schválen. Běh uzavřen:
+      audit 13 → 15 → **18/20**, kritika 25 → **27/40**, detektor 39 → **11**.
+      Otevřené zbytky viz „Otevřené otázky" — hlavní je proužek hodin
+      v rozbaleném dni na 4,32:1, který drží Accessibility na 3 místo 4.
 
 ## Co je hotové (opravy z kroků 4 a 5)
 
@@ -88,6 +142,31 @@ motivu. `npm run test:smoke` prochází.
 
 ## Rozhodnutí
 
+### Z BRÁNY A (2026-08-09, odpověď „vše default")
+
+1. **`DESIGN.md` se opraví ručně, ne přes `document`.** Zaostal za kódem ve dvou
+   místech: `segment-active` hlásí `{colors.radarova-modr}` (`#0A84FF`), ale kód
+   po opravě kontrastu používá `--accent-solid` (`#0068D6`); `button-glass-hover`
+   má `backgroundColor: {colors.citelny-text}`, zatímco v kódu je
+   `color-mix(in srgb, var(--text) 8%, var(--glass2))` — zápis ztratil těch 8 %
+   a dokument tvrdí bílou na bílé. Chybí taky čtyři moduly (`modal.js`,
+   `emptystate.js`, `rail.js`, `palette.js`). Znovupuštění `document` by přepsalo
+   ručně psané pasáže a pojmenovaná pravidla, která nesou důvody, ne popis.
+2. **`critique` se pouští znovu v kroku 4.** Uložený snímek (25/40, 2× P0, 4× P1)
+   popisuje stav před opravnou vlnou; bez nového běhu čte `polish` v kroku 15
+   backlog, který neexistuje.
+3. **Audit report se ukládá do repu**, do `.impeccable/audit/` vedle kritiky.
+   Dosud žil jen v konverzaci a s ní by zmizel.
+4. **Seznam obrazovek srovnán s kódem** (viz sekce Kontext). Appka je
+   jednostránková se čtyřmi sekcemi; obrazovka „metodika a zdroje dat"
+   neexistuje a krok 10 by ji jinak hledal.
+5. **Kritika má jeden cíl, `web/index.html`, ne pět.** `critique-storage` sleduje
+   trend podle slugu; pět slugů by rozbilo porovnatelnost s dosavadními 25/40.
+
+### Provozní
+
+- Branch `design/impeccable` založená z `claude/web-improvements-brainstorm-4osku9`
+  (2026-08-09). Na konci každého spuštění se merguje do `main`.
 - `npx` v tomhle prostředí nefunguje, kroky s `impeccable detect` vynechány.
   **Bundlovaný detektor ale funguje** a spouštět se má:
   `node .claude/skills/impeccable/scripts/detect.mjs --json web/index.html web/js`.

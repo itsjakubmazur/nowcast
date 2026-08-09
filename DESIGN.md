@@ -60,10 +60,10 @@ components:
     padding: "0 0.8rem"
     height: "36px"
   button-glass-hover:
-    backgroundColor: "{colors.citelny-text}"
+    backgroundColor: "color-mix(in srgb, {colors.citelny-text} 8%, {colors.nocni-obloha})"
     textColor: "{colors.citelny-text}"
   segment-active:
-    backgroundColor: "{colors.radarova-modr}"
+    backgroundColor: "{colors.plna-radarova-modr}"
     textColor: "#FFFFFF"
     rounded: "{rounded.pill}"
     padding: "0.38rem 0"
@@ -375,6 +375,79 @@ intenzita, průhlednost = pravděpodobnost. Suchý slot je **tenký patník u dn
 ne prázdno** — prázdno se čte jako chybějící data. Mezera mezi sloupci 2 px,
 zaoblení `4px 4px 2px 2px`.
 
+### Dialog
+
+Tři překryvy (Nastavení, Porovnání míst, Detail stanice) sdílí jeden modul
+`modal.js` a chovají se identicky. Vlastní karta je `panel-card` na tmavé
+cloně; overlay sám nemá roli, protože je to jen plocha.
+
+Chování je součást komponenty, ne doplněk: fokus jde po otevření na **první
+ovladač**, ne na zavírací křížek (kdo dialog otevřel, chce v něm něco
+nastavit); Tab uvnitř cykluje; Escape zavírá a poslouchá na `document`, ne na
+překryvu — po kliknutí na clonu je fokus na `<body>`, tedy přesně ve chvíli,
+kdy uživatel chce nejvíc ven. Zbytek stránky dostane `inert` (ne `aria-hidden`
+a ne `inert` na `<body>`, to by vypnulo i dialog). Po zavření se fokus vrací
+na spouštěč.
+
+Každý spouštěč dialogu musí být dosažitelný klávesnicí. Řádek stanice byl
+`div` bez `tabindex`, takže dialog byl korektní, ale nedalo se k němu dojít.
+
+### Prázdný a chybový stav
+
+Skrytí panelu je odpověď jen tehdy, když je **prázdno samo informací** —
+bouřkový banner bez bouřky, zimní panel mimo sezónu, panel ČR mimo ČR. Když
+panel mluvit MĚL a nemohl, musí to říct: zmizelý panel je nerozlišitelný od
+„tuhle funkci nemám", „tady zrovna nic není" a „něco se rozbilo".
+
+Dvě varianty v `emptystate.js`, obě si nechávají hlavičku panelu, aby bylo
+poznat, KTERÁ část selhala:
+- `panelEmpty(el, titulek, věta)` — data dorazila, jen tu nic není
+- `panelError(el, titulek, věta, zopakuj)` — data nedorazila, nabídne se
+  zopakování; tlačítko se po klepnutí přepne na „Načítám…", aby při rychlém
+  selhání nevypadalo, že nereaguje
+
+Stav **nekřičí**: žádná červená, žádná ikona. Není to výstraha, je to
+konstatování.
+
+### Stav přepínače
+
+`.active` je jediný zdroj pravdy o zapnutí; ARIA je jeho odraz a udržuje ho
+jeden pozorovatel (`togglestate.js`), ne patnáct volání v šesti modulech.
+
+Rozlišují se dvě situace, protože pro uživatele odečítače jsou různé:
+- **nezávislé vypínače** (vrstvy na mapě) → `aria-pressed`
+- **výlučná volba** (rychlost animace, veličina stanic) → `role="radiogroup"`
+  s `aria-checked`
+
+Skupina musí mít jméno. Vizuální popisky („Na mapě", „Stanice") zůstávají
+`aria-hidden` a jméno nese kontejner — jinak by se předčítaly dvakrát.
+
+### Kde co bydlí podle šířky
+
+Dva bloky mění v úzkých oknech rodiče, ne jen vzhled (`rail.js`):
+- **769–1080 px:** pravý panel se vsune na konec levé karty. Dvě fixní lišty
+  po stranách tam nechají z mapy proužek, ale obsah se nezahazuje — jinak
+  zůstanou v navigaci klikatelná tlačítka, která nic nedělají.
+- **do 768 px:** bouřkový banner se vytáhne z levé karty na úroveň `<body>`,
+  hned za úchyt sheetu. V kartě by byl pátý blok stránky, tedy pod dokem
+  radaru se šestnácti přepínači — nejnaléhavější informace pod nejméně
+  naléhavými ovladači.
+
+Stěhuje se uzel, ne kopie: canvasy grafů si při přepojení nechají obsah.
+
+### Barvy grafů
+
+Grafy a značky na mapě barvy **čtou** z `:root` přes `palette.js`, nepíšou si
+je. Role (`teplota`, `srazky`, `vitr`, `tlak`…) se mapuje na token, takže
+`gc("srazky")` nemůže vrátit oranžovou. Čte se při každém volání — Chart.js si
+barvu drží zapsanou v datasetu a po přepnutí motivu by se zasekla na staré.
+
+Doménové škály jsou výjimka a zůstávají mimo systém: úhrn srážek a intenzita
+bouřek jsou **kvantitativní stupnice**, kde barva JE hodnota, ne význam.
+Systém má role sémantické, ne kvantitativní. Řeší se u nich kontrast, ne
+estetika — a barva popisku na stupni se volí podle toho, co je na něm
+čitelnější.
+
 ## Do's and Don'ts
 
 ### Do:
@@ -389,7 +462,10 @@ zaoblení `4px 4px 2px 2px`.
 - **Do** označ každou úpravu zobrazených dat (korekce, dopočet) viditelnou
   poznámkou u čísla.
 - **Do** nech vodorovné dráhy dat rolovat; přeteklý sloupec je čitelnější než
-  zalomená tabulka.
+  zalomená tabulka — ale dej dráze sticky popisek, jinak není poznat, že
+  vpravo něco je.
+- **Do** zvětšuj dotykový cíl neviditelným překryvem, ne výplní: vzhled
+  segmentovaného přepínače i vlásku časové osy je součást jejich významu.
 
 ### Don't:
 - **Don't** stavěj šedé tabulky s linkami kolem buněk ani boxy s výraznými
@@ -402,5 +478,9 @@ zaoblení `4px 4px 2px 2px`.
   — přilepí se k panelu, ne k oknu.
 - **Don't** používej emoji jako ikonu; ikonografie je tahové SVG.
 - **Don't** zobrazuj tutéž hodnotu ve dvou granularitách nad sebou.
+- **Don't** nes stav přepínače jen barvou — `.active` musí mít odraz
+  v `aria-pressed` nebo `aria-checked`.
+- **Don't** měř kontrast tokenu proti sklu, když text leží na tintu vlastní
+  barvy; tam je potřeba dvojče `-on-tint` a v každém motivu na opačnou stranu.
 - **Don't** animuj napočítávání čísel — než hodnota „dojede", ukazuje appka
   čísla, která nikdo nenaměřil.

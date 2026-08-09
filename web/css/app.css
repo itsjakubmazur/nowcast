@@ -45,6 +45,29 @@
      záložky meteogramu, výběr vrstvy). #0068D6 dává 5,31:1.
      ═══════════════════════════════════════════════════════════════════════ */
   --accent-solid: #0068D6;   /* plocha pod bílým textem, 5,31:1 */
+
+  /* ── BARVA NA TÓNU SEBE SAMA ────────────────────────────────────────────
+     Třetí případ, který `-text` dvojčata neřeší. `.ctrl.active` má pozadí
+     `color-mix(in srgb, var(--accent) 14%, var(--glass))` a text v akcentu.
+     Tint zvedne pozadí právě tak, že na něm akcent spadne pod práh: naměřeno
+     3,19:1 ve světlém a 4,11:1 v tmavém motivu.
+
+     Zásadní je SMĚR opravy: text musí od tintu utéct, a to je v každém motivu
+     na opačnou stranu. Ve světlém se ztmavuje (#0057B8 = 5,45:1), v tmavém
+     naopak zesvětluje (#4DA3FF = 5,71:1). Kdo tohle spočítá jednou a použije
+     v obou motivech, jeden z nich pokazí.
+
+     Tokenová hlídka ve smoke.mjs tuhle rodinu neuměla chytit, protože měřila
+     barvu proti SKLU, ne proti tintu. Proto 47 selhání ve světlém motivu
+     přežilo zelený test. */
+  --accent-on-tint: #4DA3FF;
+  --red-on-tint: #FF6A61;      /* výstražný štítek na červeném tintu, 5,20:1 */
+
+  /* Teplotní barvy jako TEXT. V tmavém motivu jsou shodné s plochou
+     (9,93:1 a 6,23:1), ve světlém potřebují ztmavit. */
+  --temp1-text: var(--temp1);
+  --temp2-text: var(--temp2);
+  --t0-text: var(--t0-color);
   --blue-text: var(--blue);
   --red-text: var(--red);
   --orange-text: var(--orange);
@@ -120,6 +143,11 @@
        (#F8F9FB): oranžová 4,72 · zelená 5,11 · červená 5,36 · teal 5,81 ·
        fialová 7,23 · modrá 5,05. */
     --accent-solid: #0068D6;
+    --accent-on-tint: #0057B8;   /* na tintu vlastní barvy, 5,45:1 */
+    --red-on-tint: #A8231C;      /* 5,38:1 */
+    --temp1-text: #A25F00;       /* 4,78:1 */
+    --temp2-text: #B23F00;       /* 5,53:1 */
+    --t0-text: #A85C00;          /* 4,75:1 */
     --blue-text: #0068D6;
     --red-text: #C42B22;
     --orange-text: #B25600;
@@ -152,6 +180,11 @@
      (#F8F9FB): oranžová 4,72 · zelená 5,11 · červená 5,36 · teal 5,81 ·
      fialová 7,23 · modrá 5,05. */
   --accent-solid: #0068D6;
+  --accent-on-tint: #0057B8;   /* na tintu vlastní barvy, 5,45:1 */
+  --red-on-tint: #A8231C;      /* 5,38:1 */
+  --temp1-text: #A25F00;       /* 4,78:1 */
+  --temp2-text: #B23F00;       /* 5,53:1 */
+  --t0-text: #A85C00;          /* 4,75:1 */
   --blue-text: #0068D6;
   --red-text: #C42B22;
   --orange-text: #B25600;
@@ -223,15 +256,15 @@ img.wicon { filter: var(--wicon-shadow); vertical-align: middle; }
 /* .layer-btn tady schválně NENÍ: sklo nese jeho kontejner #layer-selector,
    protože je to výběr jedné veličiny (rádio), ne sada nezávislých vypínačů.
    Volné skleněné pilulky jsou vyhrazené přepínačům vrstev v doku radaru. */
-/* #accum-legend a #more-toggle si sklo dřív skládaly samy:
-   blur(18px) místo 26 a `1px solid var(--glass-border)` — jenže --glass-border
-   nikdy neexistovala (prstenec se jmenuje --gring). Neplatná var() bez
-   fallbacku shodí celou deklaraci, takže ty panely neměly ani ohraničení,
-   ani stejné sklo jako sousedi. Teď dědí ze společného mixinu. */
+/* #accum-legend si sklo dřív skládal sám: blur(18px) místo 26 a
+   `1px solid var(--glass-border)` — jenže --glass-border nikdy neexistovala
+   (prstenec se jmenuje --gring). Neplatná var() bez fallbacku shodí celou
+   deklaraci, takže panel neměl ani ohraničení, ani stejné sklo jako sousedi.
+   Teď dědí ze společného mixinu. */
 #left-card, #right-panel, #radar-bar-inner, #storm-bar, #radar-legend,
 button.glass-btn, .search-wrap, #suggestions, .logo,
 #chmi-detail, #wu-detail-box, #notif-bar, button.ctrl, #alert-bar,
-#accum-legend, #more-toggle,
+#accum-legend,
 #refresh-time {
   background: var(--glass);
   -webkit-backdrop-filter: blur(26px) saturate(1.7);
@@ -449,7 +482,9 @@ button.glass-btn svg { width: 17px; height: 17px; display: block; }
 .rc-body { min-width: 0; }
 .rc-title { font-size: var(--fs-md); font-weight: 800; letter-spacing: -.01em; }
 .rc-sub { font-size: var(--fs-sm); color: var(--muted); margin-top: .15rem; }
-.rc-timer { font-variant-numeric: tabular-nums; color: var(--blue-text); font-weight: 700; }
+/* Odpočet leží na modrém tintu hlavy karty — nejdůležitější číslo appky
+   mělo naměřeno 3,54:1. Viz --accent-on-tint. */
+.rc-timer { font-variant-numeric: tabular-nums; color: var(--accent-on-tint); font-weight: 700; }
 
 /* ── Minutový graf srážek (120 min) ─────────────────────────────────────── */
 /* ── Srážky v čase — jeden panel, dvě měřítka (2 h / 12 h) ─────────────────
@@ -641,11 +676,52 @@ button.glass-btn svg { width: 17px; height: 17px; display: block; }
 .fc-stat-bar   { height: 2.5px; background: var(--rowline); border-radius: 2px; margin-top: .35rem; overflow: hidden; }
 .fc-stat-bar-fill { height: 100%; width: 100%; transform-origin: left center; transition: transform .4s; }
 .place { font-size: var(--fs-sm); font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; display: flex; align-items: center; gap: .3rem; }
+/* ── Režim zdroje dat ─────────────────────────────────────────────────────
+   `.dist` byl `display: none` bez podmínky, zatímco do něj JS pilně psal buď
+   "Nejbližší bod mřížky: 3 km", nebo "Světový režim — radar RainViewer +
+   model". Uživatel tedy neměl jak poznat, jestli kouká na vlastní pysteps
+   extrapolaci z ČHMÚ, nebo na cizí dlaždice — což je přímo proti principu
+   "nejistota se přiznává" a proti tomu, čím se nástroj odlišuje.
+
+   Vzdálenost k bodu mřížky je provozní detail a zůstává skrytá. Přepnutí do
+   světového režimu ale mění, CO appka umí, takže se ukazuje — jako tichý
+   štítek u názvu místa, ne jako výstraha. */
 .dist  { display: none; }
+.dist.mode-world {
+  display: inline-flex; align-items: center; gap: .3rem;
+  margin-top: .15rem;
+  font-size: var(--fs-micro); font-weight: 700;
+  text-transform: uppercase; letter-spacing: .06em;
+  color: var(--muted);
+}
+.dist.mode-world::before {
+  content: ""; width: 5px; height: 5px; border-radius: 50%;
+  background: var(--teal-text); flex: none;
+}
 .verdict-text { font-size: var(--fs-body); line-height: 1.55; color: var(--text); margin-top: .5rem; }
+/* Záložní text ze šablony se přizná. Bez toho vypadá výpadek jazykového
+   modelu úplně stejně jako stav, kdy se narace nevolala — a "nejistota se
+   přiznává" je produktový princip, ne slogan. Tlumeně: není to výstraha. */
+.verdict-fallback {
+  font-size: var(--fs-tiny); color: var(--muted); line-height: 1.45;
+  margin-top: .4rem; padding-top: .35rem; border-top: 1px dashed var(--rowline);
+}
+
+/* ── Zastaralá data ────────────────────────────────────────────────────────
+   Radarové snímky chodí po ~5 minutách; patnáct minut jsou tři zmeškané.
+   Od té chvíle "radar nic nevidí" neznamená "neprší", ale "nevím", a appka
+   to musí říct dřív, než se na ni někdo spolehne. Oranžová, ne červená:
+   je to stav dat, ne výstraha o počasí. */
+#radar-updated.stale, #radar-t0.stale {
+  color: var(--orange-text) !important; font-weight: 700;
+}
+/* Štítek "AI meteorolog" nesl `--temp1`, tedy barvu vyhrazenou TEPLOTĚ.
+   Bylo to porušení Pravidla významu, ne jen kontrastu (naměřeno 1,95:1 ve
+   světlém motivu). Fialová je v systému vyhrazená odvozeným a modelovým
+   vrstvám — narace z jazykového modelu je přesně to. */
 .verdict-ai-badge {
   display: inline-flex; align-items: center; gap: .25rem;
-  font-size: var(--fs-tiny); font-weight: 800; color: var(--temp1);
+  font-size: var(--fs-tiny); font-weight: 800; color: var(--purple-text);
   text-transform: uppercase; letter-spacing: .07em; margin-bottom: .3rem;
 }
 #storm-trend.approaching { color: var(--red-text); }
@@ -655,7 +731,7 @@ button.glass-btn svg { width: 17px; height: 17px; display: block; }
 .rain-badge.green  { background: color-mix(in srgb, var(--green) 18%, transparent);  color: var(--green-text); }
 .rain-badge.yellow { background: color-mix(in srgb, var(--yellow) 20%, transparent); color: var(--orange-text); }
 .rain-badge.orange { background: color-mix(in srgb, var(--orange) 18%, transparent); color: var(--orange-text); }
-.rain-badge.red    { background: color-mix(in srgb, var(--red) 18%, transparent);    color: var(--red-text); }
+.rain-badge.red    { background: color-mix(in srgb, var(--red) 18%, transparent);    color: var(--red-on-tint); }
 .rain-badge .rb-dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; flex: none; }
 .hint { color: var(--muted); font-size: var(--fs-body); }
 .updated { color: var(--muted); font-size: var(--fs-tiny); margin-top: .3rem; font-variant-numeric: tabular-nums; }
@@ -1124,7 +1200,7 @@ button.glass-btn svg { width: 17px; height: 17px; display: block; }
 .fc7d-arrow { display: inline-block; margin-right: .1rem; line-height: 1; }
 .fc7d-hb { width: 60%; height: 14px; display: flex; align-items: flex-end; }
 .fc7d-hb i { width: 100%; background: var(--blue); border-radius: 2px; display: block; }
-.fc7d-hp { font-size: var(--fs-micro); color: var(--blue-text); font-weight: 700; min-height: 1em; }
+.fc7d-hp { font-size: var(--fs-micro); color: var(--accent-on-tint); font-weight: 700; min-height: 1em; }
 
 /* Graf dostal výšku po zrušeném meteogramu — na 130 px se legenda s pěti
    datovými řadami tlačila do křivky. */
@@ -1372,19 +1448,20 @@ button.glass-btn svg { width: 17px; height: 17px; display: block; }
    a popiskům dlaždic, kde jsou krátké a je jich pár. Tady jsou to celé
    fráze ("Konvektivní kondenzační hladina") a verzálkami se čtou mizerně.
    ═══════════════════════════════════════════════════════════════════════ */
-.astro-row, .hist-row, .ct-row {
+.astro-row, .hist-row, .ct-row, .mth-row {
   display: flex; align-items: baseline; gap: .5rem .6rem; flex-wrap: wrap;
   padding: .3rem 0; border-top: 1px solid var(--rowline);
   font-size: var(--fs-body);
 }
-.astro-row:first-of-type, .hist-row:first-of-type, .ct-row:first-of-type { border-top: none; }
+.astro-row:first-of-type, .hist-row:first-of-type, .ct-row:first-of-type,
+.mth-row:first-of-type { border-top: none; }
 /* Klíč: pevná minimální šířka, ať hodnoty startují na stejné svislici. */
-.astro-row .a-k, .hist-row .hist-label, .ct-row > span:first-child {
+.astro-row .a-k, .hist-row .hist-label, .ct-row > span:first-child, .mth-k {
   color: var(--muted); flex: 0 0 auto; min-width: 6.2rem;
 }
 /* Hodnota. Smí zalomit — dřív s nowrap přetékaly dlouhé řetězce
    ("Perseidy (ZHR 100), Delta Akvaridy …") ven z karty. */
-.astro-row .a-v, .hist-row b, .ct-row b {
+.astro-row .a-v, .hist-row b, .ct-row b, .mth-v {
   font-weight: 700; color: var(--fg); font-variant-numeric: tabular-nums;
   min-width: 0; overflow-wrap: anywhere;
 }
@@ -1402,6 +1479,29 @@ button.glass-btn svg { width: 17px; height: 17px; display: block; }
   display: flex; align-items: center; gap: .35rem; }
 .nstrip { display: inline-flex; gap: 2px; align-items: center; }
 .nstrip i { width: 11px; height: 13px; border-radius: 3px; background: var(--muted); display: inline-block; }
+
+/* ── Odkud jsou čísla ────────────────────────────────────────────────────
+   Není to nápověda pro nováčka (ta cíl není), ale dělba práce mezi zdroji.
+   Sazba stejná jako astro/historie: klíč vlevo tlumeně, hodnota vpravo —
+   appka má pro dvojici "co : kolik" jeden tvar a tenhle ho dědí. */
+#method-panel { display: block; }
+/* Zbytek dědí ze sdíleného vzoru "klíč : hodnota" výš — tenhle panel byl
+   čtvrtá kopie téhož a dopsal jsem ji do systému omylem sám. Jiné je jen
+   to, že hodnota je věta, ne číslo: menší stupeň a normální řez, protože
+   tabulární tučné číslice se na souvislý text nehodí. */
+.mth-row { font-size: var(--fs-sm); }
+.mth-v { font-weight: 400; font-variant-numeric: normal; line-height: 1.45; }
+/* Bez vlastní velikosti: `.92em` na optickou korekci monospace je mimo
+   osmistupňovou škálu a hlídka ve smoke testu ho správně odmítla. Rozdíl
+   v kresbě je menší problém než devátý stupeň v systému. */
+.mth-v code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--muted);
+}
+.mth-note {
+  font-size: var(--fs-tiny); color: var(--muted); line-height: 1.45;
+  margin-top: .5rem; padding-top: .4rem; border-top: 1px dashed var(--rowline);
+}
 
 /* zimní panel — objeví se jen v sezóně */
 #winter-panel {
@@ -1508,7 +1608,9 @@ button.glass-btn svg { width: 17px; height: 17px; display: block; }
 #accum-legend.show { display: block; }
 #accum-legend .accum-scale { display: flex; margin-top: .3rem; }
 #accum-legend .accum-scale span {
-  flex: 1; text-align: center; font-size: var(--fs-micro); color: #fff;
+  /* Barvu popisku nese každý stupeň sám (inline v index.html) — bílá natvrdo
+     tady dávala na světlých stupních 1,6:1. */
+  flex: 1; text-align: center; font-size: var(--fs-micro);
   padding: 2px 0; min-width: 20px; font-weight: 600;
 }
 #accum-legend .accum-scale span:first-child { border-radius: 4px 0 0 4px; }
@@ -1618,6 +1720,36 @@ button.ctrl .uicon { width: 1.12em; height: 1.12em; }
    pro -webkit- a -moz-: prohlížeč, který jeden z těch pseudoelementů nezná,
    zahodí celé pravidlo včetně druhého selektoru.
    ═══════════════════════════════════════════════════════════════════════ */
+/* ══ DOTYKOVÝ CÍL POSUVNÍKŮ ═══════════════════════════════════════════════
+   Naměřeno na 390 px: #timeline je 248,4 × 5 px, #opacity-slider 72 × 4 px.
+   Scrubber radarové smyčky je přitom nejpřirozenější jednoruční gesto v celé
+   appce a spodní hranice WCAG 2.5.8 je 24×24. Jezdce mají 18 a 15 px, dráha
+   pět a čtyři.
+
+   Roste jen PLOCHA, ne vzhled — stejný trik jako u záložek: neviditelný
+   překryv nad dráhou. Vizuálně zůstává vlásek, prstem se trefíš do 44 px.
+   Překryv musí mít `pointer-events: none`, jinak by ukradl tažení samotnému
+   inputu; jeho jediný úkol je rozšířit plochu, na kterou míří prst, a to
+   obstará zvětšená dráha pod ním.
+
+   Proč ne prostě vyšší input: dráha JE vidět. Pruh vysoký 44 px uprostřed
+   doku vypadá jako progress bar, ne jako časová osa. */
+.timeline-wrap, .opacity-group { position: relative; }
+.timeline-wrap::after, .opacity-group::after {
+  content: ""; position: absolute; left: 0; right: 0; top: 50%;
+  height: 44px; transform: translateY(-50%);
+  pointer-events: none;
+}
+#timeline, #opacity-slider {
+  /* Sama dráha je tenká, ale klikatelná plocha inputu smí být vyšší.
+     `content-box` je tu nutný: globální `* { box-sizing: border-box }` by
+     výplň schroustal dovnitř výšky a plocha by nevyrostla (naměřeno 38 px
+     místo 45). `background-clip: content-box` drží vidět jen tenkou dráhu,
+     `margin` zápornou hodnotou vrátí zabrané místo rozvržení. */
+  box-sizing: content-box;
+  padding: 20px 0; margin: -20px 0; background-clip: content-box;
+}
+
 #timeline:focus-visible::-webkit-slider-thumb,
 #opacity-slider:focus-visible::-webkit-slider-thumb {
   box-shadow: 0 1px 6px rgba(0, 0, 0, .35), 0 0 0 3px var(--accent);
@@ -1637,7 +1769,7 @@ button.ctrl .uicon { width: 1.12em; height: 1.12em; }
 #t0-marker {
   position: absolute; bottom: -16px;
   transform: translateX(-50%);
-  font-size: var(--fs-tiny); color: var(--t0-color); font-weight: 800;
+  font-size: var(--fs-tiny); color: var(--t0-text); font-weight: 800;
   pointer-events: none; white-space: nowrap;
 }
 #t0-tick {
@@ -1647,7 +1779,7 @@ button.ctrl .uicon { width: 1.12em; height: 1.12em; }
 }
 #frame-time { font-size: var(--fs-body); font-weight: 800; min-width: 60px; text-align: right; color: var(--text); font-variant-numeric: tabular-nums; flex: none; }
 .nowcast-label { color: var(--accent); }
-.t0-label { color: var(--t0-color); }
+.t0-label { color: var(--t0-text); }
 
 button.ctrl {
   padding: .3rem .6rem; border-radius: 999px; cursor: pointer;
@@ -1664,7 +1796,8 @@ button.ctrl:active { transform: scale(.94); }
    "kočkopes" pocit z horní části. Stejný zápis už používá .layer-btn.active
    i #btn-push.on, takže se tím tři jazyky slily na jeden. */
 button.ctrl.active {
-  color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, var(--glass));
+  /* Text na tintu vlastní barvy — viz --accent-on-tint. */
+  color: var(--accent-on-tint); background: color-mix(in srgb, var(--accent) 14%, var(--glass));
   box-shadow: var(--gshadow), inset 0 1px 0 var(--spec), inset 0 0 0 1.5px var(--accent);
 }
 #btn-play { background: var(--accent-solid); color: #fff;
@@ -1865,7 +1998,9 @@ button.ctrl.active {
 #rain-measured { display: none; font-size: var(--fs-sm); color: var(--muted); margin-top: .3rem; line-height: 1.45; }
 #rain-measured.show { display: block; }
 #rain-measured b { color: var(--fg); }
-#rain-measured.rain-wet b { color: var(--blue, #0A84FF); }
+/* Fallback uvnitř var() byl natvrdo tmavá varianta, takže ve světlém
+   motivu svítila modř z tmavého. */
+#rain-measured.rain-wet b { color: var(--blue-text); }
 
 /* ── Bouřky: shluky blesků jako plochy ──────────────────────────────────────
    Blob je záměrně polopropustný a bez ostré hrany — hranice bouřky z úderů
@@ -2011,8 +2146,10 @@ button.ctrl.active {
    červená v appce znamená "nebezpečí", ne "tady se něco hýbe". */
 #storm-impact.warn { --si-tep: 255, 159, 10; background: rgba(255, 159, 10, .16); border: 1px solid rgba(255, 159, 10, .5); }
 #storm-impact.sev  { --si-tep: 255, 69, 58;  background: rgba(255, 69, 58, .18);  border: 1px solid rgba(255, 69, 58, .6); }
-#storm-impact .si-title { font-weight: 800; font-size: var(--fs-md); }
-#storm-impact .si-title { display: flex; align-items: center; gap: .4rem; }
+#storm-impact .si-title {
+  font-weight: 800; font-size: var(--fs-md);
+  display: flex; align-items: center; gap: .4rem;
+}
 #storm-impact .si-bolt { width: 1.05em; height: 1.05em; flex: none; }
 #lightning-chip .uicon { width: 1em; height: 1em; vertical-align: -2px; margin-right: .25rem; }
 
@@ -2044,14 +2181,9 @@ button.ctrl.active {
    sekcí. Dřív se zapínal třídou has-content z MutationObserveru; s tím
    zmizel i důvod, proč by měl být defaultně schovaný. */
 #more-panels { display: block; }
-#more-toggle {
-  width: 100%; display: flex; align-items: center; justify-content: space-between;
-  color: var(--text);
-  border-radius: var(--r-card); padding: .62rem .9rem; font: inherit;
-  font-size: var(--fs-body); font-weight: 700; cursor: pointer;
-  transition: background .15s;
-}
-#more-toggle:hover { background: color-mix(in srgb, var(--text) 6%, var(--glass)); }
+/* Pravidla pro #more-toggle jsou pryč i s komentářem, který popisoval bug
+   prvku, co v index.html neexistuje — sekce "Podrobnější data" byla zrušená
+   a zbylo po ní jen CSS pro tlačítko, které nemá co rozbalovat. */
 .more-caret {
   width: 7px; height: 7px; flex: none;
   border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted);
@@ -2130,9 +2262,14 @@ button.ctrl.active {
 .mdl-title, .fc7-title { flex-wrap: wrap; white-space: normal; }
 .mdl-sub { font-weight: 400; text-transform: none; letter-spacing: 0; }
 #models-panel .mdl-sub { font-weight: 500; color: var(--muted); font-size: var(--fs-tiny); }
+/* Sloupce byly 1.4 + 1fr + 2.4 + 3.2 + 3.2 rem a jméno modelu se v tom 1fr
+   ořezávalo (120 px obsahu v 85px boxu) — v panelu, jehož celý smysl je
+   žebříček modelů. Číselné sloupce mají pevný obsah ("22°", "3,6 mm",
+   "±1,4"), takže se smějí stáhnout na to, co opravdu potřebují; ušetřená
+   šířka jde jménu. */
 #models-panel .mdl-head, #models-panel .mdl-row {
-  display: grid; grid-template-columns: 1.4rem 1fr 2.4rem 3.2rem 3.2rem;
-  gap: .3rem; align-items: center; font-size: var(--fs-sm); padding: .14rem 0;
+  display: grid; grid-template-columns: 1.2rem minmax(0, 1fr) 2.1rem 2.8rem 2.8rem;
+  gap: .25rem; align-items: center; font-size: var(--fs-sm); padding: .14rem 0;
 }
 #models-panel .mdl-head { color: var(--muted); font-size: var(--fs-tiny); text-transform: uppercase; letter-spacing: .04em; }
 #models-panel .mdl-row.best { background: rgba(10, 132, 255, .08); border-radius: var(--r-mini); }
@@ -2152,8 +2289,10 @@ button.ctrl.active {
 #models-panel .mdl-note { font-size: var(--fs-tiny); color: var(--muted); line-height: 1.45; margin-top: .4rem; }
 
 /* ── Ensemble rozptyl v 7denním výhledu ─────────────────────────────────── */
-.fc7-ens { font-size: var(--fs-tiny); color: var(--muted); margin-top: .15rem; }
-.fc7-ens .prec { color: var(--blue-text); font-weight: 600; }
+/* Druhá deklarace .fc7-ens zrušená: přebíjela velikost z prvního bloku
+   (--fs-tiny místo --fs-micro), ale zdědila z něj `white-space: nowrap`,
+   takže rozptyl ensemblu se ořízl přesně na podílu členů se srážkami —
+   tedy na čísle o nejistotě. Platí jediná deklarace výš. */
 
 /* ── Hlásné profily (hydrologie) ────────────────────────────────────────── */
 .hydro-popup { font-size: var(--fs-body); max-width: 240px; }
@@ -2396,6 +2535,9 @@ body.embed #left-card { top: 100px; bottom: 1rem; }
   }
   #radar-row-layers::-webkit-scrollbar { display: none; }
   #radar-row-layers > * { flex: 0 0 auto; }
+  /* Sticky popisek drží kotvu, když dráha odjede — bez něj uživatel neví,
+     že vpravo jsou další ovladače. Dvě identicky vypadající dráhy se musí
+     chovat stejně; tahle ho neměla a tři přepínače mizely bez stopy. */
   .rl-label { position: sticky; left: 0; z-index: 1; margin-left: 0;
     background: linear-gradient(90deg, var(--glass) 72%, transparent); padding-right: .5rem; }
   #frame-time { text-align: right; }
