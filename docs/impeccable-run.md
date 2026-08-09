@@ -1,7 +1,7 @@
 # Impeccable run — stav
 
 Branch: design/impeccable
-Poslední aktualizace: 2026-08-09
+Poslední aktualizace: 2026-08-09 (běh uzavřen na BRÁNĚ E)
 
 > **Poznámka k předvyplnění.** Tenhle soubor nevznikl na začátku běhu, ale až
 > potom, co část práce proběhla mimo `/design-run` — přímo v konverzaci. Kroky
@@ -111,7 +111,10 @@ Poslední aktualizace: 2026-08-09
       a Implementation Integrity na 4; Accessibility drží na 3 kvůli jedinému
       ověřenému zbytku pod AA (proužek hodin 4,32:1).
       `.impeccable/audit/2026-08-09T14-05-00Z__web-index-html.md`.
-- [ ] 17. BRÁNA E — souhrn a merge **← ZDE POKRAČUJ**
+- [x] 17. BRÁNA E — souhrn předložen, merge schválen. Běh uzavřen:
+      audit 13 → 15 → **18/20**, kritika 25 → **27/40**, detektor 39 → **11**.
+      Otevřené zbytky viz „Otevřené otázky" — hlavní je proužek hodin
+      v rozbaleném dni na 4,32:1, který drží Accessibility na 3 místo 4.
 
 ## Co je hotové (opravy z kroků 4 a 5)
 
