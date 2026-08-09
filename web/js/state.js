@@ -64,3 +64,10 @@ export const AUTO_REFRESH_MS = 5 * 60 * 1000;
 // oprav (nebo přepiš přes <meta name="worker-base" content="...">, viz níže).
 const metaWorkerBase = document.querySelector('meta[name="worker-base"]')?.content;
 export const WORKER_BASE = metaWorkerBase || "https://nowcast-narrate.kubajzek.workers.dev";
+
+// ── Kdy přestat věřit radaru ────────────────────────────────────────────────
+// Snímky chodí po ~5 minutách. Patnáct minut je tedy tři zmeškané snímky:
+// od té chvíle "radar nic nevidí" neznamená "neprší", ale "nevím". Práh byl
+// dřív zapsaný dvakrát v verdict.js jako 20 a nikde jinde se neprojevil,
+// takže dok radaru tvářil stará data jako čerstvá.
+export const RADAR_STALE_MIN = 15;

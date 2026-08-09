@@ -82,8 +82,13 @@ Poslední aktualizace: 2026-08-09
       klávesnice, stav přepínačů, prázdné stavy ČHMÚ, pořadí fokusu),
       `adapt` (dotykové cíle posuvníků 5→45 px, sticky popisek dráhy),
       `polish` (ořezy, mrtvé selektory, `DESIGN.md`).
-- [ ] 11. BRÁNA D — shrnutí diffu **← ZDE POKRAČUJ**
-- [ ] 12. harden — chybové a zastaralé stavy dat
+- [x] 11. BRÁNA D — shrnutí diffu předloženo, odpověď „pokračuj".
+- [x] 12. harden datové vrstvy — sdílený práh `RADAR_STALE_MIN = 15` (dřív
+      dvakrát natvrdo 20 a jen v odpočtu), dok radaru říká stáří slovy
+      a nad prahem se označí; selhání Gemini se přizná místo tichého
+      záložního textu; hlavní fetch dostal 15s strop, protože
+      `navigator.onLine` mrtvé spojení nezachytí; chybová hláška říká,
+      co dál. Nulové srážky a čitelnost v obou motivech pokryté dřív.
 - [ ] 13. onboard — prázdné stavy a metodika
 - [ ] 14. animate — radarová animace
 - [ ] 15. extract + polish

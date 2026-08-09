@@ -1,4 +1,4 @@
-import { state, PLAY } from "./state.js";
+import { state, RADAR_STALE_MIN, PLAY } from "./state.js";
 import { setRadarFrameUrl, setRadarOpacityBoth } from "./map.js";
 import { haversine, bearing, num, esc } from "./utils.js";
 import { uiIcon } from "./uiicons.js";
@@ -543,8 +543,17 @@ export function applyManifestUI() {
 
   document.getElementById("radar-t0").textContent =
     "Radar " + t0.toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Prague" });
-  document.getElementById("radar-updated").textContent =
-    "generováno " + gen.toLocaleString("cs-CZ", { timeZone: "Europe/Prague" });
+  // Stáří se říká slovy, ne jen časem generování: "generováno 14:02" po
+  // uživateli chce, aby si sám spočítal, jestli je to moc. Nad prahem
+  // (RADAR_STALE_MIN) se to navíc označí, protože od té chvíle "radar nic
+  // nevidí" neznamená "neprší", ale "nevím".
+  const staryMin = Math.max(0, Math.round((Date.now() - gen.getTime()) / 60000));
+  const upd = document.getElementById("radar-updated");
+  upd.textContent = staryMin >= RADAR_STALE_MIN
+    ? `data ${staryMin} min stará`
+    : `aktualizováno před ${staryMin} min`;
+  upd.classList.toggle("stale", staryMin >= RADAR_STALE_MIN);
+  document.getElementById("radar-t0").classList.toggle("stale", staryMin >= RADAR_STALE_MIN);
 
   const srcEl = document.getElementById("radar-source");
   if (srcEl) {

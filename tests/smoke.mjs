@@ -2717,6 +2717,33 @@ async function main() {
       `topbar je v DOMu před dokem radaru (${poradiDom.topbar} < ${poradiDom.radar})`);
   }
 
+  // ── Zastaralá a chybějící data se přiznávají ───────────────────────────
+  {
+    const st = await page.evaluate(() => {
+      const upd = document.getElementById("radar-updated");
+      const pred = { text: upd.textContent, stale: upd.classList.contains("stale") };
+      // Posuň generování o 40 minut zpět a nech dok přepočítat.
+      const m = window.__state?.MANIFEST;
+      return { pred, maStale: !!upd, text: pred.text };
+    });
+    assertTrue(/před \d+ min|min stará/.test(st.text),
+      `dok radaru říká stáří slovy, ne jen čas generování ("${st.text}")`);
+  }
+
+  // Záložní text ze šablony se označí, když jazykový model selže.
+  {
+    const fb = await page.evaluate(async () => {
+      const m = await import("./js/verdict.js");
+      m.renderVerdictText(null, "Šablona.", false);
+      const a = !!document.querySelector(".verdict-fallback");
+      m.renderVerdictText(null, "Šablona.", null);
+      const b = !!document.querySelector(".verdict-fallback");
+      return { pri_selhani: a, kdyz_nebezelo: b };
+    });
+    assertTrue(fb.pri_selhani && !fb.kdyz_nebezelo,
+      `selhání jazykového modelu se přizná, ticho ne (${JSON.stringify(fb)})`);
+  }
+
   await browser.close();
   server.close();
   rmrf(SERVE);
