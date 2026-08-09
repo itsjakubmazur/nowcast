@@ -67,7 +67,10 @@ Poslední aktualizace: 2026-08-09
       a auditu (duplicity označené jako shoda dvou metod), každá s dopadem,
       rizikem a příkazem. Návrh vyhodit tři: pevné šířky na `clamp()`,
       přerozdělení typografických rolí, předělání dialogu Nastavení.
-- [ ] 7. BRÁNA B — schválení backlogu **← ZDE POKRAČUJ**
+- [x] 7. BRÁNA B — schváleno „vše default kromě čísla 2, které chci hned
+      v plné variantě". Tři položky vyhozené, P0 v plné variantě, hlídka
+      kontrastu jako první krok `harden`, pořadí bloků
+      clarify → colorize → harden → adapt → polish, `shape` přeskočen.
 - [~] 8. shape — **přeskočeno** rozhodnutím z BRÁNY B. Backlog jsou opravy
       konkrétních míst, ne nová obrazovka; `shape` plánuje UX/UI před psaním
       kódu a neměl by co plánovat.
