@@ -58,9 +58,11 @@ Poslední aktualizace: 2026-08-09
       **Vyvrací moje dřívější tvrzení**, že „jedna pravda o dešti" je hotová:
       změřeno 14:54 (hlava) / 14:45 (2h tělo) / 17:35 (12h tělo) v jedné kartě.
       První běh: `.impeccable/critique/2026-08-08T11-47-07Z__web-index-html.md`.
-- [x] 5. audit — **13/20**. A11y 2, Performance 3, Theming 2, Responsive 3,
-      Implementation Integrity 3. Report zůstal v konverzaci, do repu zapsaný
-      nebyl (viz Otevřené otázky, bod 3).
+- [x] 5. audit — druhý běh, **15/20** (z 13/20). A11y 3, Performance 3,
+      Theming 3, Responsive 3, Implementation Integrity 3 — Accessibility
+      a Theming se zvedly z 2, obojí drží na trojce jen kvůli světlému motivu.
+      0× P0, 3× P1, 5× P2, 4× P3. Report zapsaný do repu podle rozhodnutí 3:
+      `.impeccable/audit/2026-08-09T12-45-00Z__web-index-html.md`.
 - [ ] 6. backlog
 - [ ] 7. BRÁNA B — schválení backlogu
 - [ ] 8. shape hlavního přehledu
