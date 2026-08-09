@@ -51,9 +51,13 @@ Poslední aktualizace: 2026-08-09
 - [x] 3. BRÁNA A — kontrola kontextu. Doložený původ všech 16 barev, 5 typo
       rolí a 5 poloměrů proti `web/css/app.css`; našly se dvě nepřesnosti
       v komponentách `DESIGN.md`. Odpověď „vše default" → 5 rozhodnutí níž.
-- [x] 4. critique po obrazovkách — cíl `web/index.html`, dvouagentní běh,
-      **25/40**, 2× P0, 4× P1. Snímek:
-      `.impeccable/critique/2026-08-08T11-47-07Z__web-index-html.md`.
+- [x] 4. critique — druhý běh nad `web/index.html`, dvouagentní (A design
+      review bez detektoru, B detektor + pixelová měření). **27/40**, 1× P0,
+      3× P1. Trend 25 → 27. Snímek:
+      `.impeccable/critique/2026-08-09T12-39-06Z__web-index-html.md`.
+      **Vyvrací moje dřívější tvrzení**, že „jedna pravda o dešti" je hotová:
+      změřeno 14:54 (hlava) / 14:45 (2h tělo) / 17:35 (12h tělo) v jedné kartě.
+      První běh: `.impeccable/critique/2026-08-08T11-47-07Z__web-index-html.md`.
 - [x] 5. audit — **13/20**. A11y 2, Performance 3, Theming 2, Responsive 3,
       Implementation Integrity 3. Report zůstal v konverzaci, do repu zapsaný
       nebyl (viz Otevřené otázky, bod 3).
