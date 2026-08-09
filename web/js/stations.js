@@ -172,7 +172,7 @@ function _renderWuHistory(stationId) {
   });
 
   const chartCfgs = [
-    { key: "temp", label: "Teplota", color: "#f87171", unit: "°C", bar: false },
+    { key: "temp", label: "Teplota", color: gc("teplota"), unit: "°C", bar: false },
     { key: "humidity", label: "Vlhkost", color: gc("vlhkost"), unit: "%", bar: false },
     { key: "pressure", label: "Tlak", color: gc("tlak"), unit: "hPa", bar: false },
     { key: "wind_kmh", label: "Vítr", color: gc("vitr"), unit: "km/h", bar: false, key2: "gust_kmh", color2: gc("chladno"), label2: "Nárazy" },
@@ -559,7 +559,7 @@ function _renderTabDnes(body, stationId) {
     const hero = document.createElement("div");
     hero.className = "sd-hero";
     hero.innerHTML = `
-      <div class="sd-hero-temp" style="color:#f87171">${obs.temp != null ? esc(obs.temp) + "°C" : "—"}</div>
+      <div class="sd-hero-temp" style="color:var(--temp2-text)">${obs.temp != null ? esc(obs.temp) + "°C" : "—"}</div>
       <div class="sd-hero-row">
         ${tMax ? `<span>▲ <b>${esc(tMax)}°</b></span>` : ""}
         ${tMin ? `<span>▼ <b>${esc(tMin)}°</b></span>` : ""}
@@ -575,7 +575,7 @@ function _renderTabDnes(body, stationId) {
   const fmt1 = v => num(v);
   const fmt0 = v => v != null ? Math.round(v) : "—";
   const cards = [
-    sdCard("temp", "Teplota", "thermometer", "#f87171", "°C", fmt1, series),
+    sdCard("temp", "Teplota", "thermometer", gc("teplota"), "°C", fmt1, series),
     sdCard("humidity", "Vlhkost", "droplet", gc("vlhkost"), "%", fmt0, series),
     sdCard("dewpoint", "Rosný bod", "mist", gc("tlak"), "°C", fmt1, series),
     sdCard("pressure", "Tlak", "gauge", gc("tlak"), "hPa", fmt0, series),
@@ -595,7 +595,7 @@ function _renderTabDnes(body, stationId) {
   }
 
   const chartCfgs = [
-    { key: "temp", label: "Teplota", color: "#f87171", fill: true, unit: "°C", bar: false },
+    { key: "temp", label: "Teplota", color: gc("teplota"), fill: true, unit: "°C", bar: false },
     { key: "humidity", label: "Vlhkost vzduchu", color: gc("vlhkost"), fill: true, unit: "%", bar: false },
     { key: "pressure", label: "Tlak", color: gc("tlak"), fill: false, unit: "hPa", bar: false },
     { key: "wind_kmh", label: "Vítr", color: gc("vitr"), fill: true, unit: "km/h", bar: false, key2: "gust_kmh", color2: gc("chladno"), label2: "Nárazy" },

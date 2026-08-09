@@ -45,6 +45,29 @@
      záložky meteogramu, výběr vrstvy). #0068D6 dává 5,31:1.
      ═══════════════════════════════════════════════════════════════════════ */
   --accent-solid: #0068D6;   /* plocha pod bílým textem, 5,31:1 */
+
+  /* ── BARVA NA TÓNU SEBE SAMA ────────────────────────────────────────────
+     Třetí případ, který `-text` dvojčata neřeší. `.ctrl.active` má pozadí
+     `color-mix(in srgb, var(--accent) 14%, var(--glass))` a text v akcentu.
+     Tint zvedne pozadí právě tak, že na něm akcent spadne pod práh: naměřeno
+     3,19:1 ve světlém a 4,11:1 v tmavém motivu.
+
+     Zásadní je SMĚR opravy: text musí od tintu utéct, a to je v každém motivu
+     na opačnou stranu. Ve světlém se ztmavuje (#0057B8 = 5,45:1), v tmavém
+     naopak zesvětluje (#4DA3FF = 5,71:1). Kdo tohle spočítá jednou a použije
+     v obou motivech, jeden z nich pokazí.
+
+     Tokenová hlídka ve smoke.mjs tuhle rodinu neuměla chytit, protože měřila
+     barvu proti SKLU, ne proti tintu. Proto 47 selhání ve světlém motivu
+     přežilo zelený test. */
+  --accent-on-tint: #4DA3FF;
+  --red-on-tint: #FF6A61;      /* výstražný štítek na červeném tintu, 5,20:1 */
+
+  /* Teplotní barvy jako TEXT. V tmavém motivu jsou shodné s plochou
+     (9,93:1 a 6,23:1), ve světlém potřebují ztmavit. */
+  --temp1-text: var(--temp1);
+  --temp2-text: var(--temp2);
+  --t0-text: var(--t0-color);
   --blue-text: var(--blue);
   --red-text: var(--red);
   --orange-text: var(--orange);
@@ -120,6 +143,11 @@
        (#F8F9FB): oranžová 4,72 · zelená 5,11 · červená 5,36 · teal 5,81 ·
        fialová 7,23 · modrá 5,05. */
     --accent-solid: #0068D6;
+    --accent-on-tint: #0057B8;   /* na tintu vlastní barvy, 5,45:1 */
+    --red-on-tint: #A8231C;      /* 5,38:1 */
+    --temp1-text: #A25F00;       /* 4,78:1 */
+    --temp2-text: #B23F00;       /* 5,53:1 */
+    --t0-text: #A85C00;          /* 4,75:1 */
     --blue-text: #0068D6;
     --red-text: #C42B22;
     --orange-text: #B25600;
@@ -152,6 +180,11 @@
      (#F8F9FB): oranžová 4,72 · zelená 5,11 · červená 5,36 · teal 5,81 ·
      fialová 7,23 · modrá 5,05. */
   --accent-solid: #0068D6;
+  --accent-on-tint: #0057B8;   /* na tintu vlastní barvy, 5,45:1 */
+  --red-on-tint: #A8231C;      /* 5,38:1 */
+  --temp1-text: #A25F00;       /* 4,78:1 */
+  --temp2-text: #B23F00;       /* 5,53:1 */
+  --t0-text: #A85C00;          /* 4,75:1 */
   --blue-text: #0068D6;
   --red-text: #C42B22;
   --orange-text: #B25600;
@@ -449,7 +482,9 @@ button.glass-btn svg { width: 17px; height: 17px; display: block; }
 .rc-body { min-width: 0; }
 .rc-title { font-size: var(--fs-md); font-weight: 800; letter-spacing: -.01em; }
 .rc-sub { font-size: var(--fs-sm); color: var(--muted); margin-top: .15rem; }
-.rc-timer { font-variant-numeric: tabular-nums; color: var(--blue-text); font-weight: 700; }
+/* Odpočet leží na modrém tintu hlavy karty — nejdůležitější číslo appky
+   mělo naměřeno 3,54:1. Viz --accent-on-tint. */
+.rc-timer { font-variant-numeric: tabular-nums; color: var(--accent-on-tint); font-weight: 700; }
 
 /* ── Minutový graf srážek (120 min) ─────────────────────────────────────── */
 /* ── Srážky v čase — jeden panel, dvě měřítka (2 h / 12 h) ─────────────────
@@ -664,9 +699,13 @@ button.glass-btn svg { width: 17px; height: 17px; display: block; }
   background: var(--teal-text); flex: none;
 }
 .verdict-text { font-size: var(--fs-body); line-height: 1.55; color: var(--text); margin-top: .5rem; }
+/* Štítek "AI meteorolog" nesl `--temp1`, tedy barvu vyhrazenou TEPLOTĚ.
+   Bylo to porušení Pravidla významu, ne jen kontrastu (naměřeno 1,95:1 ve
+   světlém motivu). Fialová je v systému vyhrazená odvozeným a modelovým
+   vrstvám — narace z jazykového modelu je přesně to. */
 .verdict-ai-badge {
   display: inline-flex; align-items: center; gap: .25rem;
-  font-size: var(--fs-tiny); font-weight: 800; color: var(--temp1);
+  font-size: var(--fs-tiny); font-weight: 800; color: var(--purple-text);
   text-transform: uppercase; letter-spacing: .07em; margin-bottom: .3rem;
 }
 #storm-trend.approaching { color: var(--red-text); }
@@ -676,7 +715,7 @@ button.glass-btn svg { width: 17px; height: 17px; display: block; }
 .rain-badge.green  { background: color-mix(in srgb, var(--green) 18%, transparent);  color: var(--green-text); }
 .rain-badge.yellow { background: color-mix(in srgb, var(--yellow) 20%, transparent); color: var(--orange-text); }
 .rain-badge.orange { background: color-mix(in srgb, var(--orange) 18%, transparent); color: var(--orange-text); }
-.rain-badge.red    { background: color-mix(in srgb, var(--red) 18%, transparent);    color: var(--red-text); }
+.rain-badge.red    { background: color-mix(in srgb, var(--red) 18%, transparent);    color: var(--red-on-tint); }
 .rain-badge .rb-dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; flex: none; }
 .hint { color: var(--muted); font-size: var(--fs-body); }
 .updated { color: var(--muted); font-size: var(--fs-tiny); margin-top: .3rem; font-variant-numeric: tabular-nums; }
@@ -1145,7 +1184,7 @@ button.glass-btn svg { width: 17px; height: 17px; display: block; }
 .fc7d-arrow { display: inline-block; margin-right: .1rem; line-height: 1; }
 .fc7d-hb { width: 60%; height: 14px; display: flex; align-items: flex-end; }
 .fc7d-hb i { width: 100%; background: var(--blue); border-radius: 2px; display: block; }
-.fc7d-hp { font-size: var(--fs-micro); color: var(--blue-text); font-weight: 700; min-height: 1em; }
+.fc7d-hp { font-size: var(--fs-micro); color: var(--accent-on-tint); font-weight: 700; min-height: 1em; }
 
 /* Graf dostal výšku po zrušeném meteogramu — na 130 px se legenda s pěti
    datovými řadami tlačila do křivky. */
@@ -1529,7 +1568,9 @@ button.glass-btn svg { width: 17px; height: 17px; display: block; }
 #accum-legend.show { display: block; }
 #accum-legend .accum-scale { display: flex; margin-top: .3rem; }
 #accum-legend .accum-scale span {
-  flex: 1; text-align: center; font-size: var(--fs-micro); color: #fff;
+  /* Barvu popisku nese každý stupeň sám (inline v index.html) — bílá natvrdo
+     tady dávala na světlých stupních 1,6:1. */
+  flex: 1; text-align: center; font-size: var(--fs-micro);
   padding: 2px 0; min-width: 20px; font-weight: 600;
 }
 #accum-legend .accum-scale span:first-child { border-radius: 4px 0 0 4px; }
@@ -1658,7 +1699,7 @@ button.ctrl .uicon { width: 1.12em; height: 1.12em; }
 #t0-marker {
   position: absolute; bottom: -16px;
   transform: translateX(-50%);
-  font-size: var(--fs-tiny); color: var(--t0-color); font-weight: 800;
+  font-size: var(--fs-tiny); color: var(--t0-text); font-weight: 800;
   pointer-events: none; white-space: nowrap;
 }
 #t0-tick {
@@ -1668,7 +1709,7 @@ button.ctrl .uicon { width: 1.12em; height: 1.12em; }
 }
 #frame-time { font-size: var(--fs-body); font-weight: 800; min-width: 60px; text-align: right; color: var(--text); font-variant-numeric: tabular-nums; flex: none; }
 .nowcast-label { color: var(--accent); }
-.t0-label { color: var(--t0-color); }
+.t0-label { color: var(--t0-text); }
 
 button.ctrl {
   padding: .3rem .6rem; border-radius: 999px; cursor: pointer;
@@ -1685,7 +1726,8 @@ button.ctrl:active { transform: scale(.94); }
    "kočkopes" pocit z horní části. Stejný zápis už používá .layer-btn.active
    i #btn-push.on, takže se tím tři jazyky slily na jeden. */
 button.ctrl.active {
-  color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, var(--glass));
+  /* Text na tintu vlastní barvy — viz --accent-on-tint. */
+  color: var(--accent-on-tint); background: color-mix(in srgb, var(--accent) 14%, var(--glass));
   box-shadow: var(--gshadow), inset 0 1px 0 var(--spec), inset 0 0 0 1.5px var(--accent);
 }
 #btn-play { background: var(--accent-solid); color: #fff;
@@ -1886,7 +1928,9 @@ button.ctrl.active {
 #rain-measured { display: none; font-size: var(--fs-sm); color: var(--muted); margin-top: .3rem; line-height: 1.45; }
 #rain-measured.show { display: block; }
 #rain-measured b { color: var(--fg); }
-#rain-measured.rain-wet b { color: var(--blue, #0A84FF); }
+/* Fallback uvnitř var() byl natvrdo tmavá varianta, takže ve světlém
+   motivu svítila modř z tmavého. */
+#rain-measured.rain-wet b { color: var(--blue-text); }
 
 /* ── Bouřky: shluky blesků jako plochy ──────────────────────────────────────
    Blob je záměrně polopropustný a bez ostré hrany — hranice bouřky z úderů

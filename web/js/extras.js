@@ -436,7 +436,7 @@ export function renderAstro(data, fc) {
       ? `<div class="astro-row"><span class="a-k">Astro noc</span><span class="a-v">${hm(sg.duskAstro)}–${hm(sg.dawnAstro)}</span><span class="a-d">slunce pod −18°</span></div>`
       : `<div class="astro-row"><span class="a-k">Astro noc</span><span class="a-v" style="color:var(--muted)">nenastává</span><span class="a-d">letní světlé noci</span></div>`}
     ${sg?.darkStart && sg?.darkEnd
-      ? `<div class="astro-row"><span class="a-k">Tmavé okno</span><span class="a-v" style="color:var(--green)">${hm(sg.darkStart)}–${hm(sg.darkEnd)}</span><span class="a-d">bez Slunce i Měsíce</span></div>` : ""}
+      ? `<div class="astro-row"><span class="a-k">Tmavé okno</span><span class="a-v" style="color:var(--green-text)">${hm(sg.darkStart)}–${hm(sg.darkEnd)}</span><span class="a-d">bez Slunce i Měsíce</span></div>` : ""}
     ${strip}
     ${sg?.planets?.length ? `<div class="astro-row"><span class="a-k">Planety</span><span class="a-v">${sg.planets.map(p => `${esc(p.name)} <span style="color:var(--muted);font-weight:400">(${esc(p.when)})</span>`).join(" · ")}</span></div>` : ""}
     ${showerStr ? `<div class="astro-row"><span class="a-k">Met. roj</span><span class="a-v">${esc(showerStr)}</span><span class="a-d">radiant po půlnoci${moonWarns}</span></div>` : ""}`);
@@ -467,7 +467,7 @@ export function renderWinter(fc, data) {
   const rows = [];
   if (next48snow >= 0.2) rows.push(`<div class="astro-row"><span class="a-k">Sněžení</span><span class="a-v">~${num(next48snow)} cm / 48 h</span></div>`);
   if (frostHours > 0) rows.push(`<div class="astro-row"><span class="a-k">Mráz</span><span class="a-v">${frostHours} h pod 0 °C</span><span class="a-d">z příštích 24 h</span></div>`);
-  if (iceRisk) rows.push(`<div class="astro-row"><span class="a-k">Náledí</span><span class="a-v" style="color:var(--red)">riziko</span><span class="a-d">srážky při teplotě ≤ 1 °C</span></div>`);
+  if (iceRisk) rows.push(`<div class="astro-row"><span class="a-k">Náledí</span><span class="a-v" style="color:var(--red-text)">riziko</span><span class="a-d">srážky při teplotě ≤ 1 °C</span></div>`);
   revealSwap(body, rows.join(""));
   panel.classList.add("show");
 }

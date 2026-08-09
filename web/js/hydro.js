@@ -7,7 +7,7 @@ import { esc } from "./utils.js";
 import { gc } from "./palette.js";
 
 const SPA_STYLE = {
-  "-1": { color: "#a16207", label: "sucho (pod limitem)" },
+  "-1": { color: gc("teplo"), label: "sucho (pod limitem)" },
   "0":  { color: "#0A84FF", label: "normální stav" },
   "1":  { color: gc("vystraha1"), label: "1. SPA — bdělost" },
   "2":  { color: gc("teplo"), label: "2. SPA — pohotovost" },
