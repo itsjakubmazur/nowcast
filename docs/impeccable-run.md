@@ -22,9 +22,14 @@ Poslední aktualizace: 2026-08-09
   shrnutím generovaným Gemini 2.5 Flash
 - Publikum: já a pár lidí, kteří chtějí vědět, jestli teď vyjít z domu.
   Mobil, venku, pár sekund pozornosti, opakované návraty během dne
-- Obrazovky: hlavní přehled (aktuální situace + narativ), radarová
-  mapa/animace, timeline srážek na příští hodiny, detail/graf,
-  metodika a zdroje dat
+- Obrazovky: appka je **jednostránková**. „Obrazovky" jsou čtyři sekce jedné
+  stránky, mezi kterými navigace skáče (nic neskrývá): **Teď** (nowcast,
+  odpočet do deště, srážkové sloupce 2 h / 12 h, druhý názor ČHMÚ), **Dnes**
+  (rozbalený detail dneška — hodiny, fáze, meteogram), **Týden** (7 dní
+  s rozklikem dne), **Data** (konsenzus modelů, žebříček přesnosti, verifikace,
+  ovzduší, astro, klima, historie). Nad tím vším živá radarová mapa
+  s časovou osou a vrstvami. Samostatná obrazovka „metodika a zdroje dat"
+  **neexistuje** — metodika žije v poznámkách pod panely a v patičce.
 - Osobnost: meteorologický nástroj — data first, vysoká informační hustota
   bez chaosu, střízlivé, dark mode výchozí, důvěryhodné.
   NE roztomilé, NE velké ikonové sluníčko, NE gradienty přes celou obrazovku
@@ -43,7 +48,9 @@ Poslední aktualizace: 2026-08-09
       principů, explicitně nerozhodnuto „bez runtime serveru".
 - [x] 2. document — `DESIGN.md` + sidecar `.impeccable/design.json`
       (schemaVersion 2, 11 komponent, 8stupňové tonální rampy).
-- [ ] 3. BRÁNA A — kontrola kontextu **← ZDE POKRAČUJ**
+- [x] 3. BRÁNA A — kontrola kontextu. Doložený původ všech 16 barev, 5 typo
+      rolí a 5 poloměrů proti `web/css/app.css`; našly se dvě nepřesnosti
+      v komponentách `DESIGN.md`. Odpověď „vše default" → 5 rozhodnutí níž.
 - [x] 4. critique po obrazovkách — cíl `web/index.html`, dvouagentní běh,
       **25/40**, 2× P0, 4× P1. Snímek:
       `.impeccable/critique/2026-08-08T11-47-07Z__web-index-html.md`.
@@ -88,6 +95,31 @@ motivu. `npm run test:smoke` prochází.
 
 ## Rozhodnutí
 
+### Z BRÁNY A (2026-08-09, odpověď „vše default")
+
+1. **`DESIGN.md` se opraví ručně, ne přes `document`.** Zaostal za kódem ve dvou
+   místech: `segment-active` hlásí `{colors.radarova-modr}` (`#0A84FF`), ale kód
+   po opravě kontrastu používá `--accent-solid` (`#0068D6`); `button-glass-hover`
+   má `backgroundColor: {colors.citelny-text}`, zatímco v kódu je
+   `color-mix(in srgb, var(--text) 8%, var(--glass2))` — zápis ztratil těch 8 %
+   a dokument tvrdí bílou na bílé. Chybí taky čtyři moduly (`modal.js`,
+   `emptystate.js`, `rail.js`, `palette.js`). Znovupuštění `document` by přepsalo
+   ručně psané pasáže a pojmenovaná pravidla, která nesou důvody, ne popis.
+2. **`critique` se pouští znovu v kroku 4.** Uložený snímek (25/40, 2× P0, 4× P1)
+   popisuje stav před opravnou vlnou; bez nového běhu čte `polish` v kroku 15
+   backlog, který neexistuje.
+3. **Audit report se ukládá do repu**, do `.impeccable/audit/` vedle kritiky.
+   Dosud žil jen v konverzaci a s ní by zmizel.
+4. **Seznam obrazovek srovnán s kódem** (viz sekce Kontext). Appka je
+   jednostránková se čtyřmi sekcemi; obrazovka „metodika a zdroje dat"
+   neexistuje a krok 10 by ji jinak hledal.
+5. **Kritika má jeden cíl, `web/index.html`, ne pět.** `critique-storage` sleduje
+   trend podle slugu; pět slugů by rozbilo porovnatelnost s dosavadními 25/40.
+
+### Provozní
+
+- Branch `design/impeccable` založená z `claude/web-improvements-brainstorm-4osku9`
+  (2026-08-09). Na konci každého spuštění se merguje do `main`.
 - `npx` v tomhle prostředí nefunguje, kroky s `impeccable detect` vynechány.
   **Bundlovaný detektor ale funguje** a spouštět se má:
   `node .claude/skills/impeccable/scripts/detect.mjs --json web/index.html web/js`.
