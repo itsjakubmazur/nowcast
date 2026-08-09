@@ -102,9 +102,16 @@ Poslední aktualizace: 2026-08-09
       se nesahalo. Opravena regrese: tlačítko přehrávání se na pauze vracelo
       k textovému glyfu „▶" uprostřed řady tahových SVG, což `DESIGN.md`
       zakazuje výslovně. Do sady přibyla ikona `play`.
-- [ ] 15. extract + polish
-- [ ] 16. finální audit
-- [ ] 17. BRÁNA E — souhrn a merge
+- [x] 15. extract + polish — `extract` měl rovnou co dělat: panel „Odkud jsou
+      čísla" z kroku 13 byl čtvrtá kopie sdíleného vzoru „klíč : hodnota",
+      dopsaná do systému omylem mnou. Složená do jedné deklarace s astro,
+      historií a klimatem. `polish` sloučil duplicitní `#storm-impact
+      .si-title` na sousedních řádcích.
+- [x] 16. finální audit — **18/20** (13 → 15 → 18). Theming, Responsive
+      a Implementation Integrity na 4; Accessibility drží na 3 kvůli jedinému
+      ověřenému zbytku pod AA (proužek hodin 4,32:1).
+      `.impeccable/audit/2026-08-09T14-05-00Z__web-index-html.md`.
+- [ ] 17. BRÁNA E — souhrn a merge **← ZDE POKRAČUJ**
 
 ## Co je hotové (opravy z kroků 4 a 5)
 

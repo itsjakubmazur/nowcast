@@ -1448,19 +1448,20 @@ button.glass-btn svg { width: 17px; height: 17px; display: block; }
    a popiskům dlaždic, kde jsou krátké a je jich pár. Tady jsou to celé
    fráze ("Konvektivní kondenzační hladina") a verzálkami se čtou mizerně.
    ═══════════════════════════════════════════════════════════════════════ */
-.astro-row, .hist-row, .ct-row {
+.astro-row, .hist-row, .ct-row, .mth-row {
   display: flex; align-items: baseline; gap: .5rem .6rem; flex-wrap: wrap;
   padding: .3rem 0; border-top: 1px solid var(--rowline);
   font-size: var(--fs-body);
 }
-.astro-row:first-of-type, .hist-row:first-of-type, .ct-row:first-of-type { border-top: none; }
+.astro-row:first-of-type, .hist-row:first-of-type, .ct-row:first-of-type,
+.mth-row:first-of-type { border-top: none; }
 /* Klíč: pevná minimální šířka, ať hodnoty startují na stejné svislici. */
-.astro-row .a-k, .hist-row .hist-label, .ct-row > span:first-child {
+.astro-row .a-k, .hist-row .hist-label, .ct-row > span:first-child, .mth-k {
   color: var(--muted); flex: 0 0 auto; min-width: 6.2rem;
 }
 /* Hodnota. Smí zalomit — dřív s nowrap přetékaly dlouhé řetězce
    ("Perseidy (ZHR 100), Delta Akvaridy …") ven z karty. */
-.astro-row .a-v, .hist-row b, .ct-row b {
+.astro-row .a-v, .hist-row b, .ct-row b, .mth-v {
   font-weight: 700; color: var(--fg); font-variant-numeric: tabular-nums;
   min-width: 0; overflow-wrap: anywhere;
 }
@@ -1484,12 +1485,12 @@ button.glass-btn svg { width: 17px; height: 17px; display: block; }
    Sazba stejná jako astro/historie: klíč vlevo tlumeně, hodnota vpravo —
    appka má pro dvojici "co : kolik" jeden tvar a tenhle ho dědí. */
 #method-panel { display: block; }
-.mth-row {
-  display: flex; gap: .5rem; align-items: baseline;
-  font-size: var(--fs-sm); line-height: 1.45; margin-bottom: .35rem;
-}
-.mth-k { color: var(--muted); flex: 0 0 auto; min-width: 5.2rem; font-weight: 700; }
-.mth-v { color: var(--fg); min-width: 0; overflow-wrap: anywhere; }
+/* Zbytek dědí ze sdíleného vzoru "klíč : hodnota" výš — tenhle panel byl
+   čtvrtá kopie téhož a dopsal jsem ji do systému omylem sám. Jiné je jen
+   to, že hodnota je věta, ne číslo: menší stupeň a normální řez, protože
+   tabulární tučné číslice se na souvislý text nehodí. */
+.mth-row { font-size: var(--fs-sm); }
+.mth-v { font-weight: 400; font-variant-numeric: normal; line-height: 1.45; }
 /* Bez vlastní velikosti: `.92em` na optickou korekci monospace je mimo
    osmistupňovou škálu a hlídka ve smoke testu ho správně odmítla. Rozdíl
    v kresbě je menší problém než devátý stupeň v systému. */
@@ -2145,8 +2146,10 @@ button.ctrl.active {
    červená v appce znamená "nebezpečí", ne "tady se něco hýbe". */
 #storm-impact.warn { --si-tep: 255, 159, 10; background: rgba(255, 159, 10, .16); border: 1px solid rgba(255, 159, 10, .5); }
 #storm-impact.sev  { --si-tep: 255, 69, 58;  background: rgba(255, 69, 58, .18);  border: 1px solid rgba(255, 69, 58, .6); }
-#storm-impact .si-title { font-weight: 800; font-size: var(--fs-md); }
-#storm-impact .si-title { display: flex; align-items: center; gap: .4rem; }
+#storm-impact .si-title {
+  font-weight: 800; font-size: var(--fs-md);
+  display: flex; align-items: center; gap: .4rem;
+}
 #storm-impact .si-bolt { width: 1.05em; height: 1.05em; flex: none; }
 #lightning-chip .uicon { width: 1em; height: 1em; vertical-align: -2px; margin-right: .25rem; }
 
