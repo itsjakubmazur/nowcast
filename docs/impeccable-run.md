@@ -63,8 +63,11 @@ Poslední aktualizace: 2026-08-09
       a Theming se zvedly z 2, obojí drží na trojce jen kvůli světlému motivu.
       0× P0, 3× P1, 5× P2, 4× P3. Report zapsaný do repu podle rozhodnutí 3:
       `.impeccable/audit/2026-08-09T12-45-00Z__web-index-html.md`.
-- [ ] 6. backlog
-- [ ] 7. BRÁNA B — schválení backlogu
+- [x] 6. backlog — `docs/design-backlog.md`. 17 položek sloučených z kritiky
+      a auditu (duplicity označené jako shoda dvou metod), každá s dopadem,
+      rizikem a příkazem. Návrh vyhodit tři: pevné šířky na `clamp()`,
+      přerozdělení typografických rolí, předělání dialogu Nastavení.
+- [ ] 7. BRÁNA B — schválení backlogu **← ZDE POKRAČUJ**
 - [ ] 8. shape hlavního přehledu
 - [ ] 9. BRÁNA C — schválení plánu
 - [ ] 10.–11. implementace po obrazovkách (doplň seznam po BRÁNĚ B)
