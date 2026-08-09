@@ -2523,6 +2523,33 @@ async function main() {
   assertTrue(prepnuto.light === "light" && prepnuto.system === null && !prepnuto.ulozeno,
     `návrat na systémový motiv smaže uloženou volbu (${JSON.stringify(prepnuto)})`);
 
+  // ── Jedna pravda o dešti ───────────────────────────────────────────────
+  // Tři místa v jedné kartě odpovídala na "kdy začne pršet" třemi různými
+  // čísly (naměřeno 14:54 / 14:45 / 17:35), protože každé četlo jiný zdroj.
+  // Hlava a dvouhodinová dráha musí souhlasit PŘESNĚ — obojí jede z radaru;
+  // dvanáctihodinová smí být jinde nejvýš o svoje rozlišení (30 min).
+  {
+    const cas = t => { const m = /(\d{1,2}):(\d{2})/.exec(t || ""); return m ? +m[1] * 60 + +m[2] : null; };
+    const r = await page.evaluate(() => ({
+      sub: document.getElementById("rc-sub")?.textContent || "",
+      dve: document.getElementById("minutely-msg")?.textContent || "",
+      dvanact: document.getElementById("outlook-msg")?.textContent || "",
+    }));
+    const hlava = cas(r.sub), dve = cas(r.dve), dvanact = cas(r.dvanact);
+    if (hlava != null && dve != null) {
+      assertTrue(Math.abs(hlava - dve) <= 1,
+        `hlava a 2h dráha hlásí týž začátek deště (${hlava} vs ${dve} min)`);
+    }
+    if (hlava != null && dvanact != null) {
+      assertTrue(Math.abs(hlava - dvanact) <= 30,
+        `12h dráha se od hlavy neliší víc než o své rozlišení (${Math.abs(hlava - dvanact)} min)`);
+      // Jednotka rozhoduje: "~30 min" je v pořádku, "~3 h" ne. Bez vazby na
+      // "h" chytal vzorek i třicet minut, protože začíná trojkou.
+      assertTrue(!/Sucho ještě ~\s*\d+\s*h\b/.test(r.dvanact),
+        `12h věta netvrdí dlouhé sucho, když radar vidí déšť ("${r.dvanact.slice(0, 45)}")`);
+    }
+  }
+
   await browser.close();
   server.close();
   rmrf(SERVE);

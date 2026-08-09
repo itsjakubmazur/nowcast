@@ -73,16 +73,50 @@ export function renderStormImpact(lat, lon) {
 // Práh "mokrého" slotu je společný s 2h záložkou (viz precipbars.js).
 const MIN_DRY_MIN = 45;      // kratší okno nemá smysl nabízet
 
-// Postaví timeline srážek (mm/h) po 30 min na příštích ~12 h: minutely_15 na
-// začátek (jemné), pak hodinovka. Vrací [{ ms, rate }].
-function precipTimeline(minutely, fc) {
+// Postaví timeline srážek (mm/h) po 30 min na příštích ~12 h: radar + model
+// na začátku, pak hodinovka. Vrací [{ ms, rate }].
+//
+// ── PROČ TU JE RADAR ────────────────────────────────────────────────────────
+// Tahle řada dřív stála VÝHRADNĚ na `minutely_15` + hodinovce. Radar do ní
+// nevstupoval a `renderOutlookWindows()` sáhla na `assessRain()` jen pro
+// otázku "prší teď". Důsledek byl měřitelný a trapný: jakmile radar viděl
+// déšť, který model ještě nemá, 12h záložka napsala "Sucho ještě ~3 h,
+// déšť přijde kolem 17:35", zatímco 2h záložka TÉŽE KARTY kreslila déšť
+// za deset minut. Tři odpovědi na jednu otázku ve třech centimetrech.
+//
+// Blend je záměrně TÝŽ, jaký používá dvouhodinová dráha v extras.js: do
+// 30. minuty radaru naplno, pak lineárně k nule ve 120. minutě. Kdyby se
+// lišil, obě záložky by se opět rozešly — jen míň nápadně, což je horší.
+function precipTimeline(minutely, fc, ptId) {
   const now = Date.now();
   const out = [];
+
+  // Radarová extrapolace pro čas `ms`. Indexuje se ČASEM RADARU: prvek k je
+  // hodnota v t0 + (k+1)·step — stejná konvence jako `act` v assessRain().
+  const G = state.GRID;
+  const series = ptId != null ? G?.series?.[String(ptId)] : null;
+  const stepMin = G?.step_min || 10;
+  const radarT0 = G?.t0_utc ? new Date(G.t0_utc).getTime() : null;
+  const radarAt = ms => {
+    if (!series?.length || radarT0 == null) return null;
+    const k = Math.round((ms - radarT0) / (stepMin * 60000)) - 1;
+    return k >= 0 && k < series.length ? series[k] : null;
+  };
+  const blend = (ms, model) => {
+    const radar = radarAt(ms);
+    if (radar == null) return model;
+    if (model == null) return radar;
+    const t = (ms - now) / 60000;                       // minut od teď
+    const w = t <= 30 ? 1 : Math.max(0, (120 - t) / 90);
+    return w * radar + (1 - w) * model;
+  };
+
   // 0–4 h z minutely_15 (mm/15min → mm/h ×4), agregováno po 30 min
   if (minutely?.length) {
     for (let i = 0; i + 1 < minutely.length && i < 16; i += 2) {
       const mm = (minutely[i]?.precip ?? 0) + (minutely[i + 1]?.precip ?? 0);
-      out.push({ ms: now + i * 15 * 60000, rate: mm * 2 }); // 2×15min mm → mm/h
+      const ms = now + i * 15 * 60000;
+      out.push({ ms, rate: blend(ms, mm * 2) });        // 2×15min mm → mm/h
     }
   }
   // navazující hodinovka (od poslední pokryté hodiny do +12 h)
@@ -90,7 +124,7 @@ function precipTimeline(minutely, fc) {
   for (const h of (fc?.hourlyFull || [])) {
     const ms = new Date(h.iso).getTime();
     if (ms <= covMs + 60000 || ms > now + 12 * 3600000) continue;
-    out.push({ ms, rate: h.precip ?? 0 });
+    out.push({ ms, rate: blend(ms, h.precip ?? 0) });
   }
   return out.sort((a, b) => a.ms - b.ms);
 }
@@ -103,7 +137,15 @@ export function renderOutlookWindows(minutely, fc) {
   const barsEl = document.getElementById("ow-bars");
   const axisEl = document.getElementById("ow-axis");
   if (!msgEl || !barsEl) return;
-  const tl = precipTimeline(minutely, fc);
+
+  // Bod mřížky je potřeba, aby do řady mohl vstoupit radar. Mimo pokrytí
+  // (světový režim) zůstane řada modelová, což je správně — radar tam není.
+  let ptId = null;
+  try {
+    if (state.inCZ && state.GRID) ptId = nearestPt(state.currentLat, state.currentLon).id;
+  } catch { /* mimo mřížku — jede se bez radaru */ }
+
+  const tl = precipTimeline(minutely, fc, ptId);
   if (tl.length < 6) { msgEl.textContent = ""; markPrecipBody("12h", false); return; }
 
   const now = Date.now();
@@ -115,10 +157,8 @@ export function renderOutlookWindows(minutely, fc) {
   // dožene až za hodinu.
   let radarWet = false;
   try {
-    const ptId = state.inCZ && state.GRID
-      ? nearestPt(state.currentLat, state.currentLon).id : null;
     radarWet = assessRain(ptId)?.status === "raining";
-  } catch { /* mimo mřížku nebo bez dat — spolehni se na model */ }
+  } catch { /* bez dat — spolehni se na model */ }
   const wetNow = radarWet || tl[0].rate >= WET_RATE;
 
   // najdi souvislá suchá okna

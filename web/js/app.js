@@ -277,9 +277,13 @@ function showForecast(lat, lon, label) {
   renderRainCountdown(id);
 
   document.getElementById("place").textContent = label || "Vybrané místo";
-  document.getElementById("dist").textContent = inCZ
+  // Vzdálenost k bodu mřížky je provozní detail (zůstává skrytá), ale
+  // přepnutí do světového režimu mění, co appka umí — to se říct musí.
+  const distEl = document.getElementById("dist");
+  distEl.textContent = inCZ
     ? `Nejbližší bod mřížky: ${num(near.dist)} km`
-    : "Světový režim — radar RainViewer + model";
+    : "Světový režim — RainViewer + model, ne vlastní nowcast";
+  distEl.classList.toggle("mode-world", !inCZ);
   updateFavBtn(lat, lon, label, () => renderFavRow(showForecast));
   showAiAsk();
 

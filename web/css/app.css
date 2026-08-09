@@ -641,7 +641,28 @@ button.glass-btn svg { width: 17px; height: 17px; display: block; }
 .fc-stat-bar   { height: 2.5px; background: var(--rowline); border-radius: 2px; margin-top: .35rem; overflow: hidden; }
 .fc-stat-bar-fill { height: 100%; width: 100%; transform-origin: left center; transition: transform .4s; }
 .place { font-size: var(--fs-sm); font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; display: flex; align-items: center; gap: .3rem; }
+/* ── Režim zdroje dat ─────────────────────────────────────────────────────
+   `.dist` byl `display: none` bez podmínky, zatímco do něj JS pilně psal buď
+   "Nejbližší bod mřížky: 3 km", nebo "Světový režim — radar RainViewer +
+   model". Uživatel tedy neměl jak poznat, jestli kouká na vlastní pysteps
+   extrapolaci z ČHMÚ, nebo na cizí dlaždice — což je přímo proti principu
+   "nejistota se přiznává" a proti tomu, čím se nástroj odlišuje.
+
+   Vzdálenost k bodu mřížky je provozní detail a zůstává skrytá. Přepnutí do
+   světového režimu ale mění, CO appka umí, takže se ukazuje — jako tichý
+   štítek u názvu místa, ne jako výstraha. */
 .dist  { display: none; }
+.dist.mode-world {
+  display: inline-flex; align-items: center; gap: .3rem;
+  margin-top: .15rem;
+  font-size: var(--fs-micro); font-weight: 700;
+  text-transform: uppercase; letter-spacing: .06em;
+  color: var(--muted);
+}
+.dist.mode-world::before {
+  content: ""; width: 5px; height: 5px; border-radius: 50%;
+  background: var(--teal-text); flex: none;
+}
 .verdict-text { font-size: var(--fs-body); line-height: 1.55; color: var(--text); margin-top: .5rem; }
 .verdict-ai-badge {
   display: inline-flex; align-items: center; gap: .25rem;

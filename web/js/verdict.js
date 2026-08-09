@@ -507,7 +507,10 @@ function sourcesClause({ source, modelAgrees, prob }) {
   if (modelAgrees === true) parts.push("radar i model se shodují");
   else if (modelAgrees === false) parts.push("jen radar, model zatím nic nevidí");
   else parts.push("radarová extrapolace");
-  if (prob != null) parts.push(`jistota ~${prob} %`);
+  // "jistota" samotná se v appce používala dvakrát pro dvě různé veličiny:
+  // tady je to pravděpodobnost z ensemblu nowcastu, o dvacet panelů níž shoda
+  // mezi modely. Obojí zůstává, jen se každé pojmenuje tím, čím je.
+  if (prob != null) parts.push(`ensemble ~${prob} %`);
   return " · " + parts.join(", ");
 }
 
