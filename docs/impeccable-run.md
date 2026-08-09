@@ -89,8 +89,19 @@ Poslední aktualizace: 2026-08-09
       záložního textu; hlavní fetch dostal 15s strop, protože
       `navigator.onLine` mrtvé spojení nezachytí; chybová hláška říká,
       co dál. Nulové srážky a čitelnost v obou motivech pokryté dřív.
-- [ ] 13. onboard — prázdné stavy a metodika
-- [ ] 14. animate — radarová animace
+- [x] 13. onboard — **záměrně úzký rozsah.** `PRODUCT.md` říká výslovně, že
+      onboarding a vysvětlování pojmů nejsou cíl, takže žádný tutoriál ani
+      průvodce. První návštěva už řešená byla (poslední místo → oblíbené →
+      geolokace, jinak "Zvolte místo"), prázdné stavy pokryl krok 12.
+      Přibyl panel „Odkud jsou čísla" v sekci Data: dělba práce mezi zdroji
+      (0–2 h radar, 2–12 h přechod, týden model, přesnost, druhý názor,
+      text) — to patičkou s atribucí říct nejde a nástroj, který si vede
+      účetnictví vlastní přesnosti, to říct má.
+- [x] 14. animate — crossfade mezi snímky radaru už existoval a je udělaný
+      správně (dva overlaye, odkrytí až po `load`, pojistka 260 ms), takže
+      se nesahalo. Opravena regrese: tlačítko přehrávání se na pauze vracelo
+      k textovému glyfu „▶" uprostřed řady tahových SVG, což `DESIGN.md`
+      zakazuje výslovně. Do sady přibyla ikona `play`.
 - [ ] 15. extract + polish
 - [ ] 16. finální audit
 - [ ] 17. BRÁNA E — souhrn a merge

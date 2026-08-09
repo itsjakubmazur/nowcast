@@ -130,7 +130,9 @@ export function togglePlay(forcePlay) {
     scheduleNext(PLAY.intervalMs);
   } else {
     clearTimeout(state.playTimer);
-    btn.textContent = "▶";
+    // SVG, ne "▶". Textový glyf se na každé platformě kreslí jinak a stál
+    // uprostřed řady tahových ikon — DESIGN.md to zakazuje výslovně.
+    btn.innerHTML = uiIcon("play");
     btn.title = "Přehrát";
     btn.classList.remove("active");
   }

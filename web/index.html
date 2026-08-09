@@ -109,7 +109,7 @@
        tvar přehrávače (tlačítka vlevo, scrubber, čas vpravo). -->
   <div class="radar-row" id="radar-row-play">
     <button class="ctrl" id="btn-prev" title="Předchozí snímek (←)" aria-label="Předchozí snímek">◀</button>
-    <button class="ctrl" id="btn-play" title="Přehrát/Pozastavit (mezerník)" aria-label="Přehrát/Pozastavit">▶</button>
+    <button class="ctrl" id="btn-play" title="Přehrát/Pozastavit (mezerník)" aria-label="Přehrát/Pozastavit" data-icon="play"></button>
     <button class="ctrl" id="btn-next" title="Další snímek (→)" aria-label="Další snímek">▶▶</button>
     <div class="timeline-wrap">
       <input type="range" id="timeline" min="0" value="0" aria-label="Časová osa radaru" />
@@ -324,6 +324,22 @@
       <div id="blend-card" data-sec="data"></div>
       <!-- 9 modelů + hodnocení přesnosti pro konkrétní místo -->
       <div id="models-panel" data-sec="data"></div>
+      <!-- Odkud se která čísla berou.
+           NENÍ to onboarding. PRODUCT.md říká výslovně, že vysvětlování pojmů
+           a první dojem nejsou cíl — uživatel ví, co je echotop nebo COTREC.
+           Tohle je opačná věc: nástroj, který si vede účetnictví vlastní
+           přesnosti, má říct i to, ČÍM co počítá. Do patičky se vejde jen
+           atribuce zdrojů, ne dělba práce mezi nimi. -->
+      <div id="method-panel" data-sec="data">
+        <h2 class="astro-title">Odkud jsou čísla</h2>
+        <div class="mth-row"><span class="mth-k">0–2 h</span><span class="mth-v">Vlastní extrapolace radaru ČHMÚ (pysteps, Lucas–Kanade advekce, Marshall–Palmer Z–R). Pravděpodobnost z ensemblu perturbované advekce.</span></div>
+        <div class="mth-row"><span class="mth-k">2–12 h</span><span class="mth-v">Váha radaru klesá lineárně k nule ve 120. minutě, přebírá Open-Meteo. Přechod je plynulý, ne skok mezi zdroji.</span></div>
+        <div class="mth-row"><span class="mth-k">Týden</span><span class="mth-v">Open-Meteo <code>best_match</code>, opravený o systematickou odchylku naměřenou proti nejbližší stanici.</span></div>
+        <div class="mth-row"><span class="mth-k">Přesnost</span><span class="mth-v">Sliby modelů se ukládají a po ≥ 3 h porovnávají se skutečným měřením stanice do 40 km. Žebříček je pro tohle místo, ne krajský průměr.</span></div>
+        <div class="mth-row"><span class="mth-k">Druhý názor</span><span class="mth-v">Publikovaná extrapolace ČHMÚ (COTREC) vedle naší — ukazuje se, i když nesouhlasí.</span></div>
+        <div class="mth-row"><span class="mth-k">Text</span><span class="mth-v">Věty píše jazykový model z hotových čísel. Žádnou hodnotu nesmí vymyslet ani dopočítat; když selže, ukáže se šablona a řekne se to.</span></div>
+        <div class="mth-note">Mimo pokrytí radaru ČHMÚ jede appka na dlaždicích RainVieweru a modelu — vlastní nowcast tam není a panel to hlásí.</div>
+      </div>
       <div class="aq-panel" id="aq-panel" data-sec="today"></div>
       <!-- Astro — slunce, měsíc, kvalita noci -->
       <div id="astro-panel" data-sec="today">

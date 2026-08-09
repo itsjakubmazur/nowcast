@@ -1479,6 +1479,29 @@ button.glass-btn svg { width: 17px; height: 17px; display: block; }
 .nstrip { display: inline-flex; gap: 2px; align-items: center; }
 .nstrip i { width: 11px; height: 13px; border-radius: 3px; background: var(--muted); display: inline-block; }
 
+/* ── Odkud jsou čísla ────────────────────────────────────────────────────
+   Není to nápověda pro nováčka (ta cíl není), ale dělba práce mezi zdroji.
+   Sazba stejná jako astro/historie: klíč vlevo tlumeně, hodnota vpravo —
+   appka má pro dvojici "co : kolik" jeden tvar a tenhle ho dědí. */
+#method-panel { display: block; }
+.mth-row {
+  display: flex; gap: .5rem; align-items: baseline;
+  font-size: var(--fs-sm); line-height: 1.45; margin-bottom: .35rem;
+}
+.mth-k { color: var(--muted); flex: 0 0 auto; min-width: 5.2rem; font-weight: 700; }
+.mth-v { color: var(--fg); min-width: 0; overflow-wrap: anywhere; }
+/* Bez vlastní velikosti: `.92em` na optickou korekci monospace je mimo
+   osmistupňovou škálu a hlídka ve smoke testu ho správně odmítla. Rozdíl
+   v kresbě je menší problém než devátý stupeň v systému. */
+.mth-v code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--muted);
+}
+.mth-note {
+  font-size: var(--fs-tiny); color: var(--muted); line-height: 1.45;
+  margin-top: .5rem; padding-top: .4rem; border-top: 1px dashed var(--rowline);
+}
+
 /* zimní panel — objeví se jen v sezóně */
 #winter-panel {
   border-radius: var(--r-card); padding: .8rem .9rem .7rem; display: none;
