@@ -166,8 +166,11 @@ function _renderWuHistory(stationId) {
   }
   const series = hist.series;
   const isDark = document.documentElement.getAttribute("data-theme") !== "light";
-  const gc = isDark ? "rgba(255,255,255,.07)" : "rgba(0,0,0,.07)";
-  const tc = isDark ? "#6b7280" : gc("neutral");
+  // POZOR na jméno: `gc` je importovaná funkce z palette.js. Lokální barva
+  // mřížky se tu dřív jmenovala taky `gc` a funkci zastínila — `gc("teplota")`
+  // pak volalo ŘETĚZEC a celé vykreslení historie spadlo na TypeError.
+  const mrizka = isDark ? "rgba(255,255,255,.07)" : "rgba(0,0,0,.07)";
+  const tc = gc("neutral");
 
   const firstDt = new Date(series[0].dt);
   const lastDt = new Date(series[series.length - 1].dt);
@@ -224,8 +227,8 @@ function _renderWuHistory(stationId) {
           tooltip: { mode: "index", intersect: false },
         },
         scales: {
-          x: { ticks: { maxTicksLimit: 6, color: tc, font: { size: 10 } }, grid: { color: gc } },
-          y: { ticks: { color: tc, font: { size: 10 } }, grid: { color: gc } },
+          x: { ticks: { maxTicksLimit: 6, color: tc, font: { size: 10 } }, grid: { color: mrizka } },
+          y: { ticks: { color: tc, font: { size: 10 } }, grid: { color: mrizka } },
         },
       },
     });
@@ -622,8 +625,8 @@ function _renderTabDnes(body, stationId) {
     body.appendChild(wrap);
 
     const isDark2 = document.documentElement.getAttribute("data-theme") !== "light";
-    const gc = isDark2 ? "rgba(255,255,255,.07)" : "rgba(0,0,0,.07)";
-    const tc = isDark2 ? "#6b7280" : gc("neutral");
+    const mrizka = isDark2 ? "rgba(255,255,255,.07)" : "rgba(0,0,0,.07)";
+    const tc = gc("neutral");
     const valid = vals.filter(v => v != null);
     const vMin = valid.length ? Math.min(...valid) : 0;
     const vMax = valid.length ? Math.max(...valid) : 1;
@@ -672,8 +675,8 @@ function _renderTabDnes(body, stationId) {
           },
         },
         scales: {
-          x: { ticks: { maxTicksLimit: 6, color: tc, font: { size: 10 } }, grid: { color: gc } },
-          y: { ticks: { color: tc, font: { size: 10 } }, grid: { color: gc } },
+          x: { ticks: { maxTicksLimit: 6, color: tc, font: { size: 10 } }, grid: { color: mrizka } },
+          y: { ticks: { color: tc, font: { size: 10 } }, grid: { color: mrizka } },
         },
       },
     });
@@ -889,8 +892,8 @@ function _renderTabRocni(body, stationId) {
     block.innerHTML = `<h4>Roční teplotní extrémy (°C)</h4><div class="chmi-chart-block-inner"><canvas></canvas></div>`;
     body.appendChild(block);
     const isDark = document.documentElement.getAttribute("data-theme") === "dark";
-    const gc = isDark ? "rgba(255,255,255,.08)" : "rgba(0,0,0,.07)";
-    const tc = isDark ? "#8b909a" : "#6b7280";
+    const mrizka = isDark ? "rgba(255,255,255,.08)" : "rgba(0,0,0,.07)";
+    const tc = gc("neutral");
     const chart = new Chart(block.querySelector("canvas"), {
       type: "line",
       data: {
@@ -904,8 +907,8 @@ function _renderTabRocni(body, stationId) {
         interaction: { mode: "index", intersect: false },
         plugins: { legend: { display: true, labels: { color: tc, font: { size: 10 } } } },
         scales: {
-          x: { ticks: { maxTicksLimit: 8, color: tc, font: { size: 10 } }, grid: { color: gc } },
-          y: { ticks: { color: tc, font: { size: 10 } }, grid: { color: gc } },
+          x: { ticks: { maxTicksLimit: 8, color: tc, font: { size: 10 } }, grid: { color: mrizka } },
+          y: { ticks: { color: tc, font: { size: 10 } }, grid: { color: mrizka } },
         },
       },
     });

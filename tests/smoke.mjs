@@ -2744,6 +2744,49 @@ async function main() {
       `selhání jazykového modelu se přizná, ticho ne (${JSON.stringify(fb)})`);
   }
 
+  // ── Historie vlastní stanice se doopravdy vykreslí ─────────────────────
+  // Tenhle test dosud neexistoval a stálo to draho: při přechodu grafů na
+  // barvy ze systému dostala lokální proměnná pro barvu mřížky jméno `gc`,
+  // stejné jako importovaná funkce z palette.js. Funkce se tím zastínila,
+  // `gc("teplota")` volalo řetězec a CELÉ vykreslení historie stanice padalo
+  // na TypeError — tiše, uvnitř dialogu, který nic netestovalo.
+  {
+    const chyby = [];
+    const posluchac = m => { if (m.type() === "error") chyby.push(m.text()); };
+    page.on("console", posluchac);
+    const pchyby = [];
+    const pErr = e => pchyby.push(e.message);
+    page.on("pageerror", pErr);
+
+    await page.evaluate(async () => {
+      const m = await import("./js/stations.js");
+      await m.openWuDetail("IBRNO445");
+    });
+    await page.waitForTimeout(400);
+
+    const h = await page.evaluate(() => {
+      const c = document.getElementById("wu-history-charts");
+      return {
+        text: (c?.textContent || "").slice(0, 60),
+        canvasu: c?.querySelectorAll("canvas").length ?? 0,
+        chybi: /není k dispozici/.test(c?.textContent || ""),
+      };
+    });
+    page.off("console", posluchac);
+    page.off("pageerror", pErr);
+
+    assertTrue(pchyby.length === 0,
+      `vykreslení historie stanice nespadlo (${pchyby.slice(0, 1).join("") || "0 výjimek"})`);
+    assertTrue(!h.chybi && h.canvasu >= 3,
+      `historie vlastní stanice se vykreslila (${h.canvasu} grafů, "${h.text.trim().slice(0, 40)}")`);
+
+    await page.evaluate(async () => {
+      const m = await import("./js/stations.js");
+      m.closeWuDetail();
+    });
+    await page.waitForTimeout(150);
+  }
+
   await browser.close();
   server.close();
   rmrf(SERVE);
