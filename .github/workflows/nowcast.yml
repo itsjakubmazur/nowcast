@@ -291,6 +291,13 @@ jobs:
             data/chmi_stations.json
             data/chmi_series_index.json
             data/chmi_series
+            # data/chmi_history TU DŘÍV CHYBĚLO, přestože v seznamu pro OBNOVU
+            # výš je. Adresář se tedy z cache četl, ale nikdy se do ní nezapsal.
+            # Jakmile vypršel poslední záznam, který ho držel, dlouhá historie
+            # stanic zmizela — a protože chmi_stats.json v cache zůstal,
+            # tvářily se stanice jako hotové a nic je nepřegenerovalo.
+            # Uzavřený kruh; validate.py ho hlásil jako "historie=0 stanic/0 kB".
+            data/chmi_history
             data/chmi_stats.json
             data/wu_stations.json
             data/wu_history.json

@@ -70,15 +70,31 @@ CHAR_TOKENS = {"AVG", "MAX", "MIN", "SUM", "CNT", "MOD", "MED"}
 _diag_left = 3
 
 
-def fetch_json(url):
+def fetch_json(url, stav=None):
+    """
+    Vrátí JSON, nebo None.
+
+    `stav` je volitelný slovník, do kterého se zapíše `stav["chyba"] = True`,
+    když se dotaz NEPODAŘILO DOKONČIT — tedy timeout, výpadek DNS, HTTP 5xx.
+    Čisté 404 chybou není: ČHMÚ tu řadu prostě nemá a příště ji mít nebude.
+
+    Ten rozdíl je zásadní, protože volající si výsledek PAMATUJE natrvalo.
+    Bez něj se jednorázový výpadek sítě uložil jako "tahle stanice nemá
+    historii" a stanice se už nikdy nezkusila — naměřeno rekordy=0/121,
+    tedy sto dvacet jedna stanic trvale odepsaných po jednom špatném běhu.
+    """
     try:
         r = SESSION.get(url, headers=HEADERS, timeout=TIMEOUT)
         if r.ok:
             return r.json()
         if r.status_code != 404:
             print(f"  HTTP {r.status_code}: {url}", file=sys.stderr)
+            if stav is not None:
+                stav["chyba"] = True
     except Exception as e:
         print(f"  ERR {url}: {e}", file=sys.stderr)
+        if stav is not None:
+            stav["chyba"] = True
     return None
 
 
@@ -326,6 +342,28 @@ def main():
                 file_age_h = (now_utc - t).total_seconds() / 3600
         except Exception:
             all_stats = {}
+    # Stanice se přeskakují, když už jsou ve statistikách. Jenže soubor
+    # historie leží JINDE (chmi_history/) a mohl se ztratit sám — přesně to
+    # se stalo, když chyběl v seznamu pro uložení do cache. Vznikl uzavřený
+    # kruh: historie zmizela, stanice se tvářila jako hotová, a nic ji už
+    # nikdy nepřegenerovalo. Kdo je ve statistikách bez svého souboru, jde
+    # zpátky do fronty.
+    hist_dir_pre = DATA_DIR / "chmi_history"
+    def _ma_historii(w):
+        return (hist_dir_pre / f"{w.replace('/', '_')}.json").exists()
+    # Prázdné statistiky ("ČHMÚ řadu nemá") soubor mít nemají a nemá cenu je
+    # kvůli tomu dokola stahovat.
+    def _je_prazdna(w):
+        v = all_stats.get(w) or {}
+        return not v.get("records") and not v.get("monthly_normals") and not v.get("yearly_trend")
+
+    osirele = [w for w in wsis if w in all_stats and not _je_prazdna(w) and not _ma_historii(w)]
+    if osirele:
+        print(f"  {len(osirele)} stanic má statistiky bez souboru historie — "
+              f"vracím je do fronty", file=sys.stderr)
+        for w in osirele:
+            all_stats.pop(w, None)
+
     pending = [w for w in wsis if w not in all_stats]
     if not pending:
         if file_age_h is not None and file_age_h < CACHE_MAX_AGE_H:
@@ -343,25 +381,32 @@ def main():
             print(f"  Rozpočet {BUDGET_S} s vyčerpán — zbytek doběhne příště "
                   f"({len(all_stats)} stanic zatím)", file=sys.stderr)
             break
+        stav = {}     # fetch_json sem zapíše chyba=True při NEDOKONČENÉM dotazu
         merged = []   # měsíční + denní řádky (historical + recent)
         for url in (f"{HIST}/monthly/mly-{wsi}.json",
                     f"{RECENT}/monthly/mly-{wsi}.json"):
-            d = fetch_json(url)
+            d = fetch_json(url, stav)
             if d:
                 merged.extend(extract_rows(d, "mly"))
 
         yrs_rows = []
-        d = fetch_json(f"{HIST}/yearly/yrs-{wsi}.json")
+        d = fetch_json(f"{HIST}/yearly/yrs-{wsi}.json", stav)
         if d:
             yrs_rows = extract_rows(d, "yrs")
 
         # denní data aktuálního měsíce — ať čerstvý rekord nečeká na konec měsíce
-        d = fetch_json(f"{RECENT}/daily/dly-{wsi}-{yyyymm}.json")
+        d = fetch_json(f"{RECENT}/daily/dly-{wsi}-{yyyymm}.json", stav)
         if d:
             merged.extend(extract_rows(d, "dly"))
 
         if not merged:
-            # zapamatuj si i "bez dat" — jinak by se stanice zkoušela každý běh
+            if stav.get("chyba"):
+                # Nedoptali jsme se. NEZAPAMATOVAT — jinak by jeden výpadek
+                # sítě stanici odepsal natrvalo. Zkusí se příští běh.
+                print(f"  ~ {wsi}: dotaz se nepodařilo dokončit, zkusím příště",
+                      file=sys.stderr)
+                continue
+            # ČHMÚ řadu opravdu nemá (404) — zapamatuj, ať se nezkouší pořád
             all_stats[wsi] = {"records": {}, "monthly_normals": {}, "yearly_trend": {}}
             continue
 
