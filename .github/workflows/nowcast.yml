@@ -324,8 +324,20 @@ jobs:
       - name: Validate publikovaná data (poslední pojistka před deployem)
         run: python pipeline/validate.py
 
+      # Diagnostická kopie dat na jeden den — slouží k tomu, aby se dalo po
+      # nepovedeném běhu podívat, co pipeline vlastně spočítala. NENÍ součástí
+      # publikace a nesmí ji blokovat.
+      #
+      # continue-on-error je tu z konkrétního důvodu: 13. 8. v 5:20 vypršel
+      # GitHubu vlastní artifact endpoint (5× "Request timeout" na
+      # ArtifactService/CreateArtifact), krok spadl a s ním celý job — takže
+      # se neprovedlo "Copy data into web/" ani commit publikační značky.
+      # Spočítaná data tím pádem nikam nedojela kvůli výpadku úložiště pro
+      # jejich zálohu. Běh o sedm minut později prošel, takže se to samo
+      # zahojilo, ale pořadí důležitosti bylo obrácené.
       - name: Upload data artifacts
         uses: actions/upload-artifact@v4
+        continue-on-error: true
         with:
           name: nowcast-data-${{ github.run_id }}
           path: data/
