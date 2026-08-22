@@ -2787,6 +2787,40 @@ async function main() {
     await page.waitForTimeout(150);
   }
 
+  // ── Bouřkový banner nesmí zmizet pod mapou ─────────────────────────────
+  // Při přesunu banneru z levé karty na úroveň <body> (aby na mobilu nebyl
+  // až pátý blok) dostal `order` a margin, ale ne pozicování. Mapa je
+  // `position: fixed; z-index: 0` a sahá 6vh pod úchyt sheetu; nepozicovaný
+  // prvek se maluje POD pozicovaný, takže bannerу zmizel titulek a vidět
+  // zůstal jen spodní řádek. Test se ptá prohlížeče, kdo je doopravdy navrchu.
+  {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.waitForTimeout(250);
+    const kryti = await page.evaluate(() => {
+      const b = document.getElementById("storm-impact");
+      const puvodni = { cls: b.className, html: b.innerHTML };
+      b.className = "storm-impact show warn";
+      b.innerHTML = '<div class="si-title">Bouřka tě zasáhne za ~25 min</div>'
+        + '<div class="si-sub">48,5 dBZ · postupuje od Z</div>';
+      void document.body.offsetHeight;
+      const t = b.querySelector(".si-title").getBoundingClientRect();
+      const body = [
+        document.elementFromPoint(t.left + 4, t.top + 4),
+        document.elementFromPoint(t.left + t.width / 2, t.top + t.height / 2),
+      ];
+      const out = {
+        skryto: body.filter(e => e && e.closest && !e.closest("#storm-impact")).length,
+        kdo: body.map(e => (e && (e.id || e.className)) || null),
+      };
+      b.className = puvodni.cls; b.innerHTML = puvodni.html;
+      return out;
+    });
+    assertTrue(kryti.skryto === 0,
+      `bouřkový banner není překrytý mapou (${kryti.kdo.join(", ")})`);
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.waitForTimeout(200);
+  }
+
   await browser.close();
   server.close();
   rmrf(SERVE);

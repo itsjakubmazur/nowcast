@@ -2430,8 +2430,20 @@ body.embed #left-card { top: 100px; bottom: 1rem; }
   /* sheet: levá karta začíná pod mapou a roluje přes ni */
   /* Bouřkový banner vytažený z levé karty na úroveň <body> (viz rail.js).
      Sdílí `order` s úchytem sheetu a v DOMu stojí hned za ním, takže je
-     první věcí ve svitku — ne pátou pod šestnácti přepínači mapy. */
-  body > #storm-impact { order: 1; margin: .5rem .6rem 0; }
+     první věcí ve svitku — ne pátou pod šestnácti přepínači mapy.
+
+     `position: relative; z-index: 10` NENÍ dekorace. Mapa je `position:
+     fixed; z-index: 0` a sahá 6vh pod úchyt sheetu. Nepozicovaný prvek se
+     podle pořadí vykreslování maluje POD pozicovaný, takže banner bez těchhle
+     dvou řádků zmizel mapě pod břichem — naměřeno: mapa končila na 388 px,
+     banner začínal na 362, a `elementFromPoint` na souřadnici titulku vracel
+     `map`. Vidět zůstal jen spodní řádek, který přesahoval. Všechny ostatní
+     bloky na této úrovni (#left-card, #radar-bar, #storm-bar, #radar-legend)
+     to mají ze stejného důvodu. */
+  body > #storm-impact {
+    order: 1; margin: .5rem .6rem 0;
+    position: relative; z-index: 10;
+  }
 
   #sheet-grabber {
     order: 1;
