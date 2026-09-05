@@ -1,1 +1,1 @@
-[]
+[{"run_utc": "2026-09-05T18:38:11.595519+00:00", "lead_min": 60, "n": 278, "hits": 0, "misses": 3, "false_alarms": 0, "correct_neg": 275, "sum_pred_mm": 0.0, "sum_obs_mm": 0.4}]
