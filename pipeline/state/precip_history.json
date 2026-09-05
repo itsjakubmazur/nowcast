@@ -1,1 +1,1 @@
-[{"run_utc": "2026-09-05T18:46:34.505633+00:00", "lead_min": 60, "n": 277, "hits": 0, "misses": 2, "false_alarms": 0, "correct_neg": 275, "sum_pred_mm": 0.0, "sum_obs_mm": 0.2}]
+[{"run_utc": "2026-09-05T18:46:34.505633+00:00", "lead_min": 60, "n": 277, "hits": 0, "misses": 2, "false_alarms": 0, "correct_neg": 275, "sum_pred_mm": 0.0, "sum_obs_mm": 0.2}, {"run_utc": "2026-09-05T19:07:06.221756+00:00", "lead_min": 60, "n": 172, "hits": 0, "misses": 0, "false_alarms": 0, "correct_neg": 172, "sum_pred_mm": 0.12, "sum_obs_mm": 0.0}]
