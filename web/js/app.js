@@ -33,6 +33,7 @@ import {
   renderStationCheck, renderRainMeasured, initPrecipTabs,
 } from "./extras.js";
 import { renderClimateAnomaly, renderDayInHistory } from "./climate.js";
+import { renderAurora } from "./aurora.js";
 import { renderChmiExtras } from "./chmidata.js";
 import { initSettingsPanel, applySettingsOnLoad, saveSettings } from "./settings.js";
 import { initCompare, showCompareBtn } from "./compare.js";
@@ -102,9 +103,11 @@ async function loadData() {
     fetchJson("chmi_forecast.json"),
     fetchJson("chmi_regional.json"),
     fetchJson("euro_stations.json"),
+    fetchJson("aurora.json"),
   ]);
   const [wu, chmi, accuracy, metar, chmiRain,
-    cotrec, echotop, chmiAir, chmiAero, chmiNormals, chmiText, chmiRegional, euro] =
+    cotrec, echotop, chmiAir, chmiAero, chmiNormals, chmiText, chmiRegional, euro,
+    aurora] =
     optional.map(r => (r.status === "fulfilled" ? r.value : null));
   state.WU = wu;
   state.CHMI = chmi;
@@ -121,6 +124,9 @@ async function loadData() {
   // Sousedské sítě (SE/CH/AT/PL) — u hranic bývá zahraniční stanice
   // blíž než česká. Rychvald má polskou hranici pět kilometrů daleko.
   state.EURO = euro;
+  // Geomagnetická aktivita je planetární, takže se stahuje jednou pro celou
+  // appku; na místo ji převádí až aurora.js.
+  state.AURORA = aurora;
 }
 
 // ── Forecast pro vybrané místo (týden s detailem dne + AQ + AI verdikt) ─────
@@ -166,6 +172,10 @@ async function loadForecast(lat, lon, label) {
       renderStormImpact(lat, lon);            // zásah bouřkou (dráha buňky)
       renderOutlookWindows(minutely, fc);     // 12h okna beze srážek
       renderAstro(data, fc);            // před aktivitami — nastavuje svit měsíce
+      // Vlastní try: panel čte cizí data (NOAA) i astronomický výpočet, takže
+      // má víc způsobů, jak spadnout, než ostatní řádky v tomhle bloku — a
+      // sebral by s sebou všechno pod sebou.
+      try { renderAurora(state.AURORA, fc); } catch (e) { console.error("aurora:", e); }
       renderMinutely(ptId, minutely);
       renderActivities(fc, data);
       renderDeltaLine(data);

@@ -1437,6 +1437,14 @@ button.glass-btn svg { width: 17px; height: 17px; display: block; }
   display: none;
 }
 #astro-panel.show { display: block; }
+/* Polární záře — týž tvar karty jako astro panel, se kterým sousedí
+   a sdílí noc, Měsíc i oblačnost. */
+#aurora-panel {
+  border-radius: var(--r-card);
+  padding: .8rem .9rem .7rem;
+  display: none;
+}
+#aurora-panel.show { display: block; }
 /* ══ ŘÁDEK ÚDAJE — jeden tvar pro všechny seznamy ═════════════════════════
    Appka měla tři: .astro-row (Obloha a astro), .hist-row (Tento den
    v historii) a .ct-row (Normál, Prostředí pro bouřky, Letos proti normálu).
@@ -1479,6 +1487,80 @@ button.glass-btn svg { width: 17px; height: 17px; display: block; }
   display: flex; align-items: center; gap: .35rem; }
 .nstrip { display: inline-flex; gap: 2px; align-items: center; }
 .nstrip i { width: 11px; height: 13px; border-radius: 3px; background: var(--muted); display: inline-block; }
+
+/* ── Graf Kp v panelu polární záře ───────────────────────────────────────
+   Sloupce bez os a bez interakce, tedy stejná úvaha jako u .nstrip výš:
+   Chart.js by sem přinesl plátno, měřítka a posluchače kvůli čtyřiceti
+   obdélníkům. Rozdíl proti .nstrip je jen v tom, že tady nese informaci
+   VÝŠKA, ne krytí — Kp je veličina, ne intenzita odstínu.
+
+   Prahové linky jsou to podstatné. Bez nich je to jen „nějaká křivka"; ony
+   z ní dělají odpověď pro konkrétní místo, protože leží tam, kde začíná
+   šance na fotku a kde na pouhé oko. */
+.kp-chart { margin: .5rem 0 .15rem; }
+.kp-plot {
+  position: relative;
+  display: flex; align-items: flex-end; gap: 2px;
+  /* 90 px, ne 62: prahy pro fotoaparát a pro oko dělí u českých šířek jen
+     ~2 stupně Kp, tedy 22 % výšky. Na nižším grafu se jejich popisky
+     dotýkaly a četly se jako jeden. */
+  height: 90px; padding: 0 0 1px;
+  border-bottom: 1px solid var(--rowline);
+}
+.kp-plot .kpb {
+  flex: 1 1 0; min-width: 2px;
+  background: var(--kpc, var(--muted));
+  border-radius: 2px 2px 0 0;
+  display: block;
+}
+/* Předpověď se od měření musí lišit i bez barvy — šrafa drží rozdíl
+   i v jednobarevném tisku a pro barvoslepé. Stejný princip jako u pásma
+   nejistoty v meteogramu: budoucnost není plná plocha. */
+.kp-plot .kpb.fut {
+  background: repeating-linear-gradient(
+    135deg, var(--kpc, var(--muted)) 0 3px, transparent 3px 5px);
+}
+.kp-plot .kpline {
+  position: absolute; left: 0; right: 0; height: 0;
+  border-top: 1px dashed var(--fg);
+  opacity: .45; pointer-events: none;
+}
+.kp-plot .kpline b {
+  position: absolute; bottom: 1px;
+  font-size: var(--fs-micro); font-weight: 700; letter-spacing: .05em;
+  text-transform: uppercase; color: var(--fg);
+  background: var(--glass2); padding: 0 .25rem; border-radius: 3px;
+}
+/* Popisky na opačné strany — viz komentář u `line()` v aurora.js. */
+.kp-plot .kpline.eye b { right: 0; }
+.kp-plot .kpline.cam b { left: 0; }
+/* Hranice měření a předpovědi. Svislice, ne popisek uprostřed osy: řada
+   sahá den dozadu a tři dny dopředu, takže „teď" leží ve čtvrtině. */
+.kp-plot .kp-nowline {
+  position: absolute; top: -2px; bottom: 0; width: 0;
+  border-left: 1px solid var(--fg); opacity: .5; pointer-events: none;
+}
+.kp-axis {
+  position: relative;
+  display: flex; justify-content: space-between; align-items: baseline;
+  margin-top: .2rem;
+  font-size: var(--fs-micro); color: var(--muted);
+}
+/* „teď" sedí na svislici v grafu, ne mezi krajní datumy. Posun o polovinu
+   vlastní šířky drží popisek vycentrovaný na čáře. */
+.kp-axis .kp-now {
+  position: absolute; top: 0; transform: translateX(-50%);
+  font-weight: 700; color: var(--fg);
+}
+/* Poznámka o mezích metody. Není to drobné písmo „ať to nezabírá místo" —
+   je to podmínka, za které smí panel tvrdit, co tvrdí. */
+.aur-note {
+  margin-top: .5rem; padding-top: .45rem;
+  border-top: 1px solid var(--rowline);
+  font-size: var(--fs-tiny); line-height: 1.45; color: var(--muted);
+}
+/* Vyhlídka je hlavní řádek panelu — smí být o stupeň větší než ostatní. */
+.astro-row.aur-head .a-v { font-size: var(--fs-md); }
 
 /* ── Odkud jsou čísla ────────────────────────────────────────────────────
    Není to nápověda pro nováčka (ta cíl není), ale dělba práce mezi zdroji.
@@ -2230,7 +2312,7 @@ button.ctrl.active {
 
 /* Všechny panely stejně — ať už mají vlastní pravidla kdekoliv jinde. */
 #precip-panel, #activities-panel, #models-panel, .aq-panel,
-#astro-panel, #winter-panel, #history-panel,
+#astro-panel, #aurora-panel, #winter-panel, #history-panel,
 #air-panel, #normal-panel, #convect-panel, #regional-panel, #chmitext-panel {
   border-radius: var(--r-card);
   background: var(--glass2);

@@ -22,3 +22,9 @@ jobs:
 
       - name: Sonda celosvětových sítí teplot
         run: python pipeline/probe_world.py
+
+      # Ověření předpokladů, na kterých stojí pipeline/aurora.py. Ten se psal
+      # bez odchozího přístupu na NOAA, takže tvar odpovědi je odvozený
+      # z dokumentace — tohle je to jediné místo, kde se dá potvrdit živě.
+      - name: Sonda geomagnetické aktivity (NOAA SWPC Kp)
+        run: python pipeline/probe_aurora.py

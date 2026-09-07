@@ -55,6 +55,7 @@ CARRY = {
     "imgw_coords.json": 24 * 365,   # číselník souřadnic, mění se výjimečně
     "chmi_air.json": 6,
     "chmi_aero.json": 24,
+    "aurora.json": 6,
     "chmi_forecast.json": 24,
     "chmi_regional.json": 24 * 30,
 

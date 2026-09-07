@@ -126,6 +126,7 @@ jobs:
             data/chmi_air.json
             data/chmi_regional.json
             data/chmi_aero.json
+            data/aurora.json
             data/chmi_air_map.json
             data/accuracy_precip.json
             data/euro_stations.json
@@ -259,6 +260,14 @@ jobs:
         continue-on-error: true
         run: python pipeline/chmi_aero.py || echo "chmi_aero.py selhalo, pokračuji"
 
+      # Bez `if: full` schválně: dva malé JSONy řádově v kB, takže si to může
+      # dovolit každý běh — a Kp se láme po třech hodinách, kdežto full běh
+      # chodí po půlhodině. Panel tak neukazuje starší číslo, než musí.
+      - name: Run aurora (geomagnetická aktivita — Kp index NOAA)
+        timeout-minutes: 2
+        continue-on-error: true
+        run: python pipeline/aurora.py || echo "aurora.py selhalo, pokračuji bez polární záře"
+
       - name: Run chmi_regional (krajské průměry 1961-dnes)
         if: steps.mode.outputs.mode == 'full'
         timeout-minutes: 3
@@ -317,6 +326,7 @@ jobs:
             data/chmi_air.json
             data/chmi_regional.json
             data/chmi_aero.json
+            data/aurora.json
             data/chmi_air_map.json
             data/accuracy_precip.json
           key: station-data-${{ github.run_id }}

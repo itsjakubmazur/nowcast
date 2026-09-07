@@ -45,3 +45,6 @@ jobs:
 
       - name: Unit testy pipeline (chmi_history — kompletní řady stanic)
         run: python tests/test_chmi_history.py
+
+      - name: Unit testy pipeline (aurora — parser Kp řady NOAA)
+        run: python tests/test_aurora.py

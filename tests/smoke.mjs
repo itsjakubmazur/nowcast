@@ -277,6 +277,36 @@ function prepareServeDir() {
       }],
     }));
 
+    // Polární záře: Kp řada od −24 h do +72 h po třech hodinách. Špička je
+    // schválně Kp 8 — nad prahem „pouhým okem" pro Prahu (geomag. 49,7°),
+    // takže panel musí ukázat kladný verdikt a obě prahové linky.
+    {
+      const kpSeries = [];
+      const base = Date.now() - 24 * 3600000;
+      for (let i = 0; i < 32; i++) {
+        const t = new Date(base + i * 3 * 3600000);
+        const future = t.getTime() > Date.now();
+        kpSeries.push({
+          t: t.toISOString().slice(0, 19) + "Z",
+          kp: i === 20 ? 8 : Math.round((2 + (i % 5) * 0.33) * 100) / 100,
+          kind: future ? "predicted" : "observed",
+        });
+      }
+      const posledni = kpSeries.filter(p => p.kind !== "predicted").at(-1);
+      const spicka = kpSeries.filter(p => p.kind === "predicted")
+        .reduce((a, b) => (b.kp > a.kp ? b : a));
+      fs.writeFileSync(path.join(SERVE, "data", "aurora.json"), JSON.stringify({
+        generated_at_utc: nowIso2,
+        source: "NOAA SWPC — planetární Kp index",
+        used: ["noaa-planetary-k-index-forecast"],
+        caveat: "Kp je planetární tříhodinový index, ne předpověď pro místo.",
+        cadence_h: 3,
+        now: posledni,
+        peak_next: spicka,
+        series: kpSeries,
+      }));
+    }
+
     fs.writeFileSync(path.join(SERVE, "data", "chmi_air.json"), JSON.stringify({
       generated_at_utc: nowIso2, observed_utc: nowIso2, age_min: 52,
       source: "ČHMÚ — státní síť imisního monitoringu (air_quality/now)",
@@ -1827,6 +1857,91 @@ async function main() {
     `normál z nejbližší stanice (${chmiX.nearNorm})`);
   assertTrue(chmiX.farNorm === null,
     "mimo dosah 40 km se normál nepoužije");
+
+  // ── Polární záře ────────────────────────────────────────────────────────
+  // Panel stojí a padá s převodem zeměpisné šířky na geomagnetickou. Ten
+  // rozdíl je pro ČR skoro celý stupeň, tedy dva stupně Kp — kdyby se
+  // počítalo ze zeměpisné, appka by slibovala záři o dvě třídy bouře dřív.
+  // Testuje se proto samotná matematika, ne jen že se něco vykreslilo.
+  const aur = await page.evaluate(async () => {
+    const { state } = await import("./js/state.js");
+    const a = await import("./js/aurora.js");
+
+    const grab = () => {
+      const el = document.getElementById("aurora-panel");
+      const plot = document.getElementById("aurora-body")?.querySelector(".kp-plot");
+      return {
+        shown: el?.classList.contains("show"),
+        text: document.getElementById("aurora-body")?.textContent || "",
+        bars: plot ? plot.querySelectorAll(".kpb").length : 0,
+        future: plot ? plot.querySelectorAll(".kpb.fut").length : 0,
+        lines: plot ? plot.querySelectorAll(".kpline").length : 0,
+      };
+    };
+
+    a.renderAurora(state.AURORA, null);
+    const praha = grab();
+
+    // Prázdná i chybějící data musí panel schovat, ne ukázat prázdnou kartu.
+    a.renderAurora(null, null);
+    const bezDat = grab().shown;
+    a.renderAurora({ series: [] }, null);
+    const prazdno = grab().shown;
+    a.renderAurora(state.AURORA, null);
+
+    return {
+      praha,
+      bezDat, prazdno,
+      // Geomagnetická šířka: Brno leží jižněji než Praha, a obě jsou
+      // NÍŽ než jejich zeměpisná šířka.
+      mlatBrno: a.geomagLat(49.195, 16.606),
+      mlatPraha: a.geomagLat(50.08, 14.42),
+      // Oval: vyšší Kp = okraj dál na jih.
+      oval0: a.ovalEdge(0), oval9: a.ovalEdge(9),
+      // Viditelnost pro Brno při skutečných událostech.
+      brnoKp9: a.visibility(9, a.geomagLat(49.195, 16.606)).short,
+      brnoKp8: a.visibility(8, a.geomagLat(49.195, 16.606)).short,
+      brnoKp6: a.visibility(6, a.geomagLat(49.195, 16.606)).short,
+      brnoKp3: a.visibility(3, a.geomagLat(49.195, 16.606)).short,
+      // Tromsø (69,6° N) má záři i při klidu — kontrola, že to není
+      // napevno zadrátované na Česko.
+      tromsoKp1: a.visibility(1, a.geomagLat(69.65, 18.96)).short,
+      lat: state.currentLat, lon: state.currentLon,
+    };
+  });
+
+  assertTrue(aur.mlatBrno < 49.195 && aur.mlatPraha < 50.08,
+    `geomagnetická šířka je nižší než zeměpisná (Brno ${aur.mlatBrno.toFixed(2)}°, Praha ${aur.mlatPraha.toFixed(2)}°)`);
+  assertTrue(aur.mlatBrno < aur.mlatPraha,
+    `Brno vychází jižněji než Praha i geomagneticky (${aur.mlatBrno.toFixed(2)} < ${aur.mlatPraha.toFixed(2)})`);
+  assertTrue(Math.abs(aur.mlatBrno - 48.4) < 0.6,
+    `Brno sedí na známé hodnotě ~48,4° (${aur.mlatBrno.toFixed(2)}°)`);
+  assertTrue(aur.oval9 < aur.oval0,
+    `silnější bouře posouvá oval na jih (Kp 0 → ${aur.oval0}°, Kp 9 → ${aur.oval9.toFixed(1)}°)`);
+
+  // Kalibrace proti skutečnosti: 10. 5. a 10. 10. 2024 byla záře nad Moravou
+  // vidět okem, při Kp 6 se běžně jen fotí, při Kp 3 není nic.
+  assertTrue(aur.brnoKp9 === "okem" && aur.brnoKp8 === "okem",
+    `Kp 8–9 nad Brnem je záře pro oko (${aur.brnoKp8}, ${aur.brnoKp9})`);
+  assertTrue(aur.brnoKp6 === "foto",
+    `Kp 6 nad Brnem je jen na fotoaparát (${aur.brnoKp6})`);
+  assertTrue(aur.brnoKp3 === "ne",
+    `Kp 3 nad Brnem nic neslibuje (${aur.brnoKp3})`);
+  assertTrue(aur.tromsoKp1 === "okem",
+    `za polárním kruhem stačí klidné Kp (Tromsø: ${aur.tromsoKp1})`);
+
+  assertTrue(aur.praha.shown && aur.praha.bars === 32,
+    `panel záře se vykreslil se všemi sloupci (${aur.praha.bars}/32)`);
+  assertTrue(aur.praha.future > 0 && aur.praha.future < aur.praha.bars,
+    `předpověď je odlišená od měření (${aur.praha.future} z ${aur.praha.bars} sloupců)`);
+  assertTrue(aur.praha.lines === 2,
+    `graf nese obě prahové linky místa (${aur.praha.lines})`);
+  assertTrue(/Kp/.test(aur.praha.text) && /geomag/.test(aur.praha.text),
+    `panel říká Kp i geomagnetickou šířku ("${aur.praha.text.slice(0, 110)}")`);
+  assertTrue(/okem/.test(aur.praha.text),
+    "špička Kp 8 nad Prahou se hlásí jako šance pouhým okem");
+  assertTrue(aur.bezDat === false && aur.prazdno === false,
+    `bez dat se panel schová, místo prázdné karty (${aur.bezDat}, ${aur.prazdno})`);
   // ── Učení: bias korekce a vážený konsenzus ──────────────────────────────
   const learn = await page.evaluate(async () => {
     const { mergeScores, blendTemperature, MIN_BLEND_MODELS } =
