@@ -123,6 +123,51 @@ def test_series_from(monkeyed):
     check("Kp je z Kp sloupce, ne ze sousedního", got[0]["kp"] == 2.0, str(got))
 
 
+def test_normalize_obou_tvaru(monkeyed):
+    print("=== normalize — oba tvary odpovědi ===")
+    # Tvar A: pole polí s hlavičkou (jak to popisuje dokumentace NOAA).
+    a = aurora.normalize([
+        ["time_tag", "kp", "observed"],
+        ["2026-09-05 00:00:00", "2", "observed"],
+    ])
+    check("pole polí se spáruje s hlavičkou",
+          a == [{"time_tag": "2026-09-05 00:00:00", "kp": "2", "observed": "observed"}], str(a))
+
+    # Tvar B: pole slovníků. Tohle sonda našla na živém zdroji (běh
+    # 34157627666) — parser na něm padal, protože čekal jen tvar A.
+    b = aurora.normalize([
+        {"time_tag": "2026-09-05 00:00:00", "kp_index": 2, "observed": "observed"},
+    ])
+    check("pole slovníků projde beze změny významu",
+          b == [{"time_tag": "2026-09-05 00:00:00", "kp_index": 2, "observed": "observed"}], str(b))
+
+    c = aurora.normalize([{"Time_Tag": "2026-09-05 00:00:00", "Kp_Index": 2}])
+    check("klíče se snižují na malá písmena", "time_tag" in c[0] and "kp_index" in c[0], str(c))
+
+    # Kratší řádek než hlavička nesmí shodit celý převod.
+    d = aurora.normalize([["time_tag", "kp", "observed"], ["2026-09-05 00:00:00", "2"]])
+    check("kratší řádek se převezme, co jde", d == [{"time_tag": "2026-09-05 00:00:00", "kp": "2"}], str(d))
+
+
+def test_series_from_slovniky(monkeyed):
+    print("=== series_from — nad polem slovníků ===")
+    monkeyed([
+        {"time_tag": "2026-09-05 00:00:00", "kp_index": 2, "observed": "observed"},
+        {"time_tag": "2026-09-05 03:00:00", "kp_index": 5.33, "observed": "predicted"},
+        {"time_tag": "2026-09-05 06:00:00", "kp_index": None, "observed": "predicted"},
+    ])
+    got = aurora.series_from(
+        "http://test/x",
+        {"t": ["time_tag"], "kp": ["kp", "kp_index"], "kind": ["observed"]},
+        "predicted",
+    )
+    check("prošly použitelné řádky", len(got) == 2, f"{len(got)}")
+    check("Kp se vzalo z kp_index", [p["kp"] for p in got] == [2.0, 5.33],
+          str([p["kp"] for p in got]))
+    check("typ se přečetl", [p["kind"] for p in got] == ["observed", "predicted"],
+          str([p["kind"] for p in got]))
+
+
 def test_broken_shapes(monkeyed):
     print("=== series_from — rozbité odpovědi shoří nahlas ===")
     for name, payload in [
@@ -155,10 +200,7 @@ def main():
         payload["rows"] = rows
 
     def fake_fetch(url):
-        rows = payload["rows"]
-        if not isinstance(rows, list) or len(rows) < 2 or not isinstance(rows[0], list):
-            raise ValueError(f"nečekaný tvar odpovědi ({type(rows).__name__})")
-        return rows
+        return payload["rows"]
 
     aurora.fetch_rows = fake_fetch
 
@@ -166,6 +208,8 @@ def main():
     test_columns()
     test_parse_time()
     test_series_from(monkeyed)
+    test_normalize_obou_tvaru(monkeyed)
+    test_series_from_slovniky(monkeyed)
     test_broken_shapes(monkeyed)
 
     print()

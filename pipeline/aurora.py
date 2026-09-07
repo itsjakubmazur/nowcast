@@ -16,20 +16,21 @@ per-lokace v pipeline — ta neví, kam se uživatel zrovna dívá.
 ZDROJE (obojí veřejné, bez klíče, řádově jednotky kB):
 
   products/noaa-planetary-k-index-forecast.json
-      Hlavní zdroj. Pole polí, PRVNÍ ŘÁDEK JE HLAVIČKA:
-        ["time_tag","kp","observed","noaa_scale"]
-        ["2026-09-05 00:00:00","2","observed",null]
-        ["2026-09-08 21:00:00","5","predicted","G1"]
-      V jednom souboru je tedy minulost i tři dny dopředu — a sloupec
+      Hlavní zdroj — minulost i tři dny dopředu v jednom souboru. Sloupec
       `observed` říká, co je co ("observed" / "estimated" / "predicted").
 
   products/noaa-planetary-k-index.json
-      Záloha, jen pozorovaná minulost (~7 dní):
-        ["time_tag","Kp","a_running","station_count"]
+      Záloha, jen pozorovaná minulost (~7 dní).
 
-Sloupce se hledají PODLE JMÉNA v hlavičce, ne podle pořadí. Kdyby NOAA přidala
-sloupec, posunuté indexy by tiše zaměnily Kp za něco jiného — a tiše špatné
-číslo je horší než chybějící panel.
+TVAR ODPOVĚDI SE NEHÁDÁ. První verze tohohle modulu vznikla bez odchozího
+přístupu na NOAA a vzala tvar z dokumentace — pole polí, první řádek hlavička.
+Sonda `probe_aurora.py` v CI ukázala, že to tak není, a modul na živých datech
+padal. Proto `normalize()` bere OBA tvary (pole polí s hlavičkou i pole
+slovníků) a sonda zůstává v CI jako hlídač.
+
+Sloupce se v obou případech hledají PODLE JMÉNA, ne podle pořadí. Kdyby NOAA
+přidala sloupec, posunuté indexy by tiše zaměnily Kp za něco jiného — a tiše
+špatné číslo je horší než chybějící panel.
 
 Kp má krok 3 hodiny a hodnoty v třetinách (2, 2⅓, 2⅔ …); NOAA je posílá jako
 "2", "2.33" nebo občas "2P"/"2M" (přípona = předběžná/dopočtená). Parser proto
@@ -107,32 +108,73 @@ def columns(header, wanted):
 
 
 def fetch_rows(url):
+    """Stáhne a vrátí syrový JSON. Tvar neřeší — od toho je normalize()."""
     r = SESSION.get(url, timeout=TIMEOUT)
     r.raise_for_status()
-    rows = r.json()
-    if not isinstance(rows, list) or len(rows) < 2 or not isinstance(rows[0], list):
-        raise ValueError(f"nečekaný tvar odpovědi ({type(rows).__name__})")
-    return rows
+    return r.json()
+
+
+def normalize(payload):
+    """Cokoli, co NOAA pošle → seznam slovníků {sloupec: hodnota}.
+
+    Sonda v CI (běh 34157627666) ukázala, že tvar odpovědi NEODPOVÍDÁ tomu,
+    co popisuje dokumentace: `/products/...` nevrací pole polí s hlavičkou
+    v prvním řádku. Tenhle převod proto bere OBA tvary a jméno sloupce je
+    v obou případech to jediné, podle čeho se hodnota hledá:
+
+      - pole polí, první řádek hlavička  → spáruje se s ní
+      - pole slovníků                    → použije se rovnou
+
+    Klíče se převádějí na malá písmena, ať `columns()` funguje stejně
+    v obou větvích.
+    """
+    if not isinstance(payload, list) or not payload:
+        raise ValueError(f"nečekaný tvar odpovědi ({type(payload).__name__}, "
+                         f"délka {len(payload) if isinstance(payload, list) else '—'})")
+
+    if isinstance(payload[0], dict):
+        return [{str(k).strip().lower(): v for k, v in row.items()}
+                for row in payload if isinstance(row, dict)]
+
+    if isinstance(payload[0], list):
+        if len(payload) < 2:
+            raise ValueError("tabulka má jen hlavičku, žádná data")
+        header = [str(h).strip().lower() for h in payload[0]]
+        out = []
+        for row in payload[1:]:
+            if not isinstance(row, list):
+                continue
+            out.append({header[i]: row[i] for i in range(min(len(header), len(row)))})
+        return out
+
+    raise ValueError(f"řádky nejsou ani pole, ani slovníky "
+                     f"({type(payload[0]).__name__})")
 
 
 def series_from(url, wanted, default_kind):
-    """Jedna NOAA tabulka → [{t, kp, kind}], seřazeno, bez duplicit v čase."""
-    rows = fetch_rows(url)
-    idx = columns(rows[0], wanted)
+    """Jedna NOAA tabulka → [{dt, kp, kind}], seřazeno, bez duplicit v čase."""
+    rows = normalize(fetch_rows(url))
+    if not rows:
+        raise ValueError("odpověď neobsahuje žádné řádky")
+
+    # Sloupce se hledají podle JMÉNA, ne podle pořadí — kdyby NOAA přidala
+    # sloupec, posunuté indexy by tiše zaměnily Kp za něco jiného.
+    idx = columns(list(rows[0].keys()), wanted)
     if "t" not in idx or "kp" not in idx:
-        raise ValueError(f"hlavička nemá čas nebo Kp: {rows[0]}")
+        raise ValueError(f"řádek nemá čas nebo Kp: {sorted(rows[0].keys())}")
+    klice = list(rows[0].keys())
+    kt, kkp = klice[idx["t"]], klice[idx["kp"]]
+    kkind = klice[idx["kind"]] if "kind" in idx else None
 
     out = {}
-    for row in rows[1:]:
-        if not isinstance(row, list) or len(row) <= max(idx.values()):
-            continue
-        t = parse_time(row[idx["t"]])
-        kp = kp_value(row[idx["kp"]])
+    for row in rows:
+        t = parse_time(row.get(kt))
+        kp = kp_value(row.get(kkp))
         if t is None or kp is None:
             continue
         kind = default_kind
-        if "kind" in idx:
-            k = str(row[idx["kind"]] or "").strip().lower()
+        if kkind:
+            k = str(row.get(kkind) or "").strip().lower()
             if k.startswith("pred"):
                 kind = "predicted"
             elif k.startswith("est"):
