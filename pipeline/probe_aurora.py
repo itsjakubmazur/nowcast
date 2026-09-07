@@ -116,6 +116,11 @@ def probe(label, url, expect_kind):
          f"čas jde přečíst u {sum(t is not None for t in times)}/{len(rows)} řádků")
     note(sum(k is not None for k in kps) > len(rows) * 0.5,
          f"Kp jde přečíst u {sum(k is not None for k in kps)}/{len(rows)} řádků")
+    # Zdroj posílá ISO BEZ značky zóny. Naivní datum by se v main() porovnávalo
+    # s datetime.now(timezone.utc) a shodilo celý modul — v pipeline fail-soft,
+    # takže tiše. Tohle je jediné místo, kde se to pozná na živých datech.
+    note(all(t.utcoffset() is not None for t in times if t),
+         "časy jsou aware (jinak main() spadne na porovnání s UTC)")
 
     good = [k for k in kps if k is not None]
     if good:

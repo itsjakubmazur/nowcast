@@ -25,8 +25,21 @@ ZDROJE (obojí veřejné, bez klíče, řádově jednotky kB):
 TVAR ODPOVĚDI SE NEHÁDÁ. První verze tohohle modulu vznikla bez odchozího
 přístupu na NOAA a vzala tvar z dokumentace — pole polí, první řádek hlavička.
 Sonda `probe_aurora.py` v CI ukázala, že to tak není, a modul na živých datech
-padal. Proto `normalize()` bere OBA tvary (pole polí s hlavičkou i pole
-slovníků) a sonda zůstává v CI jako hlídač.
+padal. Skutečný tvar (ověřeno během 34157851723, 7. 9. 2026) je POLE SLOVNÍKŮ:
+
+  forecast (81 řádků, ~10 dní):
+    {"time_tag": "2026-08-31T00:00:00", "kp": 3.0,
+     "observed": "observed", "noaa_scale": null}
+    `observed` nabývá "observed" / "estimated" / "predicted".
+
+  observed (62 řádků, ~8 dní zpět):
+    {"time_tag": "2026-08-31T00:00:00", "Kp": 3.0,
+     "a_running": 15, "station_count": 8}
+    Pozor na `station_count` — je to jednociferné číslo hned vedle Kp, takže
+    při čtení podle POŘADÍ by prošlo jako platná hodnota.
+
+`normalize()` přesto bere oba tvary a sonda zůstává v CI jako hlídač: zdroj
+se už jednou rozešel s dokumentací a nic neslibuje, že se nerozejde znovu.
 
 Sloupce se v obou případech hledají PODLE JMÉNA, ne podle pořadí. Kdyby NOAA
 přidala sloupec, posunuté indexy by tiše zaměnily Kp za něco jiného — a tiše
@@ -79,16 +92,28 @@ def kp_value(raw):
 
 
 def parse_time(raw):
-    """NOAA posílá 'YYYY-MM-DD HH:MM:SS' v UTC, bez značky zóny."""
-    try:
-        return datetime.strptime(str(raw).strip(), "%Y-%m-%d %H:%M:%S").replace(
-            tzinfo=timezone.utc
-        )
-    except ValueError:
+    """Čas z NOAA → VŽDY aware datetime v UTC, nebo None.
+
+    To „vždy aware" je celá pointa. Živý zdroj posílá ISO bez značky zóny
+    ('2026-08-31T00:00:00'), takže `fromisoformat` vrátí NAIVNÍ datum — a
+    main() ho porovnává s `datetime.now(timezone.utc)`. Python takové
+    porovnání neumí a shodí celý modul: TypeError „can't compare
+    offset-naive and offset-aware datetimes".
+
+    Chyba by přitom neshořela nahlas tam, kde vznikla: v pipeline je krok
+    fail-soft, takže by se panel jen nikdy neukázal a v logu by zbyl jeden
+    řádek. Časy z tohohle zdroje jsou v UTC, takže se zóna doplní.
+    """
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"):
         try:
-            return datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+            return datetime.strptime(str(raw).strip(), fmt).replace(tzinfo=timezone.utc)
         except ValueError:
-            return None
+            pass
+    try:
+        dt = datetime.fromisoformat(str(raw).strip().replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return None
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
 
 
 def columns(header, wanted):

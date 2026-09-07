@@ -17,8 +17,10 @@ Testy proto tlačí hlavně na to, co je na zdroji křehké:
 Spouštění: python tests/test_aurora.py
 """
 
+import json
 import sys
-from datetime import datetime, timezone
+import tempfile
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "pipeline"))
@@ -168,6 +170,64 @@ def test_series_from_slovniky(monkeyed):
           str([p["kind"] for p in got]))
 
 
+def test_parse_time_je_vzdy_aware():
+    print("=== parse_time — časová zóna se nesmí ztratit ===")
+    # Živý zdroj posílá ISO BEZ zóny. Naivní datum by v main() spadlo na
+    # porovnání s datetime.now(timezone.utc) — a protože je krok v pipeline
+    # fail-soft, projevilo by se to jen tím, že panel nikdy nenaskočí.
+    for raw in ("2026-08-31T00:00:00", "2026-08-31 00:00:00", "2026-08-31T00:00:00Z",
+                "2026-08-31T00:00:00+00:00"):
+        t = aurora.parse_time(raw)
+        check(f"{raw} je aware", t is not None and t.utcoffset() is not None, str(t))
+        check(f"{raw} má správnou hodnotu",
+              t == datetime(2026, 8, 31, 0, 0, tzinfo=timezone.utc), str(t))
+
+
+def test_main_end_to_end(monkeyed, tmpdir):
+    print("=== main — celý průchod na skutečném tvaru zdroje ===")
+    # Tvar je doslovná kopie toho, co vrací živý zdroj (ověřeno sondou,
+    # běh 34157851723). Tenhle test tu je proto, že unit testy zkoušely jen
+    # jednotlivé funkce — a chyba s naivním datem seděla přesně mezi nimi,
+    # v main(). Testovat kusy a nikdy celek znamená minout právě ty chyby,
+    # které vzniknou na jejich rozhraní.
+    ted = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+    zaklad = ted - timedelta(hours=24)
+    rada = []
+    for i in range(16):
+        t = zaklad + timedelta(hours=3 * i)
+        rada.append({
+            "time_tag": t.strftime("%Y-%m-%dT%H:%M:%S"),   # BEZ zóny, jako NOAA
+            "kp": 3.0 if t <= ted else 5.0,
+            "observed": "observed" if t <= ted else "predicted",
+            "noaa_scale": None,
+        })
+    monkeyed(rada)
+
+    puvodni = aurora.DATA_DIR
+    aurora.DATA_DIR = tmpdir
+    try:
+        rc = aurora.main()
+    finally:
+        aurora.DATA_DIR = puvodni
+
+    check("main proběhl bez chyby", rc == 0, f"návratový kód {rc}")
+    soubor = tmpdir / "aurora.json"
+    check("zapsal se aurora.json", soubor.exists())
+    if not soubor.exists():
+        return
+
+    out = json.loads(soubor.read_text())
+    check("řada není prázdná", len(out.get("series") or []) > 0, str(len(out.get("series") or [])))
+    check('„teď“ je měřený bod, ne předpověď',
+          out.get("now") and out["now"]["kind"] != "predicted", str(out.get("now")))
+    check("špička dopředu se našla",
+          out.get("peak_next") and out["peak_next"]["kp"] == 5.0, str(out.get("peak_next")))
+    check("časy jsou v UTC s Z",
+          all(p["t"].endswith("Z") for p in out["series"]), out["series"][0]["t"])
+    check("krok je hlášený jako 3 h", out.get("cadence_h") == 3, str(out.get("cadence_h")))
+    check("zdroj je uvedený", bool(out.get("source")), str(out.get("source")))
+
+
 def test_broken_shapes(monkeyed):
     print("=== series_from — rozbité odpovědi shoří nahlas ===")
     for name, payload in [
@@ -207,10 +267,13 @@ def main():
     test_kp_value()
     test_columns()
     test_parse_time()
+    test_parse_time_je_vzdy_aware()
     test_series_from(monkeyed)
     test_normalize_obou_tvaru(monkeyed)
     test_series_from_slovniky(monkeyed)
     test_broken_shapes(monkeyed)
+    with tempfile.TemporaryDirectory() as d:
+        test_main_end_to_end(monkeyed, Path(d))
 
     print()
     if FAILS:
