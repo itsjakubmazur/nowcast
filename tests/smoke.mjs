@@ -2836,6 +2836,47 @@ async function main() {
       `topbar je v DOMu před dokem radaru (${poradiDom.topbar} < ${poradiDom.radar})`);
   }
 
+  // ── Osa rozlišuje pozorování od předpovědi ─────────────────────────────
+  // Vlevo od „teď" jsou měřené snímky radaru, vpravo vlastní extrapolace.
+  // Dřív vypadaly obě půlky dráhy stejně a minulý snímek neměl popisek
+  // žádný, takže z osy nešlo poznat, kde končí data a začíná dopočet.
+  {
+    const os = await page.evaluate(async () => {
+      const { state } = await import("./js/state.js");
+      const r = await import("./js/radar.js");
+      const tl = document.getElementById("timeline");
+      const ft = document.getElementById("frame-time");
+      const t0 = state.MANIFEST.t0_index;
+
+      r.showFrame(0);
+      const minulost = { text: ft.textContent, aria: tl.getAttribute("aria-valuetext") };
+      r.showFrame(t0);
+      const ted = { text: ft.textContent, aria: tl.getAttribute("aria-valuetext") };
+      r.showFrame(state.MANIFEST.frames.length - 1);
+      const budoucnost = { text: ft.textContent, aria: tl.getAttribute("aria-valuetext") };
+
+      const pct = tl.style.getPropertyValue("--t0-pct");
+      const bg = getComputedStyle(tl).backgroundImage;
+      return { minulost, ted, budoucnost, pct, jeGradient: /gradient/.test(bg), t0,
+               poslednich: state.MANIFEST.frames.length };
+    });
+
+    assertTrue(/−\d+ min/.test(os.minulost.text),
+      `minulý snímek říká, jak je starý ("${os.minulost.text.trim()}")`);
+    assertTrue(/teď/.test(os.ted.text),
+      `hranice měření je označená ("${os.ted.text.trim()}")`);
+    assertTrue(/\+\d+ min/.test(os.budoucnost.text),
+      `předpovědní snímek říká, jak daleko dopředu je ("${os.budoucnost.text.trim()}")`);
+
+    const cislo = parseFloat(os.pct);
+    assertTrue(os.jeGradient && cislo > 0 && cislo < 100,
+      `dráha je rozdělená v bodě „teď" (--t0-pct = ${os.pct || "nenastaveno"})`);
+
+    // Odečítač jinak z posuvníku přečte jen pořadové číslo snímku.
+    assertTrue(/pozorování/.test(os.minulost.aria) && /předpověď/.test(os.budoucnost.aria),
+      `osa hlásí druh dat i odečítači ("${os.minulost.aria}" / "${os.budoucnost.aria}")`);
+  }
+
   // ── Zastaralá a chybějící data se přiznávají ───────────────────────────
   {
     const st = await page.evaluate(() => {

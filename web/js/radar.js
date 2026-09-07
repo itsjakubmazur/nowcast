@@ -42,6 +42,22 @@ export function showFrame(idx) {
   else _showFrameCZ(idx);
 }
 
+/**
+ * Umístí hranici „teď" na časovou osu.
+ *
+ * Kromě značky a popisku nastavuje `--t0-pct`, podle kterého CSS obarví
+ * dráhu scrubberu: vlevo od hranice jsou POZOROVANÉ snímky, vpravo vlastní
+ * extrapolace. Dřív vypadaly obě půlky stejně, takže z osy samotné nešlo
+ * poznat, kde končí radar a začíná dopočet — a to je přesně ten rozdíl,
+ * který má tenhle nástroj přiznávat.
+ */
+function setT0Pct(pct) {
+  const p = Math.max(0, Math.min(100, pct));
+  document.getElementById("t0-tick").style.left = p + "%";
+  document.getElementById("t0-marker").style.left = p + "%";
+  document.getElementById("timeline")?.style.setProperty("--t0-pct", p + "%");
+}
+
 function _showFrameCZ(idx) {
   const frames = state.MANIFEST.frames;
   state.currentFrame = Math.max(0, Math.min(idx, frames.length - 1));
@@ -52,15 +68,26 @@ function _showFrameCZ(idx) {
   setRadarFrameUrl(url, state.radarOpacity);
   document.getElementById("timeline").value = state.currentFrame;
 
+  // Minulé snímky neměly popisek ŽÁDNÝ — na ose tedy nešlo poznat, jestli
+  // se člověk dívá na měření, nebo na dopočet; zbýval jen čas, který o tom
+  // nic neříká. Světový režim přitom „-N min" ukazoval odjakživa.
+  const dMin = (state.currentFrame - state.MANIFEST.t0_index) * 10;
   let label = "";
   if (f.type === "t0") label = `<span class='t0-label'>● teď</span>`;
   else if (f.type === "nowcast")
-    label = `<span class='nowcast-label'>+${(state.currentFrame - state.MANIFEST.t0_index) * 10} min</span>`;
+    label = `<span class='nowcast-label'>+${dMin} min</span>`;
+  else
+    label = `<span class='past-label'>−${Math.abs(dMin)} min</span>`;
   document.getElementById("frame-time").innerHTML = `<strong>${f.time_local}</strong> ${label}`;
 
-  const pct = (state.MANIFEST.t0_index / (frames.length - 1)) * 100;
-  document.getElementById("t0-tick").style.left = pct + "%";
-  document.getElementById("t0-marker").style.left = pct + "%";
+  // Odečítač jinak z posuvníku přečte jen pořadové číslo snímku („7 z 19"),
+  // což je to jediné, co o čase a druhu dat nic neříká.
+  document.getElementById("timeline")?.setAttribute(
+    "aria-valuetext",
+    `${f.time_local} — ${f.type === "nowcast" ? `předpověď, +${dMin} min`
+      : f.type === "t0" ? "poslední měření" : `pozorování, −${Math.abs(dMin)} min`}`);
+
+  setT0Pct((state.MANIFEST.t0_index / (frames.length - 1)) * 100);
 }
 
 function _showFrameRV(idx) {
@@ -84,6 +111,10 @@ function _showFrameRV(idx) {
       ? `<span class='nowcast-label'>+${minDiff} min</span>`
       : `<span style='color:var(--muted)'>-${Math.abs(minDiff)} min</span>`;
   document.getElementById("frame-time").innerHTML = `<strong>${tStr}</strong> ${label}`;
+  document.getElementById("timeline")?.setAttribute(
+    "aria-valuetext",
+    `${tStr} — ${isNow ? "poslední snímek"
+      : isFuture ? `předpověď, +${minDiff} min` : `pozorování, −${Math.abs(minDiff)} min`}`);
 }
 
 export function stepFrame(delta) { showFrame(state.currentFrame + delta); }
@@ -221,9 +252,7 @@ async function loadRainViewerFrames() {
     slider.max = state.rvFrames.length - 1;
     slider.value = state.rvT0idx;
 
-    const t0pct = (state.rvT0idx / (state.rvFrames.length - 1)) * 100;
-    document.getElementById("t0-tick").style.left = t0pct + "%";
-    document.getElementById("t0-marker").style.left = t0pct + "%";
+    setT0Pct((state.rvT0idx / (state.rvFrames.length - 1)) * 100);
 
     showFrame(state.rvT0idx);
     setGlobalBtn(btn, "ČR");
@@ -586,9 +615,7 @@ export function applyManifestUI() {
 
   if (!state.globalMode) {
     document.getElementById("timeline").max = nf - 1;
-    const t0pct = (state.MANIFEST.t0_index / (nf - 1)) * 100;
-    document.getElementById("t0-tick").style.left = t0pct + "%";
-    document.getElementById("t0-marker").style.left = t0pct + "%";
+    setT0Pct((state.MANIFEST.t0_index / (nf - 1)) * 100);
     showFrame(state.MANIFEST.t0_index);
   }
 }

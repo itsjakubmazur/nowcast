@@ -1788,8 +1788,23 @@ button.ctrl .uicon { width: 1.12em; height: 1.12em; }
 #timeline {
   width: 100%; height: 5px; cursor: pointer;
   -webkit-appearance: none; appearance: none;
-  background: var(--rowline); border-radius: 3px; outline: none;
+  border-radius: 3px; outline: none;
+  /* Dráha není jednolitá: vlevo od hranice „teď" jsou POZOROVANÉ snímky
+     radaru, vpravo vlastní extrapolace. Dřív vypadaly obě části stejně a
+     rozdíl nesla jen tenká značka uprostřed — takže z osy nešlo poznat,
+     odkud dál už appka jen počítá. Poctivá hranice mezi měřením a dopočtem
+     je zásada projektu, ne ozdoba.
+
+     `--t0-pct` nastavuje setT0Pct() v radar.js. Výchozích 100 % je záměr:
+     dokud se manifest nenačte, tváří se celá osa jako pozorování a ne
+     obráceně — radši nic neslíbit, než slíbit předpověď, kterou nemáme. */
+  --t0-pct: 100%;
+  background: linear-gradient(90deg,
+    var(--rowline) 0 var(--t0-pct),
+    color-mix(in srgb, var(--accent) 34%, var(--rowline)) var(--t0-pct) 100%);
 }
+/* Minulý snímek: tlumeně, ať se nepere s „teď" ani s „+N min". */
+.past-label { color: var(--muted); }
 /* ══ FOKUS NA POSUVNÍCÍCH ═════════════════════════════════════════════════
    `outline: none` výš je napsané záměrně: prohlížeč kreslí obrys kolem celé
    DRÁHY, a u pruhu vysokého 5 px z toho je plochý obdélník přes půl doku,
