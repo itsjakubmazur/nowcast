@@ -51,6 +51,7 @@ import { initUiIcons } from "./uiicons.js";
 import { initSections, markSectionAlerts } from "./sections.js";
 import { initRail } from "./rail.js";
 import { initToggleState } from "./togglestate.js";
+import { initLayerRail, showLayerRail } from "./layers.js";
 import { riseIn, resetChartAnim, withTransition } from "./motion.js";
 
 // ── Data fetch (graceful degradation — radar/grid kritické, zbytek volitelné) ─
@@ -532,6 +533,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   initSections();   // Teď / Dnes / Týden / Data — dělí dvacet panelů na čtyři pohledy
   initRail();       // ve středních šířkách sloučí pravý panel do levé lišty
   initToggleState();// .active → aria-pressed / aria-checked, jeden vlastník
+  initLayerRail();  // panel vrstev: zdroje, průhlednost, zrcadlení stavu
 
   try {
     await loadData();
@@ -540,6 +542,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     state.map = L.map("map").setView([49.8, 15.5], 7);
     createBaseTileLayer().addTo(state.map);
     document.getElementById("radar-bar").style.display = "block";
+    showLayerRail();
     observeRadarBarHeight();
     document.getElementById("btn-global").addEventListener("click", toggleGlobalMode);
     document.getElementById("btn-satellite")?.addEventListener("click", toggleSatellite);
@@ -550,6 +553,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   preloadFrames();
   initMap((lat, lon) => showForecast(lat, lon, "Bod na mapě"));
   document.getElementById("radar-bar").style.display = "block";
+  showLayerRail();
   observeRadarBarHeight();
   step("applyManifestUI", applyManifestUI);
   step("favRow", () => renderFavRow(showForecast));

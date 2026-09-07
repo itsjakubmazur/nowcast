@@ -1085,7 +1085,11 @@ async function main() {
       const selS = getComputedStyle(sel);
       const opt = sel.querySelector(".layer-btn:not(.active)");
       const act = sel.querySelector(".layer-btn.active");
-      const ctrl = document.querySelector("#radar-bar button.ctrl[data-layer], #radar-bar #btn-temps");
+      // Vypínače vrstev se přestěhovaly z doku radaru do svislé lišty
+      // (#layer-rail). Hlídaná vlastnost je pořád táž: musí zůstat volné
+      // pilulky s vlastním sklem, ať se nesrovnají do jedné podoby
+      // s dráhou výběru veličiny.
+      const ctrl = document.querySelector("#layer-rail #btn-temps");
       const ctrlS = ctrl ? getComputedStyle(ctrl) : null;
       const opaque = v => !!v && !/rgba\(0, 0, 0, 0\)|transparent/.test(v);
       return {

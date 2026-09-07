@@ -5,6 +5,7 @@ export const state = {
   MANIFEST: null, GRID: null, ACCURACY: null,
   currentFrame: 0, playing: false, playTimer: null,
   radarOpacity: 0.70,
+  satOpacity: 0.50,    // vlastní, ne sdílená s radarem — viz setSatOpacity
 
   map: null, radarOverlayA: null, radarOverlayB: null, radarActiveIsA: true,
   locationMarker: null,

@@ -138,6 +138,21 @@ export function togglePlay(forcePlay) {
   }
 }
 
+/**
+ * Průhlednost družicové vrstvy.
+ *
+ * Vlastní hodnota, ne sdílená s radarem: obojí se běžně zapíná NARÁZ a přes
+ * sebe. Jeden společný posuvník pak buď schová srážky pod oblačností, nebo
+ * naopak — a uživatel nemá čím to rozplést. Družice startuje na 50 %, radar
+ * na 70 %, protože družice je podklad a radar je to podstatné.
+ */
+export function setSatOpacity(pct) {
+  state.satOpacity = pct / 100;
+  const el = document.getElementById("sat-opacity-val");
+  if (el) el.textContent = pct + " %";
+  state.satLayer?.setOpacity(state.satOpacity);
+}
+
 export function setOpacity(pct) {
   state.radarOpacity = pct / 100;
   document.getElementById("opacity-val").textContent = pct + " %";
@@ -265,7 +280,7 @@ async function loadSatelliteFrame() {
       state.satLayer.setUrl(url);
     } else {
       state.satLayer = L.tileLayer(url, {
-        opacity: 0.5, zIndex: 150, attribution: "Družice IR: RainViewer",
+        opacity: state.satOpacity ?? 0.5, zIndex: 150, attribution: "Družice IR: RainViewer",
         maxNativeZoom: 6, maxZoom: 19,
       }).addTo(state.map);
     }

@@ -262,6 +262,7 @@ img.wicon { filter: var(--wicon-shadow); vertical-align: middle; }
    deklaraci, takže panel neměl ani ohraničení, ani stejné sklo jako sousedi.
    Teď dědí ze společného mixinu. */
 #left-card, #right-panel, #radar-bar-inner, #storm-bar, #radar-legend,
+#layer-rail, #layer-sheet,
 button.glass-btn, .search-wrap, #suggestions, .logo,
 #chmi-detail, #wu-detail-box, #notif-bar, button.ctrl, #alert-bar,
 #accum-legend,
@@ -1772,7 +1773,6 @@ button.ctrl .uicon { width: 1.12em; height: 1.12em; }
 .radar-row { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; margin-bottom: .45rem; }
 .radar-row:last-child { margin-bottom: 0; }
 .radar-row label { font-size: var(--fs-sm); color: var(--muted); white-space: nowrap; }
-.opacity-group { display: flex; align-items: center; gap: .5rem; }
 /* Řádek s osou se nezalamuje — scrubber se místo toho smrskne. Zalomený
    přehrávač (tlačítka nahoře, čas dole) vypadá jako chyba, ne jako layout. */
 #radar-row-play { flex-wrap: nowrap; margin-bottom: .55rem; }
@@ -1816,13 +1816,13 @@ button.ctrl .uicon { width: 1.12em; height: 1.12em; }
 
    Proč ne prostě vyšší input: dráha JE vidět. Pruh vysoký 44 px uprostřed
    doku vypadá jako progress bar, ne jako časová osa. */
-.timeline-wrap, .opacity-group { position: relative; }
-.timeline-wrap::after, .opacity-group::after {
+.timeline-wrap, .lsrc-o { position: relative; }
+.timeline-wrap::after, .lsrc-o::after {
   content: ""; position: absolute; left: 0; right: 0; top: 50%;
   height: 44px; transform: translateY(-50%);
   pointer-events: none;
 }
-#timeline, #opacity-slider {
+#timeline, #opacity-slider, #sat-opacity {
   /* Sama dráha je tenká, ale klikatelná plocha inputu smí být vyšší.
      `content-box` je tu nutný: globální `* { box-sizing: border-box }` by
      výplň schroustal dovnitř výšky a plocha by nevyrostla (naměřeno 38 px
@@ -1833,13 +1833,15 @@ button.ctrl .uicon { width: 1.12em; height: 1.12em; }
 }
 
 #timeline:focus-visible::-webkit-slider-thumb,
-#opacity-slider:focus-visible::-webkit-slider-thumb {
+#opacity-slider:focus-visible::-webkit-slider-thumb,
+#sat-opacity:focus-visible::-webkit-slider-thumb {
   box-shadow: 0 1px 6px rgba(0, 0, 0, .35), 0 0 0 3px var(--accent);
 }
 #timeline:focus-visible::-moz-range-thumb {
   box-shadow: 0 1px 6px rgba(0, 0, 0, .35), 0 0 0 3px var(--accent);
 }
-#opacity-slider:focus-visible::-moz-range-thumb {
+#opacity-slider:focus-visible::-moz-range-thumb,
+#sat-opacity:focus-visible::-moz-range-thumb {
   box-shadow: 0 1px 4px rgba(0, 0, 0, .3), 0 0 0 3px var(--accent);
 }
 
@@ -1882,16 +1884,116 @@ button.ctrl.active {
   color: var(--accent-on-tint); background: color-mix(in srgb, var(--accent) 14%, var(--glass));
   box-shadow: var(--gshadow), inset 0 1px 0 var(--spec), inset 0 0 0 1.5px var(--accent);
 }
+/* ══ SVISLÁ LIŠTA VRSTEV ═══════════════════════════════════════════════════
+   Vypínače vrstev bydlely ve vodorovné řadě uvnitř doku radaru, namíchané
+   mezi rychlost animace a průhlednost. Tři různé role v jednom pruhu: CO se
+   kreslí (nezávislé vypínače), JAK RYCHLE to běží (výlučná volba ze tří) a
+   JAK MOC to prosvítá (spojitá hodnota). Tvarově se od sebe nelišily.
+
+   Rozdělení je proto podle role, ne podle místa: rychlost šla k přehrávači,
+   průhlednost do panelu vrstev ke své vrstvě a vypínače sem, k mapě, kterou
+   ovládají.
+
+   Lišta stojí u PRAVÉHO okraje mapy: mezi levou kartou (292 px) a pravým
+   panelem (312 px) je volná plocha mapy a lišta se drží jejího kraje, ne
+   kraje okna — jinak by ležela pod pravým panelem.
+   ═════════════════════════════════════════════════════════════════════════ */
+#layer-rail {
+  position: fixed; z-index: 60;
+  top: 140px;                                   /* zarovnáno s levou kartou */
+  right: calc(312px + 12px + 12px);             /* pravý panel + jeho okraj + mezera */
+  display: none; flex-direction: column; gap: .3rem;
+  padding: .45rem;
+  border-radius: var(--r-panel);
+  width: 138px;
+  max-height: calc(100vh - 140px - var(--radar-bar-h) - 28px);
+  overflow-y: auto; scrollbar-width: none;
+}
+#layer-rail::-webkit-scrollbar { display: none; }
+/* Zobrazuje se současně s dokem radaru — před načtením dat by to byla řada
+   vypínačů nad prázdnou mapou. */
+#layer-rail.show { display: flex; }
+#layer-rail #radar-row-layers {
+  flex-direction: column; align-items: stretch; flex-wrap: nowrap;
+  gap: .2rem; margin-bottom: 0;
+}
+#layer-rail .rl-label { margin: 0 0 .1rem .2rem; }
+/* Pilulky si nechávají VLASTNÍ sklo, i když sedí ve skleněné liště.
+   Vypadá to jako sklo ve skle, ale je to zavedený tvar téhle appky a nese
+   informaci: nezávislé vypínače jsou volné pilulky, kdežto výběr jedné
+   veličiny (#layer-selector) je souvislá dráha s holými volbami. Kdyby
+   lišta pilulkám sklo sebrala, splynou obě řady do jednoho tvaru a rozdíl
+   „zapínáš kolik chceš" vs. „vybíráš jednu" zmizí. Smoke test to hlídá. */
+#layer-rail button.ctrl {
+  justify-content: flex-start; width: 100%;
+  font-size: var(--fs-sm); padding: .32rem .5rem; min-height: 34px;
+}
+/* Tlačítko zdrojů není vrstva — oddělené linkou, ať se nečte jako osmá. */
+#btn-layer-sheet {
+  margin-top: .3rem; padding-top: .42rem;
+  border-top: 1px solid var(--rowline); border-radius: 0 0 var(--r-mini) var(--r-mini);
+}
+#btn-layer-sheet[aria-expanded="true"] {
+  color: var(--accent-on-tint);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+/* ── Panel „Vrstvy“ — jméno, zdroj, průhlednost ─────────────────────────── */
+#layer-sheet {
+  position: fixed; z-index: 61;
+  top: 140px; right: calc(312px + 12px + 12px + 138px + 8px);
+  width: 268px; max-height: calc(100vh - 140px - var(--radar-bar-h) - 28px);
+  overflow-y: auto; scrollbar-width: none;
+  border-radius: var(--r-panel);
+  padding: .7rem .8rem .8rem;
+}
+#layer-sheet::-webkit-scrollbar { display: none; }
+#layer-sheet[hidden] { display: none; }
+.ls-head {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: var(--fs-micro); font-weight: 800; letter-spacing: .09em;
+  text-transform: uppercase; color: var(--muted);
+  margin-bottom: .4rem;
+}
+.ls-head button.ctrl {
+  min-width: 28px; min-height: 28px; padding: .1rem .3rem;
+  background: transparent; box-shadow: none;
+  -webkit-backdrop-filter: none; backdrop-filter: none;
+}
+.lsrc { padding: .42rem 0; border-top: 1px solid var(--rowline); }
+.lsrc:first-of-type { border-top: none; }
+.lsrc-t { font-size: var(--fs-body); font-weight: 700; color: var(--fg); }
+/* Zdroj je věta, ne číslo — normální řez a prostrkání pro čtení. */
+.lsrc-s { font-size: var(--fs-tiny); line-height: 1.4; color: var(--muted); margin-top: .1rem; }
+.lsrc-o {
+  display: flex; align-items: center; gap: .45rem; margin-top: .35rem;
+  font-size: var(--fs-tiny); color: var(--muted);
+}
+.lsrc-o input[type="range"] { flex: 1 1 auto; min-width: 0; }
+/* Pevných 72 px má posuvník v doku, kde stál v řadě. V panelu si bere zbylou
+   šířku řádku — id selektor výš by ho jinak přebil. */
+.lsrc-o #opacity-slider, .lsrc-o #sat-opacity { width: auto; }
+.lsrc-o span { min-width: 34px; text-align: right; font-variant-numeric: tabular-nums; }
+/* Vrstva, která je zrovna zapnutá, se v panelu pozná — jinak si uživatel
+   musí pamatovat stav z lišty vedle. */
+.lsrc.on .lsrc-t { color: var(--accent-on-tint); }
+.lsrc.on .lsrc-t::after {
+  content: "zapnuto"; margin-left: .4rem;
+  font-size: var(--fs-micro); font-weight: 700; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--accent-on-tint); opacity: .8;
+}
+
 #btn-play { background: var(--accent-solid); color: #fff;
   box-shadow: var(--gshadow), inset 0 1px 0 rgba(255,255,255,.35); }
 .speed-group { display: flex; gap: 2px; }
 .speed-group button.ctrl { padding: .28rem .42rem; font-size: var(--fs-body); min-width: 34px; }
 
-#opacity-slider {
+#opacity-slider, #sat-opacity {
   width: 72px; -webkit-appearance: none; appearance: none;
   height: 4px; background: var(--rowline); border-radius: 2px; outline: none;
 }
-#opacity-slider::-webkit-slider-thumb {
+#opacity-slider::-webkit-slider-thumb,
+#sat-opacity::-webkit-slider-thumb {
   -webkit-appearance: none; width: 15px; height: 15px;
   border-radius: 50%; background: #fff; cursor: pointer;
   box-shadow: 0 1px 4px rgba(0,0,0,.3);
@@ -2470,7 +2572,7 @@ body.embed #left-card { top: 100px; bottom: 1rem; }
        je srovná do: sheet (levá karta) → pravý panel → radar → zbytek */
     display: flex; flex-direction: column;
   }
-  body > * { order: 10; }
+  body > * { order: 20; }
 
   :root { --sheet-top: 40vh; }
 
@@ -2576,7 +2678,7 @@ body.embed #left-card { top: 100px; bottom: 1rem; }
   #right-panel { padding-bottom: .5rem; }
   footer { padding-bottom: 4.5rem; }
   #left-card {
-    order: 5;
+    order: 6;
     position: relative; left: auto; top: auto; bottom: auto;
     width: auto; height: auto;
     margin: 8px 0 0; border-radius: var(--r-panel);
@@ -2584,7 +2686,7 @@ body.embed #left-card { top: 100px; bottom: 1rem; }
     z-index: 10;
   }
   #right-panel {
-    order: 6;
+    order: 7;
     position: relative; right: auto; top: auto; bottom: auto;
     width: auto; overflow: visible; height: auto;
     margin: 0; border-radius: 0;
@@ -2611,7 +2713,6 @@ body.embed #left-card { top: 100px; bottom: 1rem; }
     box-shadow: var(--gshadow), inset 0 0 0 1px var(--gring);
   }
   #radar-bar .speed-group,
-  #radar-bar .opacity-group,
   #radar-bar #btn-prev,
   #radar-bar #btn-next,
   #radar-bar #radar-updated,
@@ -2644,8 +2745,48 @@ body.embed #left-card { top: 100px; bottom: 1rem; }
      "MODEL MAX DÉŠŤ CHYBA".
      Zůstávají tedy v toku dokumentu. Zhuštění se dělá jinak: JEDNA vodorovná
      dráha místo zalamování do dvou řad. */
-  #layer-selector {
+  /* ── Lišta vrstev na mobilu: zpátky do toku, jedna vodorovná dráha ─────
+     Svisle by nevyšla: mapa má na mobilu 40vh, což je na 390×844 displeji
+     337 px, a osm položek po 34 px je 272 px — lišta by mapu vyplnila.
+
+     A plovoucí `position: fixed` nad mapou je tady doložená chyba: mapa je
+     fixní jen dokud sheet leží v klidu, takže při rolování zůstal fixní
+     ovladač viset přes obsah (proužek blesků přes tabulku modelů). Viz
+     komentář u doku radaru níž. */
+  #layer-rail {
     order: 3;
+    position: relative; top: auto; right: auto; left: auto; bottom: auto;
+    z-index: 10;
+    width: auto; max-height: none; overflow: visible;
+    flex-direction: row; align-items: center; gap: .3rem;
+    margin: .35rem .6rem; padding: .25rem .3rem;
+    border-radius: var(--r-panel);
+  }
+  /* Dráha si bere zbylou šířku; tlačítko zdrojů zůstane vidět na konci,
+     jinak by odjelo mimo obraz a nikdo by ho nenašel. */
+  #layer-rail #radar-row-layers {
+    flex: 1 1 auto; min-width: 0; margin: 0; padding: 0;
+    flex-direction: row; align-items: center;
+  }
+  /* `width: 100 %` je desktopové pravidlo pro svislý sloupec. Ve vodorovné
+     liště by ho tlačítko „Zdroje" vzalo doslova, roztáhlo se přes celou
+     šířku a dráhu vypínačů zmáčklo na nulu — naměřeno: track 0 px,
+     Zdroje 361 px. */
+  #layer-rail button.ctrl { width: auto; }
+  #layer-rail #btn-layer-sheet {
+    flex: 0 0 auto; margin-top: 0; padding-top: .32rem;
+    border-top: none; border-left: 1px solid var(--rowline);
+    border-radius: 999px; padding-left: .5rem;
+  }
+  /* Panel zdrojů se na mobilu rozbaluje pod lištu, ne vedle ní. */
+  #layer-sheet {
+    order: 3;
+    position: relative; top: auto; right: auto;
+    width: auto; max-height: none;
+    margin: 0 .6rem .35rem; z-index: 10;
+  }
+  #layer-selector {
+    order: 4;
     position: relative; top: auto; bottom: auto; left: auto; right: auto;
     z-index: 10;
     display: flex; flex-wrap: nowrap; overflow-x: auto;
@@ -2664,18 +2805,18 @@ body.embed #left-card { top: 100px; bottom: 1rem; }
     backdrop-filter: blur(26px) saturate(1.7);
   }
   #storm-bar {
-    order: 7; position: relative; top: auto; bottom: auto; right: auto;
+    order: 8; position: relative; top: auto; bottom: auto; right: auto;
     margin: .35rem .6rem; z-index: 10; width: auto; max-width: none;
   }
   #lightning-chip {
-    order: 8; position: relative; top: auto; bottom: auto; left: auto; right: auto;
+    order: 9; position: relative; top: auto; bottom: auto; left: auto; right: auto;
     margin: .35rem .6rem; z-index: 10; width: auto; max-width: none;
   }
   /* Legenda na mobilu jako JEDEN řádek: popisek, škála, popisek. Na kartu
      přes celou šířku (titulek, pod ním pruh, pod ním dva popisky) je to
      příliš málo informace — tři řádky za jednu stupnici. */
   #radar-legend {
-    order: 4; position: relative; bottom: auto; left: auto;
+    order: 5; position: relative; bottom: auto; left: auto;
     margin: .35rem .6rem; z-index: 10;
     display: none; align-items: center; gap: .5rem;
     padding: .3rem .6rem;
@@ -2690,7 +2831,7 @@ body.embed #left-card { top: 100px; bottom: 1rem; }
     position: fixed; top: 58px; left: 8px; right: 8px; transform: none;
     max-width: 100%;
   }
-  footer { order: 9; display: block; padding: 1rem 1rem 2.5rem; font-size: var(--fs-sm); color: var(--muted);
+  footer { order: 10; display: block; padding: 1rem 1rem 2.5rem; font-size: var(--fs-sm); color: var(--muted);
     background: var(--bg); position: relative; z-index: 10; }
   button.glass-btn { min-height: 44px; }
   /* 44px cíl je správně pro ojedinělá tlačítka v topbaru. Pro dvě dráhy

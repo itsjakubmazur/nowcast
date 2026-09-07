@@ -118,20 +118,41 @@
     </div>
     <div id="frame-time" role="status" aria-live="polite">—</div>
     <span id="radar-t0" style="font-size:var(--fs-body);font-weight:600;color:var(--text)"></span>
-  </div>
-  <!-- ŘÁDEK 2 — co se kreslí na mapu. Nezávislé vypínače, klidně všechny
-       naráz; na mobilu jedna vodorovná dráha, ne zalomení do tří řad. -->
-  <div class="radar-row" id="radar-row-layers">
+    <!-- Rychlost patří k přehrávači, ne k vrstvám. Dřív stála v řadě
+         vypínačů vrstev, kde vypadala jako osmá vrstva — a hlavně: je to
+         VÝLUČNÁ volba mezi třemi, kdežto všechno kolem byly nezávislé
+         vypínače. Dvě různé role vedle sebe bez rozdílu ve tvaru. -->
     <div class="speed-group" title="Rychlost animace">
       <button class="ctrl" id="speed-slow" data-ms="900">½×</button>
       <button class="ctrl active" id="speed-norm" data-ms="500">1×</button>
       <button class="ctrl" id="speed-fast" data-ms="200">2×</button>
     </div>
-    <div class="opacity-group">
-      <label for="opacity-slider">Průhlednost</label>
-      <input type="range" id="opacity-slider" min="0" max="100" value="70" style="width:70px" />
-      <span id="opacity-val" style="font-size:var(--fs-sm);color:var(--muted);min-width:30px">70 %</span>
-    </div>
+  </div>
+  <div class="rain-spark-wrap" id="rain-spark-wrap" style="display:none">
+    <canvas id="rain-spark"></canvas>
+  </div>
+  <span id="radar-updated" style="font-size:var(--fs-tiny);color:var(--muted)"></span>
+  <span id="radar-source" style="font-size:var(--fs-tiny);color:var(--muted);font-style:italic;display:block;margin-top:.3rem"></span>
+  </div>
+</div>
+
+<!-- ── Vrstvy mapy ──────────────────────────────────────────────────────────
+     Dřív to byla vodorovná řada vypínačů uvnitř doku radaru, namíchaná mezi
+     rychlost animace a průhlednost. Tři různé věci v jednom pruhu: co se
+     kreslí, jak rychle to běží a jak moc to prosvítá.
+
+     Teď je z toho svislá lišta u okraje mapy (na desktopu) — ovládání mapy
+     stojí u mapy, a dok dole zůstal tím, čím je: přehrávačem. Rozbalením se
+     lišta promění v panel, kde má každá vrstva JMÉNO a ZDROJ. To není
+     kosmetika: appka jinak nechává uživatele hádat, jestli pod „Družice“
+     jsou česká data, nebo cizí dlaždice — a přiznaný zdroj je zásada, na
+     které tenhle nástroj stojí.
+
+     Na mobilu se lišta vrací do toku dokumentu jako jedna vodorovná dráha
+     (viz CSS). Svisle by na 40vh mapy nevyšla a plovoucí `position: fixed`
+     prvek nad rolujícím sheetem je chyba, která už tady jednou byla. -->
+<div id="layer-rail">
+  <div class="radar-row" id="radar-row-layers">
     <span class="rl-label" aria-hidden="true">Na mapě</span>
     <button class="ctrl" id="btn-global" data-icon="globe" title="Globální radarové dlaždice (RainViewer)">Svět</button>
     <button class="ctrl" id="btn-satellite" data-icon="satellite" title="Satelitní IR vrstva — oblačnost (RainViewer)">Družice</button>
@@ -140,12 +161,65 @@
     <button class="ctrl" id="btn-wind" data-icon="wind" title="Animované částice větru (10 m)">Vítr</button>
     <button class="ctrl" id="btn-hydro" data-icon="waves" title="Hlásné profily — stavy a průtoky toků (ČHMÚ)">Hladiny</button>
     <button class="ctrl" id="btn-accum" data-icon="droplets" title="Úhrn srážek za posledních 24 h (model)">Úhrn</button>
-    <span id="radar-updated" style="font-size:var(--fs-tiny);color:var(--muted)"></span>
   </div>
-  <div class="rain-spark-wrap" id="rain-spark-wrap" style="display:none">
-    <canvas id="rain-spark"></canvas>
+  <button class="ctrl" id="btn-layer-sheet" data-icon="layers"
+          aria-expanded="false" aria-controls="layer-sheet"
+          title="Zdroje vrstev a průhlednost">Zdroje</button>
+</div>
+
+<!-- Panel vrstev — jméno, zdroj, průhlednost. Otevírá ho #btn-layer-sheet. -->
+<div id="layer-sheet" hidden role="group" aria-label="Zdroje vrstev a průhlednost">
+  <div class="ls-head">
+    <span>Vrstvy</span>
+    <button class="ctrl" id="btn-layer-sheet-close" aria-label="Zavřít panel vrstev">✕</button>
   </div>
-  <span id="radar-source" style="font-size:var(--fs-tiny);color:var(--muted);font-style:italic;display:block;margin-top:.3rem"></span>
+
+  <div class="lsrc" data-for="radar">
+    <div class="lsrc-t">Radar srážek</div>
+    <div class="lsrc-s">ČHMÚ, kompozit odrazivosti; snímky po 5 min. Vlastní extrapolace 0–2 h.</div>
+    <label class="lsrc-o" for="opacity-slider">Průhlednost
+      <input type="range" id="opacity-slider" min="0" max="100" value="70" />
+      <span id="opacity-val">70 %</span>
+    </label>
+  </div>
+
+  <div class="lsrc" data-for="global">
+    <div class="lsrc-t">Svět</div>
+    <div class="lsrc-s">RainViewer — dlaždice mimo dosah českého radaru. Vlastní nowcast tam není.</div>
+  </div>
+
+  <div class="lsrc" data-for="satellite">
+    <div class="lsrc-t">Družice</div>
+    <div class="lsrc-s">RainViewer — infračervený kanál, tedy teplota vrcholů oblačnosti.</div>
+    <label class="lsrc-o" for="sat-opacity">Průhlednost
+      <input type="range" id="sat-opacity" min="0" max="100" value="50" />
+      <span id="sat-opacity-val">50 %</span>
+    </label>
+  </div>
+
+  <div class="lsrc" data-for="temps">
+    <div class="lsrc-t">Teploty</div>
+    <div class="lsrc-s">Měřeno stanicemi: ČHMÚ, Weather Underground a letištní METAR. Ne model.</div>
+  </div>
+
+  <div class="lsrc" data-for="storms">
+    <div class="lsrc-t">Bouřky</div>
+    <div class="lsrc-s">Blitzortung — shluky detekovaných výbojů za poslední půlhodinu.</div>
+  </div>
+
+  <div class="lsrc" data-for="wind">
+    <div class="lsrc-t">Vítr</div>
+    <div class="lsrc-s">Model — animované částice v hladině 10 m nad zemí.</div>
+  </div>
+
+  <div class="lsrc" data-for="hydro">
+    <div class="lsrc-t">Hladiny</div>
+    <div class="lsrc-s">ČHMÚ — hlásné profily, stavy a průtoky toků.</div>
+  </div>
+
+  <div class="lsrc" data-for="accum">
+    <div class="lsrc-t">Úhrn</div>
+    <div class="lsrc-s">Model — spočtený úhrn srážek za posledních 24 h. Ne měření srážkoměry.</div>
   </div>
 </div>
 

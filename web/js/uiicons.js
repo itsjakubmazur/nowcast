@@ -51,6 +51,12 @@ const P = {
   gust: '<path d="M3 8h10a2.5 2.5 0 1 0-2.5-2.5"/><path d="M3 12h14a2.5 2.5 0 1 1-2.5 2.5"/><path d="M3 16h8"/>',
   moon: '<path d="M20 14.5A8.5 8.5 0 0 1 9.5 4 8.5 8.5 0 1 0 20 14.5Z"/>',
   pause: '<path d="M9 5v14M15 5v14"/>',
+  // Lišta vrstev: tři listy nad sebou — standardní metafora pro „vrstvy“,
+  // takže se pozná i bez popisku, když je lišta sbalená na samotné ikony.
+  layers: '<path d="M12 3 3 7.5l9 4.5 9-4.5z"/><path d="M3 12.5 12 17l9-4.5"/><path d="M3 17 12 21.5 21 17"/>',
+  // Šipka pro sbalení lišty. Míří vždy „pryč od mapy“; otočení řeší CSS,
+  // aby existovala jedna ikona a ne dvě, které se rozejdou.
+  chevron: '<path d="M14.5 5.5 8 12l6.5 6.5"/>',
   // Trojúhelník se sází výplní, ne tahem: tahová varianta má u špičky
   // spoj tří čar a v 16 px z toho je klika, ne šipka.
   play: '<path d="M8 5.5v13l11-6.5z" fill="currentColor" stroke-linejoin="round"/>',
