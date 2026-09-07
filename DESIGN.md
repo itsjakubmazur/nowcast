@@ -355,6 +355,45 @@ tedy z týchž hodnot, kterými pipeline vykreslila radarové dlaždice. Legenda
 proto nemůže tvrdit něco jiného, než co je na mapě. Pod 768 px se pruh
 roztáhne do řádku a popisek „slabé" zmizí, protože je z barvy zřejmý.
 
+### Lišta vrstev a panel „Vrstvy"
+Ovládání mapy stojí **u mapy**, ne v doku dole: svislá skleněná lišta
+u pravého okraje mapové plochy (mezi levou kartou a pravým panelem, ne u kraje
+okna). Pilulky si uvnitř lišty **nechávají vlastní sklo** — vypadá to jako sklo
+ve skle, ale nese to informaci: volné pilulky = nezávislé vypínače, souvislá
+dráha s holými volbami (`#layer-selector`) = vybíráš právě jednu. Kdyby lišta
+pilulkám sklo sebrala, obě řady splynou do jednoho tvaru.
+
+Rozbalením vzniká panel, kde má každá vrstva **jméno, zdroj a průhlednost**.
+Zdroj je věta normálním řezem (`0.68rem`), ne číslo — „RainViewer — dlaždice
+mimo dosah českého radaru" říká víc než jméno vrstvy samotné. Zapnutá vrstva
+nese za názvem štítek ZAPNUTO; stav se čte z `.active` na tlačítku, takže se
+lišta a panel nemohou rozejít.
+
+Pod 768 px se lišta vrací do toku dokumentu jako jedna vodorovná dráha
+a panel se rozbaluje pod ni. Svisle by na 40vh mapy nevyšla a plovoucí
+`position: fixed` prvek nad rolujícím sheetem je doložená chyba.
+
+### Časová osa radaru
+Dráha scrubberu **není jednolitá**: gradient s tvrdým zlomem v bodě „teď"
+odděluje měřené snímky (neutrální `--rowline`) od vlastní extrapolace
+(`--accent` ve 34 %). Zlom nastavuje `--t0-pct` z JS, aby hranice seděla na
+data, ne na polovinu. Každý snímek se přiznává i slovy: „−50 min" tlumeně,
+„● teď" barvou t0, „+120 min" barvou nowcastu. Je to táž zásada jako u karty
+verifikace — hranice mezi tím, co víme, a tím, co počítáme, musí být vidět.
+
+### Graf Kp (polární záře)
+Sloupce bez os a bez interakce, tedy záměrně **bez Chart.js** — stejná úvaha
+jako u pásku noční oblačnosti. Výška = Kp z devíti, barva = síla bouře
+(tlumená → žlutá → oranžová → červená), předpověď je odlišená **šrafou**, ne
+jen barvou. Podstatné jsou dvě vodorovné prahové linky: kde na daném místě
+začíná šance na fotku a kde na pouhé oko. Teprve ony dělají z planetární
+řady odpověď pro konkrétní bod. Popisky linek sedají na opačné strany, protože
+u českých šířek je mezi prahy jen ~22 % výšky grafu.
+
+Barevná škála grafu a barva verdiktu jsou **dvě různé věci**: sloupec Kp 8 je
+červený (silná bouře), ale věta „šance pouhým okem" je zelená (dobrá zpráva).
+Barvit verdikt podle síly bouře by z něj udělalo varování.
+
 ### Karta verifikace
 Sloupce shody predikce se skutečností po dnech, výška = procento shody.
 Barva je **práh, ne škála**: ≥ 90 % suchá zeleň, ≥ 75 % oranžová, níž výstražná
@@ -429,11 +468,15 @@ Dva bloky mění v úzkých oknech rodiče, ne jen vzhled (`rail.js`):
   po stranách tam nechají z mapy proužek, ale obsah se nezahazuje — jinak
   zůstanou v navigaci klikatelná tlačítka, která nic nedělají.
 - **do 768 px:** bouřkový banner se vytáhne z levé karty na úroveň `<body>`,
-  hned za úchyt sheetu. V kartě by byl pátý blok stránky, tedy pod dokem
-  radaru se šestnácti přepínači — nejnaléhavější informace pod nejméně
-  naléhavými ovladači.
+  hned za úchyt sheetu. V kartě by byl pátý blok stránky, tedy pod ovládáním
+  mapy — nejnaléhavější informace pod nejméně naléhavými ovladači.
 
 Stěhuje se uzel, ne kopie: canvasy grafů si při přepojení nechají obsah.
+
+Lišta vrstev rodiče nemění, jen orientaci: nad 768 px stojí svisle u okraje
+mapy (`position: fixed`), pod tím se vrací do toku dokumentu jako vodorovná
+dráha. Fixní ovladač nad mapou tam být NESMÍ — mapa je fixní jen dokud sheet
+leží v klidu, takže při rolování zůstane viset přes obsah.
 
 ### Barvy grafů
 

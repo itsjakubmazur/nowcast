@@ -63,7 +63,11 @@ Potvrzené schopnosti:
   normály 1991–2020, historické řady, aerologie, kvalita ovzduší, hlásné
   profily, výstrahy CAP, ALADIN z GRIBu.
 - **Mapové vrstvy**: radarová smyčka, světový radar a satelit (RainViewer),
-  blesky (Blitzortung), částice větru, teploty ze stanic celosvětově.
+  blesky (Blitzortung), částice větru, teploty ze stanic celosvětově. Každá
+  vrstva má v panelu uvedený zdroj; radar a družice vlastní průhlednost.
+- **Polární záře**: planetární Kp index (NOAA SWPC, pozorovaný i tři dny
+  dopředu) převedený na geomagnetickou šířku konkrétního místa a zkřížený
+  s tmou, oblačností a svitem Měsíce — verdikt okem / fotoaparátem / vůbec.
 - **Světový režim** — mimo pokrytí českého radaru appka funguje dál nad
   RainViewer a modelem.
 - Web Push upozornění a AI verdikt/chat přes Cloudflare Worker.
